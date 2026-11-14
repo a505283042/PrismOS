@@ -230,11 +230,13 @@ static lv_obj_t *text(lv_obj_t *parent,const char *value,int x,int y,int w,uint3
  if(!native) aster_ui_font_warm(size,value);
  return o;
 }
-static void set_text(lv_obj_t *o,const char *value)
+static void set_label_text(lv_obj_t *o,const char *value,bool uniform_caption)
 {
  if(o && strcmp(lv_label_get_text(o),value)) {
   uintptr_t spec=(uintptr_t)lv_obj_get_user_data(o);int size=spec>>24,zoom=(spec>>12)&4095,width=spec&4095;
   unsigned px=aster_flux_font_pixels(size,zoom,value);
+  /* Captions keep the same ppem for Latin and CJK package metadata. */
+  if(uniform_caption && px<14) px=14;
   const lv_font_t *native=aster_flux_font((unsigned)as((int)px),value);
   lv_obj_set_width(o,ax(width));
   lv_obj_set_style_transform_scale_x(o,256,0);
@@ -244,6 +246,8 @@ static void set_text(lv_obj_t *o,const char *value)
   lv_label_set_text(o,value);
  }
 }
+static void set_text(lv_obj_t *o,const char *value) {set_label_text(o,value,false);}
+static void set_caption_text(lv_obj_t *o,const char *value) {set_label_text(o,value,true);}
 static lv_obj_t *icon(lv_obj_t *parent,int number,int x,int y,int size,uint32_t color)
 {
  lv_obj_t *o=lv_image_create(parent);
@@ -353,9 +357,9 @@ static void warm_visible_text(void)
   if(e->builtin) continue;
   char buf[64];
   aster_ui_font_warm(ASTER_FONT_UI_PX,e->name);
-  if(e->description[0]) aster_ui_font_warm(ASTER_FONT_CAPTION_PX,e->description);
+  if(e->description[0]) aster_ui_font_warm((uint8_t)as((int)aster_flux_font_pixels(16,160,"应用")),e->description);
   snprintf(buf,sizeof(buf),"拉开%s",e->name);
-  aster_ui_font_warm(ASTER_FONT_CAPTION_PX,buf);
+  aster_ui_font_warm((uint8_t)as((int)aster_flux_font_pixels(16,180,"应用")),buf);
  }
 }
 /* The baked ribbon is a 360x140 RGB565 image. It used to come out of the
@@ -538,23 +542,15 @@ static void bind_ribbon(int slot,int idx)
   lv_image_set_src(ribbons[slot].obj,ribbons[slot].art);
  }
 }
-static void set_sd_text(lv_obj_t *o,uint8_t px,const char *utf8)
-{
- if(!o || !utf8) return;
- const lv_font_t *font=aster_ui_font(px);
- if(!strcmp(lv_label_get_text(o),utf8) && lv_obj_get_style_text_font(o,0)==font) return;
- aster_ui_font_warm(px,utf8);
- lv_obj_set_style_text_font(o,font,0);lv_label_set_text(o,utf8);
-}
 static void caption(void)
 {
  entry_t *e=current();char buf[64];
  const char *desc=e?e->description:"这个频段还没有安装应用。";
- if(e && !e->builtin) set_sd_text(description,ASTER_FONT_CAPTION_PX,desc);
- else set_text(description,desc);
+ /* Package metadata and system entries share font, scaling and line metrics. */
+ set_caption_text(description,desc);
  snprintf(buf,sizeof(buf),"%02d / %02d",count?selected[group]+1:0,count);set_text(position,buf);
  snprintf(buf,sizeof(buf),"拉开%s",e?e->name:"应用");
- if(e && !e->builtin) set_sd_text(pull_label,ASTER_FONT_CAPTION_PX,buf);else set_text(pull_label,buf);
+ set_caption_text(pull_label,buf);
  /* One-line captions fit the gap above the handle even on 240x320.
   * AUTO height would wrap long package text over the launch controls. */
  lv_obj_set_height(description,lv_font_get_line_height(lv_obj_get_style_text_font(description,0)));

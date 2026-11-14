@@ -227,7 +227,7 @@ static bool hex64(const char *p) {
             return false;
     return true;
 }
-static int headers(uint32_t h, struct aster_http_snapshot *s) {
+static int headers(uint32_t h, struct aster_http_snapshot *s, uint32_t timeout_ms) {
     int rc;
     uint64_t start = k_uptime_get();
     do {
@@ -238,7 +238,7 @@ static int headers(uint32_t h, struct aster_http_snapshot *s) {
             return 0;
         if (!rc && s->error)
             return s->error;
-        if (k_uptime_get() - start > 30000)
+        if (k_uptime_get() - start > timeout_ms)
             return -ETIMEDOUT;
         k_msleep(10);
     } while (true);
@@ -279,13 +279,13 @@ static int range_header(uint32_t handle, char *value, size_t capacity, size_t *l
 static int get_json(context *c) {
     struct aster_http_options options = {.method = ASTER_HTTP_GET,
                                          .url = c->url,
-                                         .timeout_ms = 30000,
+                                         .timeout_ms = !strncmp(c->url, "https://", 8) ? 120000 : 30000,
                                          .body_limit = sizeof(c->response) - 1};
     int h = start_request(&options);
     if (h < 0)
         return h;
     struct aster_http_snapshot s;
-    int rc = headers(h, &s);
+    int rc = headers(h, &s, options.timeout_ms);
     size_t n = 0;
     if (!rc && s.status != 200)
         rc = -EPROTO;
@@ -408,7 +408,7 @@ static int fetch(context *c, uint64_t bytes, unsigned index) {
         if (h < 0)
             return h;
         struct aster_http_snapshot s;
-        int rc = headers(h, &s);
+        int rc = headers(h, &s, !strncmp(c->url, "https://", 8) ? 120000 : 30000);
         if (!rc && s.status == 200)
             offset = 0;
         else if (!rc && s.status != 206)
@@ -672,7 +672,7 @@ static int download(context *c) {
         return rc;
     if (!resources_complete())
         return -ENOEXEC;
-    if ((rc = aster_kv_set("aster.store", "store.url", c->market, strlen(c->market))))
+    if ((rc = aster_kv_set("aster.store", "store.url", c->market, strlen(c->market) + 1)))
         return rc;
     /* Save only the non-secret resource endpoint. Wi-Fi credentials belong
      * to the platform's existing profile persistence. */

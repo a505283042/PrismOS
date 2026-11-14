@@ -19,7 +19,7 @@ struct aster_http_tls {
     mbedtls_x509_crt ca;
 };
 static const char root_ca[] =
-#include "aster_http_roots.inc"
+#include "aster_http_trust_bundle.inc"
     ;
 const char *aster_http_tls_default_ca(size_t *length)
 {

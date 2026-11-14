@@ -45,9 +45,10 @@ int main(void){
  calls=0;mode=0;assert(start_request(&options)==7 && calls==4);
  calls=0;mode=1;assert(start_request(&options)==-EINVAL && calls==1);
  calls=0;mode=2;clock_ms=0;assert(start_request(&options)==-EAGAIN && clock_ms>=5000);
- calls=0;mode=0;assert(!headers(7,&s) && calls==3 && s.headers_ready);
- calls=0;mode=1;assert(headers(7,&s)==-EIO);
- calls=0;mode=2;clock_ms=0;assert(headers(7,&s)==-ETIMEDOUT && clock_ms>=30000);
+ calls=0;mode=0;assert(!headers(7,&s,30000) && calls==3 && s.headers_ready);
+ calls=0;mode=1;assert(headers(7,&s,30000)==-EIO);
+ calls=0;mode=2;clock_ms=0;assert(headers(7,&s,30000)==-ETIMEDOUT && clock_ms>=30000);
+ calls=0;mode=2;clock_ms=0;assert(headers(7,&s,120000)==-ETIMEDOUT && clock_ms>=120000);
  calls=0;mode=0;assert(!close_request(7) && calls==3);
  calls=0;mode=2;clock_ms=0;assert(close_request(7)==-EAGAIN && clock_ms>=5000);
  calls=0;mode=0;char value[32];size_t n;assert(!range_header(7,value,sizeof(value),&n) && calls==3 && n==11);

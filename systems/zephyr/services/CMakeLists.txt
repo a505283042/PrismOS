@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: MIT
+include(${ASTER_ROOT}/common/distribution.cmake)
+aster_configure_distribution(app)
 if(CONFIG_ASTER_FIRST_BOOT)
   include(${ASTER_ROOT}/common/setup/service.cmake)
   add_dependencies(app aster_setup_page)

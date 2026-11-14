@@ -944,6 +944,15 @@ static int cmd_sys_setup_source(const struct shell *sh,size_t argc,char **argv)
     ARG_UNUSED(sh);ARG_UNUSED(argc);
     return aster_setup_repair_source(argv[1]);
 }
+static int cmd_sys_setup_status(const struct shell *sh,size_t argc,char **argv)
+{
+    ARG_UNUSED(argc);ARG_UNUSED(argv);
+    aster_setup_snapshot s;aster_setup_get(&s);
+    shell_print(sh,"SETUP phase=%u error=%d hotspot=%u bytes=%llu/%llu",
+                (unsigned)s.state.phase,s.state.error,s.hotspot,
+                (unsigned long long)s.state.bytes,(unsigned long long)s.state.total);
+    return 0;
+}
 static int cmd_sd_format(const struct shell *sh,size_t argc,char **argv)
 {
     if(argc!=2 || strcmp(argv[1],"--confirm")) {
@@ -962,6 +971,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_sys,
 #if defined(CONFIG_ASTER_FIRST_BOOT)
     SHELL_CMD(setup,NULL,"reopen Web provisioning; preserve apps and data",cmd_sys_setup),
     SHELL_CMD_ARG(setup-source,NULL,"verify/install from URL using saved Wi-Fi",cmd_sys_setup_source,2,0),
+    SHELL_CMD(setup-status,NULL,"resource setup progress/error",cmd_sys_setup_status),
 #endif
 	SHELL_CMD(info, NULL, "device profile", cmd_sys_info),
 	SHELL_CMD(features, NULL, "capability list", cmd_sys_features),

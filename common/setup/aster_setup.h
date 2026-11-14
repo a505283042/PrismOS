@@ -2,7 +2,7 @@
 #ifndef ASTER_SETUP_H
 #define ASTER_SETUP_H
 #include "aster_setup_core.h"
-#define ASTER_SETUP_DEFAULT_SOURCE "https://github.com/hello-myj/aster-releases/releases/latest/download/aster-source.json"
+#include "aster_distribution_config.h"
 typedef struct {
     aster_setup_state_t state;
     char ssid[33], password[17], token[33], server[192], file[64];

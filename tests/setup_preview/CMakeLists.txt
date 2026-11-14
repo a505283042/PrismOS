@@ -12,6 +12,8 @@ add_executable(setup-preview main.c "${ROOT}/systems/shared/setup/setup_ui.c"
     "${ROOT}/third_party/lvgl/src/libs/bin_decoder/lv_bin_decoder.c"
     "${ROOT}/third_party/lvgl/src/libs/rle/lv_rle.c")
 add_dependencies(setup-preview aster_system_fonts)
+include(${ROOT}/common/distribution.cmake)
+aster_configure_distribution(setup-preview)
 target_include_directories(setup-preview PRIVATE . "${ROOT}/systems/zephyr/core" "${ROOT}/systems/zephyr/ui"
     "${ROOT}/systems/zephyr/ui/launcher"
     "${ROOT}/common/setup" "${ROOT}/common/include" "${ROOT}/contract/include" "${ROOT}/platform"
