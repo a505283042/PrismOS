@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "tag": "firmware-v4.3.0",
+  "abi": "4.3.0",
+  "source_revision": "b78f15760eaffa1b0e3d9b5172d92d31a5b7e160",
+  "assets": [
+    {
+      "file": "aster-firmware-4.3.0-osptek-p4-st7102.bin",
+      "sha256": "c2a4e5b711e08b39f70a14be4a512c65ac4fa1a05d61b1aa483ebcd2407c9fb1",
+      "bytes": 2170320,
+      "url": "https://aster-releases.obs.cn-south-1.myhuaweicloud.com/artifacts/c2a4e5b711e08b39f70a14be4a512c65ac4fa1a05d61b1aa483ebcd2407c9fb1/aster-firmware-4.3.0-osptek-p4-st7102.bin"
+    },
+    {
+      "file": "aster-firmware-4.3.0-lckfb-s3.bin",
+      "sha256": "b7d0486d07a1a34882272970ce72496a0eba0aaedc0139a90d78a274d89fedef",
+      "bytes": 1724580,
+      "url": "https://aster-releases.obs.cn-south-1.myhuaweicloud.com/artifacts/b7d0486d07a1a34882272970ce72496a0eba0aaedc0139a90d78a274d89fedef/aster-firmware-4.3.0-lckfb-s3.bin"
+    }
+  ],
+  "boards": {
+    "osptek-p4-st7102": {
+      "file": "aster-firmware-4.3.0-osptek-p4-st7102.bin",
+      "sha256": "c2a4e5b711e08b39f70a14be4a512c65ac4fa1a05d61b1aa483ebcd2407c9fb1",
+      "bytes": 2170320,
+      "url": "https://github.com/hello-myj/aster-firmware/releases/download/firmware-v4.3.0/aster-firmware-4.3.0-osptek-p4-st7102.bin",
+      "mirrors": [
+        "https://aster-releases.obs.cn-south-1.myhuaweicloud.com/artifacts/c2a4e5b711e08b39f70a14be4a512c65ac4fa1a05d61b1aa483ebcd2407c9fb1/aster-firmware-4.3.0-osptek-p4-st7102.bin"
+      ],
+      "chip": "esp32p4",
+      "flash_address": "0x0",
+      "no_stub": true
+    },
+    "lckfb-s3": {
+      "file": "aster-firmware-4.3.0-lckfb-s3.bin",
+      "sha256": "b7d0486d07a1a34882272970ce72496a0eba0aaedc0139a90d78a274d89fedef",
+      "bytes": 1724580,
+      "url": "https://github.com/hello-myj/aster-firmware/releases/download/firmware-v4.3.0/aster-firmware-4.3.0-lckfb-s3.bin",
+      "mirrors": [
+        "https://aster-releases.obs.cn-south-1.myhuaweicloud.com/artifacts/b7d0486d07a1a34882272970ce72496a0eba0aaedc0139a90d78a274d89fedef/aster-firmware-4.3.0-lckfb-s3.bin"
+      ],
+      "chip": "esp32s3",
+      "flash_address": "0x0",
+      "no_stub": false
+    }
+  }
+}

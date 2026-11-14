@@ -7,3 +7,5 @@ __pycache__/
 *.log
 config/aster.conf
 config/aster.conf.old
+
+/release-output/
