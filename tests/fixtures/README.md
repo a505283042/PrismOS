@@ -1,6 +1,6 @@
 # Lifecycle contract fixture
 
-hello.wasm is the precompiled ABI 4.2 lifecycle fixture from hello.c in this directory.
+hello.wasm is the precompiled ABI 4.3 lifecycle fixture from hello.c in this directory.
 It checks the ABI, logs from the first frame, then exits.
 It is checked into the firmware repository so firmware CI needs neither an SDK
 checkout nor a WASM compiler. The source equivalent is intentionally simple:

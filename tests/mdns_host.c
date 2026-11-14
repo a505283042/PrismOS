@@ -102,7 +102,7 @@ static size_t query_ptr(uint8_t *b)
 }
 static void test_foreign_query(void)
 {
-    uint8_t q[512], o[512];
+    uint8_t q[512] = {0}, o[512];
     size_t qn = query(q, "other.local", 1);
     assert(!reply(q, qn, o));
     q[2] = 0x80; /* answer bit set: not a query */
@@ -130,7 +130,7 @@ static void test_any_and_ptr(void)
 }
 static void test_malformed(void)
 {
-    uint8_t q[512], o[512];
+    uint8_t q[512] = {0}, o[512];
     assert(!reply(q, 0, o));
     assert(!reply(q, 12, o));
     size_t qn = query(q, m.name, 1);

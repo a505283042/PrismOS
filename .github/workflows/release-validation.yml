@@ -1,7 +1,5 @@
-name: Three-repository candidate validation
+name: Historical three-repository candidate validation (manual)
 on:
-  push:
-  pull_request:
   workflow_dispatch:
 permissions:
   contents: read
