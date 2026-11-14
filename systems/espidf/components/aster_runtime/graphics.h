@@ -16,3 +16,5 @@ bool aster_idf_touch_pending(void);
 
 void aster_idf_graphics_perf_reset(void);
 void aster_idf_graphics_perf_report(void);
+
+void aster_idf_graphics_abort_frame(void);

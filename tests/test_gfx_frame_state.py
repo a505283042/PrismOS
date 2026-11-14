@@ -3,7 +3,7 @@ import unittest
 from test_waveshare import ROOT,run_c
 class FrameState(unittest.TestCase):
  def test_staging_cancel_canvas_and_resource_bounds(self):
-  header=str(ROOT/'systems/zephyr/runtime/include/aster_gfx_frame.h')
+  header=str(ROOT/'common/graphics/aster_gfx_frame.h')
   code=r'''
 #include <assert.h>
 #include <stdlib.h>
@@ -37,9 +37,14 @@ int main(void){
  assert(aster_frame_start(&f,1,8,8,true,NULL,8,0,alloc,release)==ASTER_ENOMEM);
  assert(live==1&&f.capacity==32&&f.state==ASTER_FRAME_FREE);
  assert(aster_frame_start(&f,1,1000,1000,true,NULL,1000,0,alloc,release)==ASTER_EINVAL);
+ aster_frame_abort(&f);failed=0;
+ assert(aster_frame_start(&f,1,480,480,true,NULL,480,0,alloc,release)==ASTER_EINVAL);
+ assert(aster_frame_start_bounded(&f,1,480,480,true,NULL,480,0,alloc,release,230400)==0);
+ assert(f.capacity==460800&&live==1);aster_frame_abort(&f);
+ assert(aster_frame_start_bounded(&f,1,481,480,true,NULL,481,0,alloc,release,230400)==ASTER_EINVAL);
  assert(f.cache_surface==1);aster_frame_release_cache(&f,release);assert(live==0&&!f.pixels&&!f.capacity&&!f.cache_surface);return 0;
 }
 '''.replace('HEADER',header)
   # Contract headers are public C types; make them visible to the real helper.
-  code=code.replace('#include "'+header+'"','#include "'+str(ROOT/'contract/include/aster/gfx.h')+'"\n#include "'+str(ROOT/'contract/include/aster/error.h')+'"\n#define ASTER_GFX_ENGINE_ABI_H\n#define ASTER_ERROR_H\n'+(ROOT/'systems/zephyr/runtime/include/aster_gfx_frame.h').read_text().replace('#include <aster/gfx.h>','').replace('#include <aster/error.h>',''))
+  code=code.replace('#include "'+header+'"','#include "'+str(ROOT/'contract/include/aster/gfx.h')+'"\n#include "'+str(ROOT/'contract/include/aster/error.h')+'"\n#define ASTER_GFX_ENGINE_ABI_H\n#define ASTER_ERROR_H\n'+(ROOT/'common/graphics/aster_gfx_frame.h').read_text().replace('#include <aster/gfx.h>','').replace('#include <aster/error.h>',''))
   run_c(code)

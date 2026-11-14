@@ -7,6 +7,8 @@
 #include "font_sd.h"
 #include "aster_mem.h"
 #include "files.h"
+#include "../../../../common/graphics/aster_gfx_frame.h"
+#include <esp_timer.h>
 #include <lvgl.h>
 #include <stdio.h>
 #endif
@@ -28,6 +30,13 @@ static struct {
     uint32_t handle, allocation, pixels, width, height;
     bool scale_fit;
 } surface;
+#ifdef ESP_PLATFORM
+static aster_frame_state_t frame;
+void aster_idf_graphics_abort_frame(void){aster_frame_abort(&frame);}
+static uint64_t frame_now(void){return (uint64_t)esp_timer_get_time()/1000;}
+#else
+void aster_idf_graphics_abort_frame(void){}
+#endif
 static uint16_t *scaled_pixels;
 static uint32_t serial;
 static aster_idf_touch_point_t contacts[ASTER_IDF_MAX_TOUCH];
@@ -91,9 +100,8 @@ void aster_idf_map_touch(aster_event_t *event)
     event->u.touch.x=tx>=w?surface.width-1:(uint64_t)tx*surface.width/w;
     event->u.touch.y=ty>=h?surface.height-1:(uint64_t)ty*surface.height/h;
 }
-static int present_scaled(wasm_module_inst_t instance)
+static int present_scaled_source(const uint16_t *source)
 {
-    const uint16_t *source=guest(instance,surface.pixels,surface.width*surface.height*2);
     if(!source || !scaled_pixels)return ASTER_EINVAL;
     if(surface.width==io.width && surface.height==io.height)
         return guest_present((const uint8_t *)source,0,0,io.width,io.height,io.width)?ASTER_EIO:0;
@@ -110,6 +118,9 @@ static int present_scaled(wasm_module_inst_t instance)
     }
     return guest_present((uint8_t *)scaled_pixels,0,0,io.width,io.height,io.width)?ASTER_EIO:0;
 }
+
+static int present_scaled(wasm_module_inst_t instance)
+{return present_scaled_source(guest(instance,surface.pixels,surface.width*surface.height*2));}
 
 static int32_t display_info(wasm_exec_env_t env, uint32_t index, uint32_t off, uint32_t bytes)
 {
@@ -180,6 +191,9 @@ static int32_t create(wasm_exec_env_t env, uint32_t off, uint32_t bytes, uint32_
 static int32_t destroy(wasm_exec_env_t env, uint32_t handle)
 {
     if (!handle || handle != surface.handle) return ASTER_EBADF;
+#ifdef ESP_PLATFORM
+    aster_frame_release_cache(&frame,aster_psram_free);
+#endif
     wasm_runtime_module_free(INST, surface.allocation);
     free(scaled_pixels);scaled_pixels=NULL;
     memset(&surface, 0, sizeof(surface));
@@ -204,6 +218,9 @@ static int32_t flush(wasm_exec_env_t env, uint32_t handle, uint32_t off,
                      uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t pitch)
 {
     if (!handle || handle != surface.handle) return ASTER_EBADF;
+#ifdef ESP_PLATFORM
+    if(frame.state)return ASTER_EBUSY;
+#endif
     if (!w || !h || x >= surface.width || y >= surface.height ||
         w > surface.width-x || h > surface.height-y || pitch < w) return ASTER_EINVAL;
     uint64_t span = ((uint64_t)(h-1)*pitch + w)*2;
@@ -229,6 +246,9 @@ static int32_t flush(wasm_exec_env_t env, uint32_t handle, uint32_t off,
 static int32_t present(wasm_exec_env_t env, uint32_t handle)
 {
     if (!handle || handle != surface.handle) return ASTER_EBADF;
+#ifdef ESP_PLATFORM
+    if(frame.state)return ASTER_EBUSY;
+#endif
     if(surface.scale_fit)return present_scaled(INST);
     return flush(env, handle, surface.pixels, 0, 0, surface.width, surface.height, surface.width);
 }
@@ -295,6 +315,9 @@ static int32_t touch(wasm_exec_env_t env, uint32_t off, uint32_t max)
 
 void aster_idf_graphics_cleanup(wasm_module_inst_t instance)
 {
+#ifdef ESP_PLATFORM
+    aster_frame_release_cache(&frame,aster_psram_free);
+#endif
     if (surface.handle) wasm_runtime_module_free(instance, surface.allocation);
     free(scaled_pixels);scaled_pixels=NULL;
     memset(&surface, 0, sizeof(surface));
@@ -332,25 +355,72 @@ int aster_plat_display_clear(uint16_t color)
 }
 void aster_plat_display_flush_drain(void) { /* present() already completes every source read. */ }
 
+/* Private PSRAM staging is allocated on first BEGIN, reused and freed with
+ * the surface. Legacy clients retain their immediate publication behavior. */
+static int32_t frame_control(wasm_exec_env_t env,uint32_t handle,uint32_t off,uint32_t len)
+{
+ if(!off||(off&3))return ASTER_EINVAL;
+ if(len==sizeof(aster_gfx_frame_clip_t)) {
+  const aster_gfx_frame_clip_t *c=guest(INST,off,len);
+  if(!c||c->size!=len||c->version!=1||c->action!=ASTER_GFX_FRAME_SET_CLIP)return ASTER_EINVAL;
+  return aster_frame_set_clip(&frame,handle,c,frame_now());
+ }
+ if(len!=sizeof(aster_gfx_frame_control_t))return ASTER_EINVAL;
+ aster_gfx_frame_control_t *out=guest(INST,off,len);if(!out)return ASTER_EINVAL;
+ aster_gfx_frame_control_t c=*out;
+ if(c.size!=len||c.version!=1||c.flags||c.error)return ASTER_EINVAL;
+ if(c.action==ASTER_GFX_FRAME_QUERY){if(c.frame_id)return ASTER_EINVAL;out->flags=ASTER_GFX_FRAME_SUPPORTED|ASTER_GFX_FRAME_CLIP_SUPPORTED;return 0;}
+ if(c.action==ASTER_GFX_FRAME_BEGIN){
+  if(c.frame_id)return ASTER_EINVAL;
+  if(aster_idf_app_glass_frozen())return ASTER_EBUSY;
+  const uint8_t *base=guest(INST,surface.pixels,surface.width*surface.height*2);
+  int e=aster_frame_start_bounded(&frame,handle,surface.width,surface.height,false,base,surface.width,frame_now(),aster_psram_alloc,aster_psram_free,480u*480u);
+  if(!e)out->frame_id=frame.id;
+  return e;
+ }
+ if(frame.state!=ASTER_FRAME_DRAWING||frame.surface!=handle||c.frame_id!=frame.id)return ASTER_ESTATE;
+ if(c.action==ASTER_GFX_FRAME_CANCEL){aster_frame_abort(&frame);return 0;}
+ if(c.action!=ASTER_GFX_FRAME_END)return ASTER_EINVAL;
+ int e=aster_frame_check(&frame,frame_now());
+ if(!e&&aster_idf_app_glass_frozen())e=ASTER_EBUSY;
+ uint8_t *base=guest(INST,surface.pixels,surface.width*surface.height*2);
+ if(!base&&!e)e=ASTER_EINVAL;
+ if(!e){
+  frame.state=ASTER_FRAME_IN_FLIGHT;
+  if(surface.scale_fit)e=present_scaled_source((const uint16_t *)frame.pixels);
+  else e=guest_present(frame.pixels,0,0,surface.width,surface.height,surface.width)?ASTER_EIO:0;
+  if(!e){aster_frame_commit_guest(&frame,base,surface.width);aster_gfx_note_committed_frame(base,surface.width,surface.height,surface.width,false);}
+ }
+ out->error=e;aster_frame_abort(&frame);return e;
+}
 static int32_t gfx_exec(wasm_exec_env_t env, uint32_t handle, uint32_t cmd_off,
                         uint32_t n, uint32_t arena_off, uint32_t arena_len,
                         uint32_t x, uint32_t y, uint32_t w, uint32_t h)
 {
     if (!handle || handle!=surface.handle) return ASTER_EBADF;
-    if (n==ASTER_GFX_FRAME_CONTROL) return ASTER_ENOTSUP;
-    if (n>256 || arena_len>ASTER_GFX_FRAME_MAX_ARENA) return ASTER_EINVAL;
+    if(n==ASTER_GFX_FRAME_CONTROL&&cmd_off==0&&x==ASTER_GFX_FRAME_MAGIC&&y==ASTER_GFX_FRAME_VERSION&&!w&&!h)
+        return frame_control(env,handle,arena_off,arena_len);
+    bool tagged=y==ASTER_GFX_FRAME_MAGIC&&!w&&!h;
+    if(tagged&&!frame.state)return ASTER_ESTATE;
+    if(frame.state){
+        if(!tagged||x!=frame.id)return aster_frame_fail(&frame,ASTER_ESTATE);
+        int e=aster_frame_check(&frame,frame_now());if(e)return e;
+        if(aster_idf_app_glass_frozen())return aster_frame_fail(&frame,ASTER_EBUSY);
+    }
+    if(tagged){x=y=0;}
+    if (n>256 || arena_len>ASTER_GFX_FRAME_MAX_ARENA) return aster_frame_fail(&frame,ASTER_EINVAL);
     if ((w==0)!=(h==0) || (w && (x>=surface.width || y>=surface.height ||
         w>surface.width-x || h>surface.height-y))) return ASTER_EINVAL;
-    if (!n) return 0;
+    if (!n&&!tagged) return 0;
     const void *source=guest(INST,cmd_off,n*sizeof(aster_gfx_cmd_t));
     const void *arena_source=arena_len ? guest(INST,arena_off,arena_len) : NULL;
-    if (!source || (arena_len && !arena_source)) return ASTER_EINVAL;
-    aster_gfx_cmd_t *commands=aster_psram_alloc(n*sizeof(*commands));
+    if ((n&&!source) || (arena_len && !arena_source)) return aster_frame_fail(&frame,ASTER_EINVAL);
+    aster_gfx_cmd_t *commands=aster_psram_alloc((n?n:1)*sizeof(*commands));
     uint8_t *arena=arena_len ? aster_psram_alloc(arena_len) : NULL;
     if (!commands || (arena_len && !arena)) {
-        aster_psram_free(commands);aster_psram_free(arena);return ASTER_ENOMEM;
+        aster_psram_free(commands);aster_psram_free(arena);return aster_frame_fail(&frame,ASTER_ENOMEM);
     }
-    memcpy(commands,source,n*sizeof(*commands));
+    if(n)memcpy(commands,source,n*sizeof(*commands));
     if (arena_len) memcpy(arena,arena_source,arena_len);
     int result=ASTER_EINVAL;
     /* Validate the entire batch before drawing, including aliased input. */
@@ -360,14 +430,16 @@ static int32_t gfx_exec(wasm_exec_env_t env, uint32_t handle, uint32_t cmd_off,
         if (op==ASTER_GFX_TEXT && (commands[i].w[3]>arena_len ||
             ASTER_GFX_U16(commands[i].w[4])>arena_len-commands[i].w[3])) goto done;
     }
-    uint8_t *pixels=guest(INST,surface.pixels,surface.width*surface.height*2);
+    if(tagged){result=aster_frame_batch(&frame,handle,commands,n,arena_len,frame_now());if(result<0)goto done;}
+    uint8_t *pixels=tagged?frame.pixels:guest(INST,surface.pixels,surface.width*surface.height*2);
     if (!pixels) goto done;
     uint32_t dx=0,dy=0,dw=0,dh=0;
-    aster_gfx_set_clip(x,y,w,h);
-    result=aster_gfx_exec_into(pixels,surface.width,surface.height,surface.width,
-        commands,n,arena,arena_len,&dx,&dy,&dw,&dh,false);
+    if(tagged)aster_gfx_set_clip(frame.clip_x,frame.clip_y,frame.clip_w,frame.clip_h);else aster_gfx_set_clip(x,y,w,h);
+    if(tagged)result=aster_gfx_exec_unpublished_into(pixels,surface.width,surface.height,surface.width,commands,n,arena,arena_len,&dx,&dy,&dw,&dh);
+    else result=aster_gfx_exec_into(pixels,surface.width,surface.height,surface.width,commands,n,arena,arena_len,&dx,&dy,&dw,&dh,false);
     aster_gfx_set_clip(0,0,0,0);
-    if (result>=0) {
+    if(tagged&&result>=0){aster_dirty_set_t dirty;aster_gfx_last_dirty(&dirty);aster_dirty_append(&frame.dirty,&dirty,frame.w,frame.h);}
+    if (!tagged&&result>=0) {
         if (!w) { x=dx;y=dy;w=dw;h=dh; }
         if(w && h) {
             if(surface.scale_fit) {if(present_scaled(INST))result=ASTER_EIO;}
@@ -376,7 +448,7 @@ static int32_t gfx_exec(wasm_exec_env_t env, uint32_t handle, uint32_t cmd_off,
     }
 done:
     aster_psram_free(commands);aster_psram_free(arena);
-    return result;
+    return result<0?aster_frame_fail(&frame,result):result;
 }
 static int32_t text_width(wasm_exec_env_t env,uint32_t px,uint32_t off,uint32_t len)
 {

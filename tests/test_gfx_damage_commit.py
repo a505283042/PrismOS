@@ -50,7 +50,7 @@ static int aster_plat_display_write_app_regions(const uint8_t *p,uint32_t w,uint
 static void aster_gfx_note_committed_frame(const uint8_t *p,uint32_t w,uint32_t h,uint32_t pitch,bool be){
  (void)p;(void)w;(void)h;(void)pitch;(void)be;snapshots++;
 }
-'''.replace('HEADER',str(ROOT/'systems/zephyr/runtime/include/aster_gfx_frame.h'))+body+r'''
+'''.replace('HEADER',str(ROOT/'common/graphics/aster_gfx_frame.h'))+body+r'''
 static int request(aster_surface_t *s,uint32_t action){
  control=(aster_gfx_frame_control_t){sizeof(control),1,action,(action==ASTER_GFX_FRAME_BEGIN||action==ASTER_GFX_FRAME_QUERY)?0:ctx.gfx_frame.id,0,0};
  return n_gfx_frame_control(0,1,s,4,sizeof(control));

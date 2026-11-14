@@ -22,4 +22,4 @@ int main(void){
  assert(!aster_frame_start(&f,1,4,4,true,NULL,4,7,malloc,free));c.frame_id=f.id;c.x=c.y=0;c.w=c.h=4;assert(!aster_frame_set_clip(&f,1,&c,8));
  assert(aster_frame_set_clip(&f,1,&c,1007)==ASTER_ETIMEDOUT);aster_frame_release_cache(&f,free);return 0;
 }
-'''.replace('HEADER',str(ROOT/'systems/zephyr/runtime/include/aster_gfx_frame.h')))
+'''.replace('HEADER',str(ROOT/'common/graphics/aster_gfx_frame.h')))

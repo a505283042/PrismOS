@@ -9,7 +9,7 @@ static int present(const uint8_t *bytes,uint32_t x,uint32_t y,uint32_t w,uint32_
         if (x || y || w!=480 || h!=480 || pitch!=480) mismatch=1;
         for (unsigned i=0;i<480*480;++i) if (p[i]!=0x07e0) mismatch=1;
 #ifdef TEST_RENDER
-    } else if (calls==3) {
+    } else if (calls==3 || calls==4) {
         if (x || y || w!=480 || h!=480 || pitch!=480 || p[0]!=0x001f || p[10+10*480]!=0xf800) mismatch=1;
 #endif
     } else {
@@ -28,7 +28,7 @@ static int touch(uint32_t *x,uint32_t *y)
     }
 }
 #ifdef TEST_RENDER
-#define EXPECTED_PRESENTS 3
+#define EXPECTED_PRESENTS 4
 #else
 #define EXPECTED_PRESENTS 2
 #endif

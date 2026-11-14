@@ -379,7 +379,7 @@ static int run_wasm(const char *path,const char *id,uint32_t perms,unsigned fram
         if(want_pause!=paused) {
             const char *callback=want_pause?"aster_app_pause":"aster_app_resume";
             if(wasm_runtime_lookup_function(instance,callback) && !call(instance,env,callback,0,args))goto cleanup;
-            paused=want_pause;aster_idf_graphics_reset_touch();
+            paused=want_pause;aster_idf_graphics_abort_frame();aster_idf_graphics_reset_touch();
 #ifdef ESP_PLATFORM
             if(id)aster_app_mgr_set_state(id,paused?ASTER_APP_STATE_PAUSED:ASTER_APP_STATE_RUNNING,0);
 #endif

@@ -45,6 +45,28 @@ int32_t aster_app_init(void)
     commands[0].w[1]=0xffff;commands[1].w[0]=8;
     CHECK(aster_gfx_exec(surface,commands,2,0,0,0,0,0,0)==ASTER_EINVAL,52);
     CHECK(pixels[0]==0x001f,53); /* Invalid batch must not partially clear. */
+    aster_gfx_frame_control_t ctl={sizeof(ctl),1,ASTER_GFX_FRAME_QUERY,0,0,0};
+#define CONTROL() aster_gfx_exec(surface,0,ASTER_GFX_FRAME_CONTROL,(uint8_t*)&ctl,sizeof(ctl),ASTER_GFX_FRAME_MAGIC,1,0,0)
+    CHECK(CONTROL()==0&&(ctl.flags&ASTER_GFX_FRAME_SUPPORTED),54);
+    ctl=(aster_gfx_frame_control_t){sizeof(ctl),1,ASTER_GFX_FRAME_BEGIN,0,0,0};
+    CHECK(CONTROL()==0&&ctl.frame_id,55);uint32_t first=ctl.frame_id;
+    CHECK(aster_surface_present(surface)==ASTER_EBUSY,56);
+    commands[0].w[1]=0x07e0;commands[1].w[0]=ASTER_GFX_RECT_F;
+    CHECK(aster_gfx_exec(surface,commands,1,0,0,first,ASTER_GFX_FRAME_MAGIC,0,0)==1,57);
+    CHECK(pixels[0]==0x001f,58);
+    ctl.action=ASTER_GFX_FRAME_CANCEL;CHECK(CONTROL()==0,59);
+    CHECK(aster_gfx_exec(surface,commands,1,0,0,first,ASTER_GFX_FRAME_MAGIC,0,0)==ASTER_ESTATE,60);
+    ctl=(aster_gfx_frame_control_t){sizeof(ctl),1,ASTER_GFX_FRAME_BEGIN,0,0,0};CHECK(CONTROL()==0&&ctl.frame_id!=first,61);
+    first=ctl.frame_id;commands[0].w[1]=0x001f;
+    CHECK(aster_gfx_exec(surface,commands,1,0,0,first,ASTER_GFX_FRAME_MAGIC,0,0)==1,62);
+    CHECK(aster_gfx_exec(surface,commands+1,1,0,0,first,ASTER_GFX_FRAME_MAGIC,0,0)==1,63);
+    ctl.action=ASTER_GFX_FRAME_END;CHECK(CONTROL()==0,64);
+    CHECK(pixels[0]==0x001f&&pixels[10+10*480]==0xf800,65);
+    ctl=(aster_gfx_frame_control_t){sizeof(ctl),1,ASTER_GFX_FRAME_BEGIN,0,0,0};CHECK(CONTROL()==0,66);
+    commands[0].w[1]=0xffff;commands[1].w[0]=8;
+    CHECK(aster_gfx_exec(surface,commands,2,0,0,ctl.frame_id,ASTER_GFX_FRAME_MAGIC,0,0)==ASTER_EINVAL,67);
+    ctl.action=ASTER_GFX_FRAME_END;CHECK(CONTROL()==ASTER_EINVAL&&pixels[0]==0x001f,68);
+
 #endif
     CHECK(aster_surface_destroy(surface)==0,27);
     CHECK(aster_surface_acquire(original,&buffer,sizeof(buffer))==ASTER_EBADF,28);

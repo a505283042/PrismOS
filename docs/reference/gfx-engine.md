@@ -477,3 +477,9 @@ END 成功后更新 Guest 缓冲；失败批次、取消、暂停不更新 Guest
 已完成像素 payload 字节和耗时。未知的失败前缀不算成功字节，命令头不计入；
 这些不是光学帧率。无新增整屏 DRAM 缓冲，没有恢复 PSRAM 直接 DMA。
 双 band 的搬运/发送重叠仍需底层异步机制和峰值 DRAM 预算，尚未实施。
+
+## 整帧事务
+
+`aster_ge_begin_frame()` 协商后开启私有绘制，环形缓冲溢出只提交到私有暂存区，`aster_ge_present()` 的 END 才发布完整结果；出错应取消，禁止悄悄降级到分批上屏。旧 APP 的即时提交行为保持兼容。
+
+状态与预算实现位于 `common/graphics/aster_gfx_frame.h`，IDF 和 Zephyr 共用。P4 IDF 支持 480×480 普通 RGB565 surface 的事务（450 KiB PSRAM 暂存，首次 BEGIN 申请，后续复用，surface 销毁／APP 退出释放）；默认可移植上限仍为 153600 像素。实现同时支持私有裁剪，暂停会取消未完成帧。QUERY 不宣告尚未实现的字库 epoch 能力。单批上限 256 条，总帧受 8192 条命令、128 KiB arena 和 1000 ms 超时约束。
