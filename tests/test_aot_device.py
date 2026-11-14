@@ -78,6 +78,9 @@ int main(void) {
 #define ASTER_EABI -13
 #define ASTER_ENOTSUP -3
 #define CONFIG_ASTER_AOT_TARGET_ID 1
+struct install_progress {int unused;};
+#define ASTER_INSTALL_CHECK 0
+static void report_install(struct install_progress *p,int phase,const char *path){(void)p;(void)phase;(void)path;}
 static uint8_t image[8];static size_t aot_len;static uint32_t target_id;static int frees;
 typedef struct {char id[64];} aster_manifest_t;
 static int load_file(const char *path,uint8_t **out,size_t *size) {(void)path;*out=image;*size=8;return 0;}
@@ -90,9 +93,9 @@ static int aster_pkg_parse(uint8_t *img,size_t n,aster_manifest_t *m,const uint8
  return ASTER_OK;
 }
 int main(void) {
- aot_len=0;target_id=1;assert(pkg_install_locked("test.ast",NULL,NULL)==ASTER_ENOTSUP && frees==1);
- aot_len=8;target_id=99;assert(pkg_install_locked("test.ast",NULL,NULL)==ASTER_EABI && frees==2);
- target_id=1;assert(pkg_install_locked("test.ast",NULL,NULL)==ASTER_OK && frees==2);
+ aot_len=0;target_id=1;assert(pkg_install_locked("test.ast",NULL,NULL,NULL)==ASTER_ENOTSUP && frees==1);
+ aot_len=8;target_id=99;assert(pkg_install_locked("test.ast",NULL,NULL,NULL)==ASTER_EABI && frees==2);
+ target_id=1;assert(pkg_install_locked("test.ast",NULL,NULL,NULL)==ASTER_OK && frees==2);
  return 0;
 }
 '''

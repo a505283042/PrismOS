@@ -12,6 +12,7 @@
 #define FS_O_APPEND 16
 #define FS_SEEK_SET SEEK_SET
 #define FS_SEEK_CUR SEEK_CUR
+#define FS_SEEK_END SEEK_END
 #define FS_DIR_ENTRY_FILE 1
 #define FS_DIR_ENTRY_DIR 2
 struct fs_file_t { FILE *file; };

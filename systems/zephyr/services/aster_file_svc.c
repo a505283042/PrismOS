@@ -12,6 +12,7 @@
 #include "aster_file_svc.h"
 #include "aster_storage.h"
 #include "aster_mem.h"
+#include "aster_deploy.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -92,6 +93,7 @@ static void cdc_reply(const char *fmt, ...)
 	va_start(ap, fmt);
 	int w = vsnprintf(out, sizeof(out), fmt, ap);
 	va_end(ap);
+    if(!strncmp(out,"ERR",3)||!strncmp(out,"RESUME",6))aster_deploy_finish(!strncmp(out,"RESUME",6)?-ETIMEDOUT:-EIO);
 	if (w > 0) {
 		if (transfer_shell) {
 			/* Restore commands before delivering the terminal verdict.
@@ -267,6 +269,7 @@ static int pump_body(const struct device *dev, struct fs_file_t *f, uint32_t wan
 			return w < 0 ? w : -EIO;
 		}
 		cum += n;
+        aster_deploy_snapshot state;if(aster_deploy_get(&state))aster_deploy_update(ASTER_DEPLOY_RECEIVE,cum,state.total,NULL);
 		want -= n;
 		if (want) {
 			cdc_reply("ACK %u", cum); /* ready for next chunk */
@@ -294,6 +297,7 @@ static void publish_part(const char *tmp, const char *path, uint32_t len)
 		return;
 	}
 	LOG_INF("fsvc: put %s (%u bytes)", path, len);
+    aster_deploy_update(ASTER_DEPLOY_RECEIVED,len,len,path);
 	cdc_reply("OK");
 }
 
@@ -323,6 +327,7 @@ static void do_put(const struct device *dev, const char *path, uint32_t len,
 		return;
 	}
 	snprintf(tmp, sizeof(tmp), "%s.part", path);
+    aster_deploy_begin(path,len,off);
 
 	/* make sure the parent dir exists (apps ship to the card root: ok) */
 	char dir[192];
@@ -341,6 +346,7 @@ static void do_put(const struct device *dev, const char *path, uint32_t len,
 
 		off = off < have ? off : have; /* trust the disk, not the claim */
 		if (off >= len) {
+            aster_deploy_update(ASTER_DEPLOY_VERIFY,len,len,path);
 			/* body already landed; verify crc and publish. */
 			uint32_t crc = 0;
 			int cre = file_crc32(tmp, &crc);
@@ -399,6 +405,7 @@ static void do_put(const struct device *dev, const char *path, uint32_t len,
 
 	uint32_t crc = 0;
 
+	aster_deploy_update(ASTER_DEPLOY_VERIFY,len,len,path);
 	if (file_crc32(tmp, &crc) != 0 || crc != want_crc) {
 		(void)fs_unlink(tmp); /* torn tail: restart clean next round */
 		LOG_WRN("fsvc: crc mismatch %s (%08x/%08x)", path, crc, want_crc);

@@ -1,3 +1,4 @@
+#include "aster_network.h"
 /* SPDX-License-Identifier: MIT
  * OS-neutral orchestration over the existing platform, filesystem, HTTP and
  * task adapters. No panel, radio pin or CPU-specific decisions live here.
@@ -231,7 +232,7 @@ static int headers(uint32_t h, struct aster_http_snapshot *s, uint32_t timeout_m
     int rc;
     uint64_t start = k_uptime_get();
     do {
-        rc = aster_http_svc_status(OWNER, h, s);
+        rc = aster_network_http_status(OWNER, h, s);
         if (rc && rc != -EAGAIN)
             return rc;
         if (!rc && s->headers_ready)
@@ -247,7 +248,7 @@ static int start_request(const struct aster_http_options *options) {
     uint64_t until = k_uptime_get() + 5000;
     int handle;
     do {
-        handle = aster_http_svc_start(OWNER, options);
+        handle = aster_network_http_start(OWNER, options);
         if (handle != -EAGAIN && handle != -EBUSY && handle != -ENOSPC)
             return handle;
         k_msleep(20);
@@ -258,7 +259,7 @@ static int close_request(uint32_t handle) {
     uint64_t until = k_uptime_get() + 5000;
     int rc;
     do {
-        rc = aster_http_svc_close(OWNER, handle);
+        rc = aster_network_http_close(OWNER, handle);
         if (rc != -EAGAIN)
             return rc;
         k_msleep(10);
@@ -269,7 +270,7 @@ static int range_header(uint32_t handle, char *value, size_t capacity, size_t *l
     uint64_t until = k_uptime_get() + 5000;
     int rc;
     do {
-        rc = aster_http_svc_header(OWNER, handle, "content-range", 0, value, capacity, length);
+        rc = aster_network_http_header(OWNER, handle, "content-range", 0, value, capacity, length);
         if (rc != -EAGAIN)
             return rc;
         k_msleep(10);
@@ -290,7 +291,7 @@ static int get_json(context *c) {
     if (!rc && s.status != 200)
         rc = -EPROTO;
     while (!rc) {
-        int r = aster_http_svc_read(OWNER, h, c->response + n, sizeof(c->response) - 1 - n);
+        int r = aster_network_http_read(OWNER, h, c->response + n, sizeof(c->response) - 1 - n);
         if (r == -EAGAIN) {
             k_msleep(10);
             continue;
@@ -440,7 +441,7 @@ static int fetch(context *c, uint64_t bytes, unsigned index) {
             /* The transport may publish one small packet at a time. Batch
              * those into the existing 16 KiB buffer: short FAT writes cause
              * repeated sector read/modify/write and cluster bookkeeping. */
-            int n = aster_http_svc_read(OWNER, h, c->buffer + buffered,
+            int n = aster_network_http_read(OWNER, h, c->buffer + buffered,
                                        sizeof(c->buffer) - buffered);
             if (n == -EAGAIN) {
                 int64_t tick = k_uptime_get();

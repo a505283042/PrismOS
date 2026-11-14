@@ -2,6 +2,8 @@
 
 这里存放 IDF、Zephyr 和主机测试共同使用的算法与格式实现。代码只依赖标准 C 和 `contract/include`；不包含操作系统、厂商驱动头文件或 `CONFIG_*` 条件分支。
 
+- `port/`：硬件、OS、系统服务及异步网络的版本化 C 接口和分发层。两种系统在各自 `port/` 目录绑定实现；公共 UI 使用这些接口访问底层。默认表为只读常量，支持启动前派生覆盖，启动后冻结。详见 `docs/platform-adapter-api.md`。
+
 - `package/`：ASTP 包、清单与 JSON 字段解析、ABI/目标/能力校验、溢出安全的区段边界检查。
 - `net/`：HTTP 增量解码及 URL/头部处理、MQTT 帧编解码、WebSocket 握手与帧编解码。
 - `include/`：不对齐输入安全的字节序读取工具。

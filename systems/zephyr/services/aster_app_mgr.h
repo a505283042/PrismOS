@@ -87,6 +87,7 @@ bool aster_app_mgr_is_live(const char *id);
 /* Selected slot cached by scan; immutable until a serialized registry change. */
 bool aster_app_mgr_code_slot(const char *id, int *slot);
 int  aster_app_mgr_install(const char *src_path);
+int aster_app_mgr_install_serial(const char *src_path);
 int aster_app_mgr_queue_install(const char *owner,const char *package,const char *resources);
 /* Worker only, after STOPPED/cleanup; returns true when this owner's request
  * was consumed, including a cancelled request. Stores a durable result. */

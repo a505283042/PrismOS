@@ -1,3 +1,4 @@
+#include "aster_network.h"
 #include <zephyr/sys/atomic.h>
 #include <zephyr/sys/util.h>
 /* SPDX-License-Identifier: MIT
@@ -19,6 +20,8 @@
 #include "ui_gfx.h"
 #include "ui_lvgl.h"
 #include "install_progress.h"
+#include "aster_deploy.h"
+#include "aster_deploy_ui.h"
 /* The sheet is not a launcher feature: it goes up over a running app too,
  * which is why these two are included even when CONFIG_ASTER_LAUNCHER_NATIVE
  * is off (they are not under that gate in firmware/ui/CMakeLists.txt). */
@@ -872,7 +875,7 @@ static void pump_net_events(aster_app_ctx_t *ctx)
 #if IS_ENABLED(CONFIG_ASTER_NET)
     if (!ctx->network_owner) return;
     uint32_t handle = 0, kind = 0, state = 0;
-    if (!aster_net_event_take(ctx->network_owner, &handle, &kind, &state)) return;
+    if (!aster_network_event_take(ctx->network_owner, &handle, &kind, &state)) return;
     uint32_t pub = aster_net_public_handle(ctx->network_owner, kind, handle);
     if (!pub) return;
     aster_event_t ev = { 0 };
@@ -1123,11 +1126,13 @@ static void worker_fn(void *p1, void *p2, void *p3)
 #endif
         if (k_sem_take(&worker_go, K_MSEC(idle_wait))) {
 #if IS_ENABLED(CONFIG_ASTER_LAUNCHER_NATIVE)
+            if(aster_deploy_ui_tick())continue;
             aster_launcher_pump_idle();
 #endif
             continue;
         }
 #if IS_ENABLED(CONFIG_ASTER_LAUNCHER_NATIVE)
+        aster_deploy_snapshot deployment;if(aster_deploy_get(&deployment))aster_deploy_dismiss(deployment.generation);aster_deploy_ui_close();
         aster_launcher_hide();
 #endif
 		aster_app_ctx_t *ctx = worker_pending;

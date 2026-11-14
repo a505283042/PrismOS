@@ -1,3 +1,4 @@
+#include "aster_network.h"
 /* SPDX-License-Identifier: MIT */
 #include <zephyr/kernel.h>
 #include <aster/aster.h>
@@ -24,7 +25,7 @@ void aster_idf_network_cleanup(void) {aster_native_release_network(&context);}
 bool aster_idf_network_event(aster_event_t *out)
 {
     uint32_t handle,kind,state;
-    if(!aster_net_event_take(context.network_owner,&handle,&kind,&state))return false;
+    if(!aster_network_event_take(context.network_owner,&handle,&kind,&state))return false;
     uint32_t public_handle=aster_net_public_handle(context.network_owner,kind,handle);
     if(!public_handle)return false;
     memset(out,0,sizeof(*out));out->size=sizeof(*out);out->version=1;

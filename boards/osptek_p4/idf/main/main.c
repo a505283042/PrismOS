@@ -18,6 +18,10 @@
 #include "esp_timer.h"
 #include <stdio.h>
 #include "aster_idf_runtime.h"
+#include "aster_device.h"
+#include "aster_os.h"
+#include "aster_services.h"
+#include "aster_network.h"
 #include "aster_idf_wifi.h"
 #include "aster_idf_apps.h"
 #include "transfer.h"
@@ -391,6 +395,10 @@ static int read_touch_frame(aster_idf_touch_point_t points[ASTER_IDF_MAX_TOUCH])
 void osptek_storage_start(void);
 void app_main(void)
 {
+    aster_device_seal();
+    aster_os_seal();
+    aster_services_seal();
+    aster_network_seal();
     /* P4 has no local RF entropy source: C5 Wi-Fi is a different chip.
      * This board profile reserves P4's SAR ADC for hardware RNG entropy;
      * microphone capture uses the external ES8311 over I2S. */

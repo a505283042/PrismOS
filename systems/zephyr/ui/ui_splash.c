@@ -1,3 +1,7 @@
+#include "aster_services.h"
+#include "aster_port_util.h"
+#include "aster_os.h"
+#include "aster_device.h"
 /* SPDX-License-Identifier: MIT
  * Boot splash: painted while the launcher holds its first home frame (the
  * cpfont metric tables are still streaming -- exactly when no text font is
@@ -11,15 +15,10 @@
  */
 #include <string.h>
 
-#include <zephyr/kernel.h>
-#include <zephyr/logging/log.h>
 
 #include "ui_splash.h"
-#include "aster_mem.h"
 #include "aster_platform.h"
 #include "font_sd.h"
-
-LOG_MODULE_REGISTER(aster_splash, LOG_LEVEL_INF);
 
 /* The panel starts at its DT size (320x240 on the reference board), then
  * boot switches it to portrait (240x320). The splash is painted after that
@@ -155,14 +154,14 @@ static void paint(uint32_t prog)
 	}
 	ARG_UNUSED(BG);
 
-	int err = aster_plat_display_write_at((const uint8_t *)s_band, 0, s_y0,
+	int err = aster_device_display_write_at((const uint8_t *)s_band, 0, s_y0,
 					     s_w, SPL_H, s_w);
 
 	if (err) {
-		LOG_ERR("splash write %ux%u at y=%u failed: %d",
+		aster_service_logf(1,"splash write %ux%u at y=%u failed: %d",
 			(unsigned)s_w, SPL_H, (unsigned)s_y0, err);
 	} else if (s_phase == 1u) {
-		LOG_INF("splash first frame %ux%u at y=%u",
+		aster_service_logf(3,"splash first frame %ux%u at y=%u",
 			(unsigned)s_w, SPL_H, (unsigned)s_y0);
 	}
 }
@@ -174,17 +173,17 @@ void aster_splash_boot(void)
 	if (s_on) {
 		return;
 	}
-	if (aster_plat_display_get_info(0, &di) != ASTER_OK ||
+	if (aster_device_display_get_info(0, &di) != ASTER_OK ||
 	    di.width < 160u || di.height < SPL_H) {
-		LOG_ERR("splash: invalid display window %ux%u",
+		aster_service_logf(1,"splash: invalid display window %ux%u",
 			(unsigned)di.width, (unsigned)di.height);
 		return;
 	}
 	s_w = di.width;
 	s_y0 = (di.height - SPL_H) / 2u;
-	s_band = aster_psram_alloc((size_t)s_w * SPL_H * sizeof(*s_band));
+	s_band = aster_os_alloc_external((size_t)s_w * SPL_H * sizeof(*s_band));
 	if (!s_band) {
-		LOG_ERR("splash: band allocation failed");
+		aster_service_logf(1,"splash: band allocation failed");
 		return;
 	}
 	s_on = true;
@@ -195,7 +194,7 @@ void aster_splash_boot(void)
 
 void aster_splash_tick(void)
 {
-	uint32_t now = (uint32_t)k_uptime_get_32();
+	uint32_t now = (uint32_t)aster_os_uptime32();
 
 	if (!s_on || (int32_t)(now - s_next_ms) < 0) {
 		return;
@@ -203,7 +202,7 @@ void aster_splash_tick(void)
 	s_next_ms = now + SPL_PERIOD;
 	s_phase++;
 	paint(aster_font_sd_progress());
-	(void)aster_plat_display_flush_drain();
+	(void)aster_device_display_flush_drain();
 }
 
 void aster_splash_off(void)
@@ -211,7 +210,7 @@ void aster_splash_off(void)
 	if (!s_on) {
 		return;
 	}
-	aster_psram_free(s_band);
+	aster_os_free_external(s_band);
 	s_band = NULL;
 	s_w = s_y0 = 0;
 	s_on = false;

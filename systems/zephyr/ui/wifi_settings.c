@@ -1,3 +1,7 @@
+#include "aster_services.h"
+#include "aster_port_util.h"
+#include "aster_os.h"
+#include "aster_device.h"
 /* SPDX-License-Identifier: MIT
  * Native Wi-Fi and personal-hotspot settings. Radio work stays off the UI thread.
  */
@@ -11,7 +15,6 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
-#include <zephyr/kernel.h>
 
 #if IS_ENABLED(CONFIG_ASTER_LAUNCHER_FLUX)
 #define BG 0x181b18
@@ -132,7 +135,7 @@ static void notify(const char *s)
 	set_text(lv_obj_get_child(toast, 0), s);
 	lv_obj_clear_flag(toast, LV_OBJ_FLAG_HIDDEN);
 	lv_obj_move_foreground(toast);
-	toast_until = k_uptime_get_32() + 4000;
+	toast_until = aster_os_uptime32() + 4000;
 }
 static void failed(int err)
 {
@@ -188,7 +191,7 @@ static void details_cb(lv_event_t *e)
 static void scan_cb(lv_event_t *e)
 {
 	(void)e;
-	int err = aster_plat_wifi_scan_start();
+	int err = aster_device_wifi_scan_start();
 	if (err)
 		failed(err);
 	else {
@@ -199,9 +202,9 @@ static void scan_cb(lv_event_t *e)
 static void action_cb(lv_event_t *e)
 {
 	uint32_t op = (uint32_t)(uintptr_t)lv_event_get_user_data(e);
-	int err = op == ASTER_PLAT_WIFI_OP_FORGET      ? aster_plat_wifi_forget_start()
-		  : op == ASTER_PLAT_WIFI_OP_RECONNECT ? aster_plat_wifi_reconnect_start()
-						       : aster_plat_wifi_disconnect_start();
+	int err = op == ASTER_PLAT_WIFI_OP_FORGET      ? aster_device_wifi_forget_start()
+		  : op == ASTER_PLAT_WIFI_OP_RECONNECT ? aster_device_wifi_reconnect_start()
+						       : aster_device_wifi_disconnect_start();
 	if (err)
 		failed(err);
 	else {
@@ -222,7 +225,7 @@ static void cancel_forget_cb(lv_event_t *e)
 static void select_cb(lv_event_t *e)
 {
 	int i = (int)(intptr_t)lv_event_get_user_data(e);
-	uint32_t security = aster_plat_wifi_security_class(aps[i].security);
+	uint32_t security = aster_device_wifi_security_class(aps[i].security);
 	if (security != ASTER_PLAT_WIFI_SECURITY_OPEN &&
 	    security != ASTER_PLAT_WIFI_SECURITY_PERSONAL) {
 		notify("暂不支持此网络的认证方式");
@@ -266,7 +269,7 @@ static void list_rows(void)
 		return;
 	lv_obj_clean(networks);
 	aster_wifi_status_t st = {0};
-	aster_plat_wifi_status(&st);
+	aster_device_wifi_status(&st);
 	for (int i = 0; i < ap_count; i++) {
 		lv_obj_t *row =
 		    button(networks, "", 0, i * 36, w - 8, 36, select_cb, (void *)(intptr_t)i);
@@ -274,11 +277,11 @@ static void list_rows(void)
 		lv_obj_set_style_radius(row, 0, 0);
 		lv_obj_t *name =
 		    text(row, aps[i].ssid, 8, 8, w - 64,
-			 st.state == WIFI_STATE_COMPLETED && !strcmp(st.ssid, aps[i].ssid) ? ACCENT
+			 st.state == ASTER_PLAT_WIFI_STATE_COMPLETED && !strcmp(st.ssid, aps[i].ssid) ? ACCENT
 											   : FG);
 		lv_obj_set_height(name, 21);
 		lv_label_set_long_mode(name, LV_LABEL_LONG_MODE_DOTS);
-		if (aster_plat_wifi_security_class(aps[i].security) !=
+		if (aster_device_wifi_security_class(aps[i].security) !=
 		    ASTER_PLAT_WIFI_SECURITY_OPEN)
 			lock_icon(row, w - 49, 12);
 		signal(row, w - 32, 10, aps[i].rssi);
@@ -342,8 +345,8 @@ static void submit_cb(lv_event_t *e)
 		failed(-EINVAL);
 		return;
 	}
-	int err = page == HOTSPOT_EDIT ? aster_plat_wifi_hotspot_start(ssid, psk)
-				       : aster_plat_wifi_connect_start(ssid, psk);
+	int err = page == HOTSPOT_EDIT ? aster_device_wifi_hotspot_start(ssid, psk)
+				       : aster_device_wifi_connect_start(ssid, psk);
 	if (err) {
 		failed(err);
 		return;
@@ -366,7 +369,7 @@ static void hotspot_toggle_cb(lv_event_t *e)
 		return;
 	}
 	int err =
-	    enable ? aster_plat_wifi_hotspot_start(NULL, NULL) : aster_plat_wifi_hotspot_stop();
+	    enable ? aster_device_wifi_hotspot_start(NULL, NULL) : aster_device_wifi_hotspot_stop();
 	if (err) {
 		failed(err);
 		if (enable)
@@ -413,7 +416,7 @@ static void show(enum page next, const char *ssid)
 	reset_view();
 	/* Cache lifetime follows the screen owner, not this settings page. */
 	page = next;
-	aster_plat_wifi_hotspot_status(&ap_state);
+	aster_device_wifi_hotspot_status(&ap_state);
 	if (page == WIFI_LIST) {
 		header("Wi-Fi", close_cb);
 		button(root, "个人热点", 84, 6, 82, 28, hotspot_cb, NULL);
@@ -490,7 +493,7 @@ static void show(enum page next, const char *ssid)
 	} else if (page == WIFI_FORGET_CONFIRM) {
 		header("忘记网络", cancel_forget_cb);
 		char saved[33] = {0};
-		aster_plat_wifi_last_ssid(saved, sizeof(saved));
+		aster_device_wifi_last_ssid(saved, sizeof(saved));
 		text(root, saved, 12, 64, w - 24, FG);
 		text(root, "将删除保存的连接密码。\n再次连接时需要重新输入。", 12, 116, w - 24,
 		     MUTED);
@@ -501,14 +504,14 @@ static void show(enum page next, const char *ssid)
 	} else {
 		header("网络详情", wifi_cb);
 		aster_wifi_status_t st = {0};
-		aster_plat_wifi_status(&st);
+		aster_device_wifi_status(&st);
 		char saved[33] = {0};
-		aster_plat_wifi_last_ssid(saved, sizeof(saved));
+		aster_device_wifi_last_ssid(saved, sizeof(saved));
 		connection_name = text(root, st.ssid[0] ? st.ssid : saved, 12, 52, w - 24, FG);
 		connection_info = text(root, "", 12, 110, w - 24, MUTED);
-		button(root, st.state == WIFI_STATE_COMPLETED ? "断开连接" : "重新连接", 12, h - 92,
+		button(root, st.state == ASTER_PLAT_WIFI_STATE_COMPLETED ? "断开连接" : "重新连接", 12, h - 92,
 		       w - 24, 36, action_cb,
-		       (void *)(uintptr_t)(st.state == WIFI_STATE_COMPLETED
+		       (void *)(uintptr_t)(st.state == ASTER_PLAT_WIFI_STATE_COMPLETED
 					       ? ASTER_PLAT_WIFI_OP_DISCONNECT
 					       : ASTER_PLAT_WIFI_OP_RECONNECT));
 		lv_obj_t *b = button(root, "忘记此网络", 12, h - 48, w - 24, 36, forget_cb, NULL);
@@ -566,18 +569,18 @@ void aster_wifi_settings_tick(void)
 {
 	if (!root)
 		return;
-	if (toast && (int32_t)(k_uptime_get_32() - toast_until) >= 0)
+	if (toast && (int32_t)(aster_os_uptime32() - toast_until) >= 0)
 		lv_obj_add_flag(toast, LV_OBJ_FLAG_HIDDEN);
 	uint32_t op, last;
 	int err;
-	aster_plat_wifi_operation(&op, &last, &err);
+	aster_device_wifi_operation(&op, &last, &err);
 	if (pending && !op && last == pending) {
 		uint32_t completed = pending;
 		pending = 0;
 		if (err)
 			failed(err);
 		else if (completed == ASTER_PLAT_WIFI_OP_SCAN) {
-			if (!aster_plat_wifi_scan_results(aps, ASTER_WIFI_AP_MAX, &ap_count)) {
+			if (!aster_device_wifi_scan_results(aps, ASTER_WIFI_AP_MAX, &ap_count)) {
 				for (int i = 0; i < ap_count; i++)
 					aster_ui_font_warm(16, aps[i].ssid);
 				list_rows();
@@ -587,7 +590,7 @@ void aster_wifi_settings_tick(void)
 	}
 	set_text(scan_label, op == ASTER_PLAT_WIFI_OP_SCAN ? "扫描中" : "扫描");
 	if (page == HOTSPOT) {
-		aster_plat_wifi_hotspot_status(&ap_state);
+		aster_device_wifi_hotspot_status(&ap_state);
 		if (ap_state.enabled)
 			lv_obj_add_state(hotspot_switch, LV_STATE_CHECKED);
 		else
@@ -602,10 +605,10 @@ void aster_wifi_settings_tick(void)
 	if (page != WIFI_LIST && page != WIFI_DETAILS)
 		return;
 	aster_wifi_status_t st = {0};
-	aster_plat_wifi_status(&st);
+	aster_device_wifi_status(&st);
 	char saved[33] = {0}, info[160];
-	aster_plat_wifi_last_ssid(saved, sizeof(saved));
-	set_text(connection_name, st.state == WIFI_STATE_COMPLETED   ? st.ssid
+	aster_device_wifi_last_ssid(saved, sizeof(saved));
+	set_text(connection_name, st.state == ASTER_PLAT_WIFI_STATE_COMPLETED   ? st.ssid
 				  : op == ASTER_PLAT_WIFI_OP_CONNECT ? "正在连接…"
 								     : "未连接");
 	if (page == WIFI_DETAILS) {
@@ -615,8 +618,8 @@ void aster_wifi_settings_tick(void)
 			 st.sec_txt ? st.sec_txt : "—", (int)st.rssi);
 	} else
 		snprintf(info, sizeof(info), "%s",
-			 (st.state == WIFI_STATE_COMPLETED && st.ip[0]) ? st.ip
-			 : st.state == WIFI_STATE_COMPLETED		? "正在获取 IP…"
+			 (st.state == ASTER_PLAT_WIFI_STATE_COMPLETED && st.ip[0]) ? st.ip
+			 : st.state == ASTER_PLAT_WIFI_STATE_COMPLETED		? "正在获取 IP…"
 			 : saved[0]					? saved
 									: "选择网络进行连接");
 	set_text(connection_info, info);

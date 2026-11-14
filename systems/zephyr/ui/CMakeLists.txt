@@ -27,6 +27,7 @@ target_sources(app PRIVATE
     ${ASTER_SYSTEM_FONT}
 	ui_lvgl.c
 	install_progress.c
+    ${ASTER_ROOT}/systems/shared/port/deploy_ui.c
 	ui_font.c
 	font_sd.c
 	ui_gfx.c

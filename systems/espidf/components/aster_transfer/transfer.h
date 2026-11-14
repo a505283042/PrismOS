@@ -7,6 +7,8 @@ typedef struct {
     int (*read)(void *context,uint8_t *data,size_t size);
     void (*reply)(void *context,const char *line);
     void *context;
+    /* 0 receive, 1 verify, 2 received (not installed), 3 failure. */
+    void (*progress)(void *context,unsigned phase,uint32_t done,uint32_t total,int error);
 } aster_transfer_io_t;
 /* Caller validates/maps the destination and serializes access. */
 int aster_transfer_receive(const char *path,uint32_t length,uint32_t crc,uint32_t offset,const aster_transfer_io_t *io);

@@ -1,3 +1,4 @@
+#include "aster_device.h"
 #include <zephyr/sys/util.h>
 /* SPDX-License-Identifier: MIT
  * Screen-grab debug transport. The pixels already on the glass (or the
@@ -180,7 +181,7 @@ void aster_screenshot_poll(void)
 	{
 		const uint8_t *gb = NULL;
 
-		if (aster_plat_display_glass_frame(&gb, &w, &h, &pitch)) {
+		if (aster_device_display_glass_frame(&gb, &w, &h, &pitch)) {
 			raw_bytes = (size_t)w * h * 2u;
 			src = gb;
 			swap_rows = true;
@@ -291,7 +292,7 @@ pack:
 	rc = 0;
 
 out:
-	aster_plat_display_glass_drop();
+	aster_device_display_glass_drop();
 	aster_psram_free(zbuf);
 	if (rc) {
 		LOG_WRN("screenshot failed (%d)", rc);

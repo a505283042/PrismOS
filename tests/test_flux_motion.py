@@ -7,11 +7,11 @@ def implementation():
     return r'''
 static aster_touch_evt_t injected[16];
 static int injected_n;
-void aster_plat_input_touch_inject(uint32_t x, uint32_t y, uint32_t action)
+void aster_device_input_touch_inject(uint32_t x, uint32_t y, uint32_t action)
 {
  if(injected_n<16) injected[injected_n++]=(aster_touch_evt_t){x,y,action};
 }
-int aster_plat_input_poll(aster_touch_evt_t *evt, int max)
+int aster_device_input_poll(aster_touch_evt_t *evt, int max)
 {
  int n=injected_n<max?injected_n:max;
  for(int i=0;i<n;i++) evt[i]=injected[i];
@@ -111,7 +111,7 @@ int main(void) {
 #include <stdlib.h>
 ''' + '#include "' + str(ROOT / 'platform/esp32s3/touch_ui.h') + r'''"
 #define CLAMP(v,lo,hi) ((v)<(lo)?(lo):(v)>(hi)?(hi):(v))
-#define LOG_INF(...) ((void)0)
+#define aster_service_logf(...) ((void)0)
 ''' + HEADER + r'''
 enum {HOME,ASTER_TOUCH_DOWN=1,ASTER_TOUCH_MOVE,ASTER_TOUCH_UP,ACT_OPEN};
 typedef struct {uint32_t x,y,action;} aster_touch_evt_t;
@@ -119,7 +119,7 @@ static int page=HOME,group,count=13,selected[4],phase,from_phase,target_phase,pu
 static unsigned scroll_duration;
 static uint64_t now,animation_ms;
 static bool visible=true,modal,motion=true,animating,coasting,draw_pending,launching;
-static uint64_t k_uptime_get(void) {return now;}
+static uint64_t aster_os_uptime_ms(void) {return now;}
 static bool aster_wifi_settings_is_open(void) {return false;}
 static bool header_touch(const aster_touch_evt_t *raw) {(void)raw;return false;}
 static void aster_ui_lvgl_pointer(int x,int y,bool pressed) {(void)x;(void)y;(void)pressed;}
@@ -163,11 +163,11 @@ int main(void) {
  event(5300,200,ASTER_TOUCH_DOWN);event(5700,200,ASTER_TOUCH_UP);
  assert(!action); /* a held finger is not a tap */
  action=0;animating=false;
- aster_plat_input_touch_inject(155,280,ASTER_TOUCH_DOWN);
- aster_plat_input_touch_inject(155,160,ASTER_TOUCH_MOVE);
- aster_plat_input_touch_inject(155,280,ASTER_TOUCH_MOVE);
- aster_plat_input_touch_inject(155,280,ASTER_TOUCH_UP);
- aster_touch_evt_t batch[16];int n=aster_plat_input_poll(batch,16);
+ aster_device_input_touch_inject(155,280,ASTER_TOUCH_DOWN);
+ aster_device_input_touch_inject(155,160,ASTER_TOUCH_MOVE);
+ aster_device_input_touch_inject(155,280,ASTER_TOUCH_MOVE);
+ aster_device_input_touch_inject(155,280,ASTER_TOUCH_UP);
+ aster_touch_evt_t batch[16];int n=aster_device_input_poll(batch,16);
  now=5800;for(int i=0;i<n;i++) touch(&batch[i]);
  assert(!action && !launching && drag.moved); /* out-and-back entirely between frames */
  action=0;animating=false;
@@ -187,7 +187,7 @@ int main(void) {
 #include <assert.h>
 #include <string.h>
 #define BUILD_ASSERT(c,...) _Static_assert(c,"geometry")
-#define ASTER_UI_H 320
+#define ASTER_UI_MIN_HEIGHT 240
 '''+'#include "'+str(ROOT/'systems/zephyr/ui/gesture.h')+'"\n'+recognizer+r'''
 enum {HOME,MIXER,ASTER_TOUCH_DOWN=1,ASTER_TOUCH_MOVE,ASTER_TOUCH_UP,ACT_MIXER};
 typedef struct {uint32_t x,y,action;} aster_touch_evt_t;

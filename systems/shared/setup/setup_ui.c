@@ -1,8 +1,10 @@
+#include "aster_os.h"
+#include "aster_device.h"
+#include "aster_port_util.h"
 /* SPDX-License-Identifier: MIT */
 #include "setup_ui.h"
 #include "aster_setup.h"
 #include "aster_platform.h"
-#include "aster_mem.h"
 #include "ui_lvgl.h"
 #include "ui_splash.h"
 #include "system_font.h"
@@ -10,7 +12,6 @@
 #include "qrcodegen.h"
 #include "launcher.h"
 #include <aster/event.h>
-#include <zephyr/kernel.h>
 #include <stdio.h>
 #include <string.h>
 static lv_obj_t *root, *heading, *message, *bar, *numbers, *detail;
@@ -62,7 +63,7 @@ static void qr(int w, int y) {
     unsigned physical = physical_w < 360 ? 112 : 152;
     unsigned qw = physical * w / physical_w,
              qh = physical * aster_ui_lvgl_layout_height() / physical_h;
-    qr_pixels = aster_psram_alloc((size_t)qw * qh * 2);
+    qr_pixels = aster_os_alloc_external((size_t)qw * qh * 2);
     if (!qr_pixels)
         return;
     for (unsigned row = 0; row < qh; row++)
@@ -86,7 +87,7 @@ static void rebuild(int next) {
     if (root)
         lv_obj_delete(root);
     if (qr_pixels) {
-        aster_psram_free(qr_pixels);
+        aster_os_free_external(qr_pixels);
         qr_pixels = NULL;
     }
     aster_splash_off();
@@ -166,7 +167,7 @@ bool aster_setup_ui_tick(void) {
             if(status.state.files)aster_font_sd_reload();
         }
         if (qr_pixels) {
-            aster_psram_free(qr_pixels);
+            aster_os_free_external(qr_pixels);
             qr_pixels = NULL;
         }
         return false;
@@ -176,7 +177,7 @@ bool aster_setup_ui_tick(void) {
     int next = status.state.phase == ASTER_SETUP_VERIFY ? ASTER_SETUP_DOWNLOAD : status.state.phase;
     if (next != page)
         rebuild(next);
-    uint32_t now = k_uptime_get_32();
+    uint32_t now = aster_os_uptime32();
     if (now - last_draw >= 150) {
         last_draw = now;
         lv_label_set_text(heading, aster_setup_phase_title(status.state.phase));
@@ -199,7 +200,7 @@ bool aster_setup_ui_tick(void) {
         }
     }
     aster_touch_evt_t events[ASTER_PLAT_TOUCH_EVENT_QUEUE];
-    int n = aster_plat_input_poll(events, ASTER_PLAT_TOUCH_EVENT_QUEUE);
+    int n = aster_device_input_poll(events, ASTER_PLAT_TOUCH_EVENT_QUEUE);
     for (int i = 0; i < n; i++)
         if (events[i].slot == 0) {
             aster_ui_lvgl_pointer(events[i].x, events[i].y, events[i].action != ASTER_TOUCH_UP);

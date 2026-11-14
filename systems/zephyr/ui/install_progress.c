@@ -1,3 +1,4 @@
+#include "aster_device.h"
 /* SPDX-License-Identifier: MIT. Cooperative install UI on the existing worker. */
 #include "install_progress.h"
 #include "ui_lvgl.h"
@@ -56,7 +57,7 @@ void aster_ui_install_progress(void *context,aster_install_phase phase,uint64_t 
  uint32_t now=lv_tick_get();if(now-last_pump<50&&(int)phase==previous)return;last_pump=now;
  lv_indev_t *pointer=aster_ui_lvgl_indev();aster_touch_evt_t events[16];
  for(unsigned batch=0;batch<4;batch++){
-  int n=aster_plat_input_poll(events,16);if(n<=0)break;
+  int n=aster_device_input_poll(events,16);if(n<=0)break;
   uint32_t masks[16];for(int i=0;i<n;i++)masks[i]=events[i].contact_mask;
   aster_touch_ui_begin_batch(&touch_state,masks,(uint8_t)n);
   for(int i=0;i<n;i++){

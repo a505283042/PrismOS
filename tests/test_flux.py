@@ -144,10 +144,10 @@ static bool lv_area_intersect(lv_area_t *o,const lv_area_t *a,const lv_area_t *b
 }
 #define LV_ATTRIBUTE_FAST_MEM
 #define FLUX_FAST
-static uint32_t k_cycle_get_32(void) {return 0;}
-static uint32_t k_cyc_to_us_floor64(uint32_t v) {return v;}
-static void *aster_psram_alloc(unsigned n) {return malloc(n);}
-static void aster_psram_free(void *p) {free(p);}
+static uint32_t aster_os_cycle_us(void) {return 0;}
+static uint32_t aster_os_elapsed_us(uint32_t v) {return v;}
+static void *aster_os_alloc_external(unsigned n) {return malloc(n);}
+static void aster_os_free_external(void *p) {free(p);}
 ''' +table+trig+implementation+r'''
 int main(void) {
  /* Rounded interpolation preserves constant colors and is symmetric

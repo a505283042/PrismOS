@@ -2,6 +2,8 @@
 #include <lvgl.h>
 #include "aster_setup.h"
 #include "aster_platform.h"
+#include "aster_os.h"
+#include "aster_device.h"
 #include "setup_ui.h"
 #include "ui_lvgl.h"
 #include <stdlib.h>
@@ -38,6 +40,11 @@ void aster_ui_lvgl_pointer(uint32_t x,uint32_t y,int down){(void)x;(void)y;(void
 lv_indev_t *aster_ui_lvgl_indev(void){return indev;}
 void aster_ui_lvgl_pump(void){lv_tick_inc(200);preview_ms+=200;lv_timer_handler();}
 int aster_plat_input_poll(aster_touch_evt_t *e,int n){(void)e;(void)n;return 0;}
+static uint64_t uptime(void){return preview_ms;}
+static void *port_alloc(size_t n,unsigned region){(void)region;return malloc(n);}
+static void port_free(void *p,unsigned region){(void)region;free(p);}
+const aster_os_ops_t aster_os_backend={.size=sizeof(aster_os_ops_t),.version=ASTER_OS_API_VERSION,.name="preview",.uptime_ms=uptime,.alloc=port_alloc,.free=port_free};
+const aster_device_ops_t aster_device_backend={.size=sizeof(aster_device_ops_t),.version=ASTER_DEVICE_API_VERSION,.name="preview",.input_poll=aster_plat_input_poll};
 static void flush(lv_display_t *d,const lv_area_t *area,uint8_t *buffer){(void)area;(void)buffer;lv_display_flush_ready(d);}
 static void read_pointer(lv_indev_t *i,lv_indev_data_t *data){(void)i;data->state=LV_INDEV_STATE_RELEASED;}
 static void save(const char *file){

@@ -21,21 +21,21 @@ static unsigned calls;
 static int mode;
 static uint64_t k_uptime_get(void){return clock_ms;}
 static void k_msleep(unsigned n){clock_ms+=n;}
-static int aster_http_svc_start(uint64_t owner,const struct aster_http_options *o){
+static int aster_network_http_start(uint64_t owner,const struct aster_http_options *o){
  assert(owner==OWNER && o);calls++;
  if(mode==1)return -EINVAL;
  if(mode==2)return -EAGAIN;
  return calls==1?-ENOSPC:calls==2?-EAGAIN:calls==3?-EBUSY:7;
 }
-static int aster_http_svc_status(uint64_t owner,uint32_t h,struct aster_http_snapshot *s){
+static int aster_network_http_status(uint64_t owner,uint32_t h,struct aster_http_snapshot *s){
  assert(owner==OWNER && h==7);calls++;
  if(calls==1)return -EAGAIN;
  s->error=mode==1?-EIO:0;s->headers_ready=mode!=2 && calls>=3;return 0;
 }
-static int aster_http_svc_close(uint64_t owner,uint32_t h){
+static int aster_network_http_close(uint64_t owner,uint32_t h){
  assert(owner==OWNER && h==7);return mode==2 || ++calls<3?-EAGAIN:0;
 }
-static int aster_http_svc_header(uint64_t owner,uint32_t h,const char *name,unsigned index,char *out,size_t cap,size_t *len){
+static int aster_network_http_header(uint64_t owner,uint32_t h,const char *name,unsigned index,char *out,size_t cap,size_t *len){
  assert(owner==OWNER && h==7 && !strcmp(name,"content-range") && index==0 && cap>=14);
  if(++calls<3)return -EAGAIN;strcpy(out,"bytes 1-3/4");*len=strlen(out);return 0;
 }

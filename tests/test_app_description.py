@@ -45,19 +45,19 @@ int main(void) {
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
-#define ASTER_APP_DESCRIPTION_MAX 128
+#define ASTER_SERVICE_DESCRIPTION_MAX 128
 #define ARRAY_SIZE(x) (sizeof(x)/sizeof((x)[0]))
 enum {HOME,FILTERS,MIXER,FILES,CLOCK,SYSTEM,ICON_BOX,ICON_FILES,ICON_SETTINGS,ICON_TERMINAL,ICON_CLOCK};
-typedef struct {char id[64],name[40],category[16],description[128];} aster_app_rec_t;
-static aster_app_rec_t recs[]={
+typedef struct {char id[64],name[40],category[16],description[128];} aster_service_app_t;
+static aster_service_app_t recs[]={
  {.id="aster.player",.name="Player",.description="APP 自己的介绍"},
  {.id="org.example.dynamic",.name="动态应用",.category="tool",.description="独立安装的介绍"},
  {.id="org.example.old",.name="旧应用"}};
-static int aster_app_mgr_count(void) {return 3;}
-static const aster_app_rec_t *aster_app_mgr_get(int i) {return &recs[i];}
-static const aster_app_rec_t *aster_app_mgr_find(const char *id) {
- for(int i=0;i<3;i++) if(!strcmp(recs[i].id,id)) return &recs[i];
- return NULL;
+static int aster_service_app_count(void) {return 3;}
+static bool aster_service_app_snapshot(int i,aster_service_app_t *out) {if(i<0||i>=3)return false;*out=recs[i];return true;}
+static bool aster_service_app_find(const char *id,aster_service_app_t *out) {
+ for(int i=0;i<3;i++) if(!strcmp(recs[i].id,id)) {*out=recs[i];return true;}
+ return false;
 }
 #define MAX_ENTRIES 20
 #define ASTER_FONT_UI_PX 20

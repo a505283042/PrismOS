@@ -1,3 +1,6 @@
+#include "aster_services.h"
+#include "aster_port_util.h"
+#include "aster_os.h"
 /* SPDX-License-Identifier: MIT
  * Fused transform/blend for FLUX's opaque RGB565 ribbons.
  * LVGL's general path writes color and alpha to PSRAM scratch buffers, then
@@ -6,11 +9,9 @@
  */
 #include <lvgl.h>
 #include <string.h>
-#include <zephyr/kernel.h>
 #include "draw/lv_draw_private.h"
 #include "misc/lv_area_private.h"
 #include "flux_draw.h"
-#include "aster_mem.h"
 #if defined(CONFIG_SOC_SERIES_ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32P4)
 #include <esp_attr.h>
 #define FLUX_FAST IRAM_ATTR __attribute__((optimize("O3")))
@@ -25,7 +26,7 @@ static struct {const void *source;uint8_t *detail;uint16_t color;uint8_t first[1
 void aster_flux_draw_forget(const void *source)
 {
  for(unsigned i=0;i<5;i++) if(prepared[i].source==source) {
-  aster_psram_free(prepared[i].detail);memset(&prepared[i],0,sizeof(prepared[i]));
+  aster_os_free_external(prepared[i].detail);memset(&prepared[i],0,sizeof(prepared[i]));
  }
 }
 void aster_flux_draw_prepare(const void *source,uint32_t stride)
@@ -33,7 +34,7 @@ void aster_flux_draw_prepare(const void *source,uint32_t stride)
  if(stride<360u*2u) return;
  aster_flux_draw_forget(source);
  for(unsigned i=0;i<5;i++) if(!prepared[i].source) {
-  uint8_t *map=aster_psram_alloc(45*140+102);if(!map) return;
+  uint8_t *map=aster_os_alloc_external(45*140+102);if(!map) return;
   memset(map,0,45*140+102);uint16_t color=*(const uint16_t *)source;
   for(unsigned y=0;y<139;y++) {
    const uint16_t *a=(const uint16_t *)((const uint8_t *)source+y*stride);
@@ -60,7 +61,7 @@ void aster_flux_draw_prepare(const void *source,uint32_t stride)
 static uint32_t draw_cycles;
 uint32_t aster_flux_draw_time_reset(void)
 {
- uint32_t us=k_cyc_to_us_floor64(draw_cycles);draw_cycles=0;return us;
+ uint32_t us=aster_os_elapsed_us(draw_cycles);draw_cycles=0;return us;
 }
 
 static inline uint16_t swap16(uint16_t v) {return (v << 8) | (v >> 8);}
@@ -220,7 +221,7 @@ int FLUX_FAST aster_flux_draw_image(int transformed,int format,const void *sourc
  /* A wrapped ribbon angle can hand this loop a clip that never advances.
   * Bail out instead of spinning with interrupts effectively starved. */
  if(width<1 || height<1 || width>480 || height>480) return LV_RESULT_INVALID;
- uint32_t started=k_cycle_get_32();
+ uint32_t started=aster_os_cycle_us();
  /* Write directly into the cached framebuffer; an intermediate scanline
   * would add two PSRAM copies for every transformed bounding rectangle. */
 
@@ -238,5 +239,5 @@ int FLUX_FAST aster_flux_draw_image(int transformed,int format,const void *sourc
  } else
 #endif
  draw565_rows(&job,area.y1,area.y2);
- draw_cycles+=(uint32_t)(k_cycle_get_32()-started);return LV_RESULT_OK;
+ draw_cycles+=(uint32_t)(aster_os_cycle_us()-started);return LV_RESULT_OK;
 }

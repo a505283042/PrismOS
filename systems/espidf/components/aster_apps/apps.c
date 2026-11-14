@@ -6,6 +6,10 @@
 #include "aster_storage.h"
 #include "aster_pkg.h"
 #include "aster_setup.h"
+#include "aster_device.h"
+#include "aster_os.h"
+#include "aster_deploy.h"
+#include "aster_port_check.h"
 #include "launcher.h"
 #include "esp_timer.h"
 #include "esp_log.h"
@@ -102,6 +106,7 @@ int aster_idf_apps_launch(const char *id) { return launch(id,false); }
 int aster_idf_apps_start(void)
 {
     if(queue)return 0;
+    int deploy_error=aster_deploy_init();if(deploy_error)return deploy_error;
     state_lock=xSemaphoreCreateMutex();queue=xQueueCreate(1,sizeof(job_t));
     if(!state_lock || !queue) {
         if(queue)vQueueDelete(queue);
@@ -133,6 +138,13 @@ int aster_idf_apps_start(void)
 }
 int aster_idf_apps_command(int argc,char **argv)
 {
+    if(argc==3 && !strcmp(argv[1],"port") && !strcmp(argv[2],"selftest")) {
+        if(aster_idf_is_running())return ASTER_EBUSY;
+        aster_port_check_t result;int error=aster_port_check(&result);
+        printf("PORT device=%s os=%s passed=0x%lx stage=%s error=%d\n",
+               aster_device_ops()->name,aster_os_ops()->name,(unsigned long)result.passed,result.stage,error);
+        return error;
+    }
     if(argc>=2 && !strcmp(argv[1],"sd")) {
         if(argc==4 && !strcmp(argv[2],"format") && !strcmp(argv[3],"--confirm")) {
             if(!state_lock)return ASTER_ESTATE;
@@ -168,7 +180,7 @@ int aster_idf_apps_command(int argc,char **argv)
         return result;
     }
     if(!strcmp(argv[2],"install")) {
-        int result=aster_app_mgr_install(argv[3]);
+        int result=aster_app_mgr_install_serial(argv[3]);
         if(result)printf("install failed: %d\n",result);else puts("installed OK");
         return result;
     }

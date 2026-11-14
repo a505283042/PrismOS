@@ -18,6 +18,7 @@ idf_component_register(SRCS "port.c" "ppa_fill.c" "render_workers.c" "${ASTER_SY
     REQUIRES esp_timer heap log esp_driver_ppa fatfs)
 add_dependencies(${COMPONENT_LIB} aster_system_fonts)
 target_compile_definitions(${COMPONENT_LIB} PUBLIC ASTER_SYSTEM_ESP_IDF=1 CONFIG_ASTER_LAUNCHER_FLUX=1 LV_LVGL_H_INCLUDE_SIMPLE
+    ASTER_PLAT_MAX_TOUCH=5
     "LV_CONF_PATH=\"${UI}/lv_conf.h\"" CONFIG_ASTER_LVGL_MEM_KB=256
     CONFIG_ASTER_IMGDEC_JPG=1 CONFIG_ASTER_IMGDEC_PNG=1)
 target_compile_options(${COMPONENT_LIB} PRIVATE -include "${CMAKE_CURRENT_LIST_DIR}/compat/zephyr/sys/util.h"

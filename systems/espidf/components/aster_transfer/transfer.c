@@ -32,10 +32,11 @@ static uint32_t part_size(const char *path)
 }
 static int token(const aster_transfer_io_t *io,const char *kind,uint32_t value)
 {
+    if(!strcmp(kind,"RESUME")&&io->progress)io->progress(io->context,3,value,0,-ETIMEDOUT);
     char line[64];snprintf(line,sizeof(line),"%s %lu",kind,(unsigned long)value);io->reply(io->context,line);return 1;
 }
 static int error(const aster_transfer_io_t *io,int code)
-{char line[64];snprintf(line,sizeof(line),"ERR %d",code);io->reply(io->context,line);return 1;}
+{if(io->progress)io->progress(io->context,3,0,0,code);char line[64];snprintf(line,sizeof(line),"ERR %d",code);io->reply(io->context,line);return 1;}
 static int finish(FILE *file)
 {
     int result=fflush(file);
@@ -56,6 +57,7 @@ int aster_transfer_receive(const char *path,uint32_t length,uint32_t crc,uint32_
         fclose(file);return error(io,-EIO);
     }
     uint8_t buffer[512];uint32_t position=offset;
+    if(io->progress)io->progress(io->context,0,position,length,0);
     if(position<length)token(io,"ACK",position);
     while(position<length) {
         size_t chunk=length-position;if(chunk>sizeof(buffer))chunk=sizeof(buffer);
@@ -71,10 +73,12 @@ int aster_transfer_receive(const char *path,uint32_t length,uint32_t crc,uint32_
             (void)finish(file);return token(io,"RESUME",part_size(temporary));
         }
         position+=(uint32_t)chunk;
+        if(io->progress)io->progress(io->context,0,position,length,0);
         if(position<length)token(io,"ACK",position);
     }
     if(finish(file))return token(io,"RESUME",part_size(temporary));
     file=fopen(temporary,"rb");
+    if(io->progress)io->progress(io->context,1,position,length,0);
     if(!file)return token(io,"RESUME",position);
     uint32_t actual=0,total=0;size_t count;
     while((count=fread(buffer,1,sizeof(buffer),file))!=0) {
@@ -83,6 +87,7 @@ int aster_transfer_receive(const char *path,uint32_t length,uint32_t crc,uint32_
     int bad_read=ferror(file);fclose(file);
     if(bad_read)return token(io,"RESUME",position);
     if(total!=length || actual!=crc) {
+        if(io->progress)io->progress(io->context,3,position,length,-EBADMSG);
         unlink(temporary);io->reply(io->context,"ERR retry");return 1;
     }
     /* FAT does not replace existing names on rename. Keep the verified
@@ -91,5 +96,6 @@ int aster_transfer_receive(const char *path,uint32_t length,uint32_t crc,uint32_
     struct stat st;
     if(stat(path,&st)==0 && unlink(path))return error(io,-errno);
     if(rename(temporary,path))return error(io,-errno);
+    if(io->progress)io->progress(io->context,2,position,length,0);
     io->reply(io->context,"OK");return 0;
 }

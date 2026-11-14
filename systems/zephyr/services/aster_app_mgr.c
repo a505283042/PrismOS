@@ -445,6 +445,23 @@ static int app_uninstall_locked(const char *id)
 	return ASTER_OK;
 }
 
+/* Serial callers publish progress only; the existing UI worker renders it. */
+#include "aster_deploy.h"
+static void serial_progress(void *context,aster_install_phase phase,uint64_t done,uint64_t total,const char *file)
+{
+    (void)context;static const aster_deploy_phase phases[]={ASTER_DEPLOY_CHECK,ASTER_DEPLOY_COPY,ASTER_DEPLOY_SYNC,ASTER_DEPLOY_COMMIT,ASTER_DEPLOY_COMMIT};
+    if((unsigned)phase<sizeof(phases)/sizeof(phases[0]))aster_deploy_update(phases[phase],done,total,file);
+}
+int aster_app_mgr_install_serial(const char *src_path)
+{
+    aster_deploy_update(ASTER_DEPLOY_CHECK,0,0,src_path);
+    aster_app_mgr_files_lock();
+    int err=aster_pkg_install_bundle_progress(src_path,NULL,NULL,serial_progress,NULL);
+    if(!aster_app_mgr_is_live(NULL)) {
+        int scanned=aster_app_mgr_scan();if(scanned<0&&!err)err=ASTER_EIO;
+    }
+    aster_app_mgr_files_unlock();aster_deploy_finish(err);return err;
+}
 int aster_app_mgr_uninstall(const char *id)
 {
 	aster_app_mgr_files_lock();

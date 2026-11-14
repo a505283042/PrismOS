@@ -15,7 +15,7 @@
  * Disjointness is the only constraint worth stating: it is strictly stronger
  * than "the pull has room to travel", since a screen tall enough to separate
  * the bands is a fortiori tall enough to move ASTER_GEST_PULL_MIN inside one. */
-BUILD_ASSERT(ASTER_UI_H > 2 * ASTER_GEST_EDGE_BAND,
+BUILD_ASSERT(ASTER_UI_MIN_HEIGHT > 2 * ASTER_GEST_EDGE_BAND,
 	     "screen too short to separate the gesture edge bands: they "
 	     "overlap, and the pull-up one stops being reachable");
 

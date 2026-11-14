@@ -249,8 +249,14 @@ static int install_verify(const char *path, const void *data, size_t len,
 	return err;
 }
 
-static int install_write(const char *path, const void *data, size_t len,
-                         const char *stage)
+struct install_progress {aster_install_progress_fn notify;void *context;uint64_t done,total;};
+static void report_install(struct install_progress *p,aster_install_phase phase,const char *name)
+{if(p&&p->notify)p->notify(p->context,phase,p->done,p->total,name?name:"");}
+/* Keep recursive directory state out of the UI worker's bounded stack.
+ * Parent paths remain live until the child returns; PSRAM holds each frame. */
+struct bundle_walk {struct fs_dir_t dir;struct fs_dirent ent;char a[256],b[256];};
+static int install_write_tracked(const char *path, const void *data, size_t len,
+                         const char *stage,struct install_progress *progress)
 {
 	struct fs_file_t f;
 	fs_file_t_init(&f);
@@ -260,12 +266,21 @@ static int install_write(const char *path, const void *data, size_t len,
 		return ASTER_EIO;
 	}
 	size_t requested = install_fault(stage, "write") && len ? len - 1u : len;
-	int written = aster_fs_write_safe(&f, data, requested);
+	int written = 0;
+    if(!progress)written=aster_fs_write_safe(&f,data,requested);
+    else while((size_t)written<requested) {
+        size_t chunk=requested-(size_t)written;if(chunk>4096)chunk=4096;
+        int count=aster_fs_write_safe(&f,(const uint8_t *)data+written,chunk);
+        if(count<=0||(size_t)count>chunk){if(count<0)written=count;break;}
+        written+=count;progress->done+=(unsigned)count;report_install(progress,ASTER_INSTALL_COPY,path);
+        if((size_t)count!=chunk)break;
+    }
 	if (written < 0 || (size_t)written != len) {
 		LOG_ERR("install: stage=%s operation=write path=%s result=%d expected=%u",
 			stage, path, written, (unsigned)len);
 		err = ASTER_EIO;
 	} else {
+		report_install(progress,ASTER_INSTALL_SYNC,path);
 		int sync = fs_sync(&f);
 		if (install_fault(stage, "sync")) { sync = -EIO; }
 		if (sync) {
@@ -281,6 +296,9 @@ static int install_write(const char *path, const void *data, size_t len,
 	}
 	return err ? err : install_verify(path, data, len, stage);
 }
+
+static int install_write(const char *path,const void *data,size_t len,const char *stage)
+{return install_write_tracked(path,data,len,stage,NULL);}
 
 static int rmrf(const char *path)
 {
@@ -345,7 +363,7 @@ static bool asset_relpath_ok(const char *p)
 	return true;
 }
 
-static int extract_mjr1(const uint8_t *blob, size_t len, const char *appdir)
+static int extract_mjr1(const uint8_t *blob, size_t len, const char *appdir,struct install_progress *progress)
 {
 	char root[192];
 	uint16_t n;
@@ -403,7 +421,7 @@ static int extract_mjr1(const uint8_t *blob, size_t len, const char *appdir)
 				}
 			}
 		}
-		err = install_write(dest, blob + fo, fl, "assets");
+		err = install_write_tracked(dest, blob + fo, fl, "assets",progress);
 		if (err) {
 			return err;
 		}
@@ -412,12 +430,6 @@ static int extract_mjr1(const uint8_t *blob, size_t len, const char *appdir)
 	return ASTER_OK;
 }
 
-struct install_progress {aster_install_progress_fn notify;void *context;uint64_t done,total;};
-static void report_install(struct install_progress *p,aster_install_phase phase,const char *name)
-{if(p&&p->notify)p->notify(p->context,phase,p->done,p->total,name?name:"");}
-/* Keep recursive directory state out of the UI worker's bounded stack.
- * Parent paths remain live until the child returns; PSRAM holds each frame. */
-struct bundle_walk {struct fs_dir_t dir;struct fs_dirent ent;char a[256],b[256];};
 static int bundle_measure(const char *path,unsigned depth,uint64_t *bytes,unsigned *files)
 {
  if(depth>16)return ASTER_EINVAL;
@@ -629,16 +641,26 @@ static int pkg_install_locked(const char *src_path,const char *resources,const c
 		return err;
 	}
 
+    if(progress&&!resources){
+        progress->done=0;progress->total=size+wlen+(aot_ok?alen:0);
+        if(m.icon_len&&aster_pkg_in_bounds(m.icon_off,m.icon_len,size,m.hdr_size)&&aster_icon_parse(img+m.icon_off,m.icon_len,NULL)==ASTER_OK)progress->total+=m.icon_len;
+        if(m.assets_len>=16&&aster_pkg_in_bounds(m.assets_off,m.assets_len,size,m.hdr_size)){
+            const uint8_t *blob=img+m.assets_off;unsigned count=aster_le16(blob+6);
+            if(!memcmp(blob,"ASTR",4)&&count<=64&&16u+count*12u<=m.assets_len)
+                for(unsigned i=0;i<count;i++)progress->total+=aster_le32(blob+16+i*12+8);
+        }
+        report_install(progress,ASTER_INSTALL_COPY,src_path);
+    }
 	/* Loaded package bytes may be in PSRAM; install_write always bounces. */
 	char dst[192];
 	snprintf(dst, sizeof(dst), "%s/package.ast", appdir);
-	err = install_write(dst, img, size, "package");
+	err = install_write_tracked(dst,img,size,"package",resources?NULL:progress);
 	if (err) {
 		aster_psram_free(img);
 		return err;
 	}
 	snprintf(dst, sizeof(dst), "%s/app.wasm", appdir);
-	err = install_write(dst, wasm, wlen, "wasm");
+	err = install_write_tracked(dst,wasm,wlen,"wasm",resources?NULL:progress);
 	if (err) {
 		aster_psram_free(img);
 		return err;
@@ -647,7 +669,7 @@ static int pkg_install_locked(const char *src_path,const char *resources,const c
 	/* extract app.aot when the package's CPU matches the platform */
 	if (aot_ok) {
 		snprintf(dst, sizeof(dst), "%s/app.aot", appdir);
-		err = install_write(dst, aot, alen, "aot");
+		err = install_write_tracked(dst,aot,alen,"aot",resources?NULL:progress);
 		if (err) {
 			aster_psram_free(img);
 			return err;
@@ -659,7 +681,7 @@ static int pkg_install_locked(const char *src_path,const char *resources,const c
 	if (m.icon_len && aster_pkg_in_bounds(m.icon_off, m.icon_len, size, m.hdr_size) &&
 	    aster_icon_parse(img + m.icon_off, m.icon_len, NULL) == ASTER_OK) {
 		snprintf(dst, sizeof(dst), "%s/icon.bin", appdir);
-		err = install_write(dst, img + m.icon_off, m.icon_len, "icon");
+		err = install_write_tracked(dst,img+m.icon_off,m.icon_len,"icon",resources?NULL:progress);
 		if (err) {
 			aster_psram_free(img);
 			return err;
@@ -681,7 +703,7 @@ static int pkg_install_locked(const char *src_path,const char *resources,const c
 		}
 	}
 	if (m.assets_len && aster_pkg_in_bounds(m.assets_off, m.assets_len, size, m.hdr_size)) {
-		err = extract_mjr1(img + m.assets_off, m.assets_len, appdir);
+		err = extract_mjr1(img + m.assets_off, m.assets_len, appdir,resources?NULL:progress);
 		if (err) {
 			LOG_ERR("install: stage=assets operation=extract path=%s result=%d", appdir, err);
 			aster_psram_free(img);

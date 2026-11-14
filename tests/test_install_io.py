@@ -7,6 +7,17 @@ from test_waveshare import ROOT, run_c
 
 
 class InstallIO(unittest.TestCase):
+    def test_serial_embedded_package_reports_real_copied_bytes(self):
+        run_c(self.program()+r'''
+static uint64_t last_done,last_total;static unsigned copies,syncs,commits;
+static void notify(void *context,aster_install_phase phase,uint64_t done,uint64_t total,const char *file){
+ (void)context;(void)file;assert(done<=total);assert(done>=last_done);last_done=done;last_total=total;
+ if(phase==ASTER_INSTALL_COPY)copies++;if(phase==ASTER_INSTALL_SYNC)syncs++;if(phase==ASTER_INSTALL_COMMIT)commits++;
+}
+int main(void){fresh_root();assert(!aster_pkg_install_bundle_progress("test.ast",NULL,NULL,notify,NULL));
+ assert(copies>=5&&syncs>=5&&commits&&last_done==last_total&&last_total>256);assert(!rmrf(root));return 0;}
+''')
+
     def program(self):
         pkg = (ROOT / 'systems/zephyr/services/aster_pkg.c').read_text()
         header = (ROOT / 'common/package/aster_pkg_format.h').read_text()

@@ -34,6 +34,7 @@ int aster_idf_run_installed(const char *path,const char *id,uint32_t permissions
 void aster_idf_clear_stop(void);
 
 bool aster_idf_is_running(void);
+uint32_t aster_idf_touch_capacity(void);
 bool aster_idf_stop_is_requested(void);
 void aster_idf_check_watchdog(void);
 void aster_idf_exit_current(int code);

@@ -1,3 +1,6 @@
+#include "aster_services.h"
+#include "aster_port_util.h"
+#include "aster_os.h"
 /* SPDX-License-Identifier: MIT
  * Shared native-size cpfont router. Full-coverage SD resources supply glyphs;
  * the loader allocates per-size LRU caches on demand and releases them when
@@ -8,9 +11,6 @@
 #include "font_sd.h"
 #include "system_font.h"
 
-#include <zephyr/logging/log.h>
-
-LOG_MODULE_REGISTER(aster_uifont, LOG_LEVEL_INF);
 
 /* ------------------------------------------------------------------ *
  * Placeholder: used as LV_FONT_DEFAULT (lv_conf.h) and whenever no
@@ -96,7 +96,7 @@ const lv_font_t *aster_ui_font(uint8_t px)
 
 		if (!warned) {
 			warned = true;
-			LOG_WRN("no SD face for %upx (nearest baked %dpx): "
+			aster_service_logf(2,"no SD face for %upx (nearest baked %dpx): "
 				"using system UI font",
 				(unsigned)px, snap);
 		}

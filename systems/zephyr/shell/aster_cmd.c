@@ -22,6 +22,9 @@
 #include "aster_runtime.h"
 #include "aster_sysinfo.h"
 #include "aster_storage.h"
+#include "aster_device.h"
+#include "aster_os.h"
+#include "aster_port_check.h"
 #if defined(CONFIG_ASTER_NET)
 #include "aster_net_cmd.h"
 #endif
@@ -369,7 +372,7 @@ static int cmd_app_install(const struct shell *sh, size_t argc, char **argv)
 		shell_error(sh, "usage: aster app install <path.ast>");
 		return -EINVAL;
 	}
-	int err = aster_app_mgr_install(argv[1]);
+	int err = aster_app_mgr_install_serial(argv[1]);
 	if (err == ASTER_OK) {
 		shell_print(sh, "installed OK");
 	} else {
@@ -1073,7 +1076,17 @@ static int cmd_display_mode(const struct shell *sh, size_t argc, char **argv)
 }
 #endif
 
+static int cmd_port(const struct shell *sh,size_t argc,char **argv)
+{
+    if(argc!=2 || strcmp(argv[1],"selftest"))return -EINVAL;
+    if(aster_app_mgr_is_live(NULL))return -EBUSY;
+    aster_port_check_t result;int error=aster_port_check(&result);
+    shell_print(sh,"PORT device=%s os=%s passed=0x%x stage=%s error=%d",
+                aster_device_ops()->name,aster_os_ops()->name,result.passed,result.stage,error);
+    return error;
+}
 SHELL_STATIC_SUBCMD_SET_CREATE(aster_cmds,
+    SHELL_CMD_ARG(port,NULL,"selftest: platform adapter contract",cmd_port,2,0),
 #if defined(CONFIG_ASTER_FIRST_BOOT)
     SHELL_CMD(sd,&sub_sd,"explicit SD maintenance",NULL),
 #endif

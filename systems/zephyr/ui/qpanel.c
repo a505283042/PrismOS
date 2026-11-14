@@ -1,4 +1,7 @@
-#include <zephyr/sys/util.h>
+#include "aster_services.h"
+#include "aster_port_util.h"
+#include "aster_os.h"
+#include "aster_device.h"
 /* SPDX-License-Identifier: MIT
  * Quick-settings sheet. See qpanel.h for the contract: what it may ask of
  * the screen under it, why it is torn down by the same call that rebuilds
@@ -29,20 +32,13 @@
 #include "ui_wifi.h"
 #include "wifi_settings.h"
 
-#include "aster_kv.h"
-#include "aster_mem.h"
 #include "aster_platform.h"
-#include "aster_storage.h"
 
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 #include <lvgl.h>
-#include <zephyr/kernel.h>
-#include <zephyr/logging/log.h>
-
-LOG_MODULE_REGISTER(aster_qpanel, LOG_LEVEL_INF);
 
 /* Compact 16px labels fit both panel orientations. */
 #define QP_PAD_X   12
@@ -95,7 +91,7 @@ BUILD_ASSERT(QP_TITLE_H >= ASTER_FONT_CAPTION_LINE_H &&
 			(IS_ENABLED(CONFIG_ASTER_WIFI) ? QP_WIFI_H : 0) + \
 			QP_ROW_H /* theme */)
 
-BUILD_ASSERT(QP_SHEET_MAX_H + 12 <= ASTER_UI_H,
+BUILD_ASSERT(QP_SHEET_MAX_H + 12 <= ASTER_UI_MIN_HEIGHT,
 	     "quick-settings sheet is taller than the logical screen: its last "
 	     "row would be clipped with no error (shrink QP_ROW_H/QP_TITLE_H)");
 
@@ -315,7 +311,7 @@ static void on_delete(lv_event_t *e)
 {
 	ARG_UNUSED(e);
 	if (forget()) {
-		LOG_INF("qpanel: close (screen rebuilt under it)");
+		aster_service_logf(3,"qpanel: close (screen rebuilt under it)");
 	}
 }
 
@@ -352,8 +348,8 @@ static bool snapshot_take(void)
 	/* The record is allowed to ALIAS a front buffer the display worker is
 	 * still streaming (glass_note_full's alias_ok), so reading it before
 	 * the wire is idle is a read of memory the DMA is walking. */
-	aster_plat_display_flush_drain();
-	if (!aster_plat_display_glass_frame(&gb, &w, &h, &pitch)) {
+	aster_device_display_flush_drain();
+	if (!aster_device_display_glass_frame(&gb, &w, &h, &pitch)) {
 		/* Reachable, not theoretical: a build without
 		 * CONFIG_ASTER_SCREENSHOT keeps no shadow, so the record survives
 		 * only the *whole-panel* writes (a flip or a canvas present) and
@@ -361,7 +357,7 @@ static bool snapshot_take(void)
 		 * save. Named here because "the panel does not open in this app"
 		 * would otherwise read as a gesture bug -- it is not, the pull
 		 * was recognised and this is the refusal. */
-		LOG_WRN("qpanel: no whole-panel frame on the glass to save -- "
+		aster_service_logf(2,"qpanel: no whole-panel frame on the glass to save -- "
 			"not opening (last present was partial? builds without "
 			"CONFIG_ASTER_SCREENSHOT keep no shadow to fall back on)");
 		return false;
@@ -372,14 +368,14 @@ static bool snapshot_take(void)
 	 * reaches its direct path there either. Refuse rather than write a
 	 * rotated frame back as if it were logical. */
 	if (w != lw || h != lh || pitch != w) {
-		LOG_WRN("qpanel: glass is %ux%u pitch %u, logical is %ux%u -- not opening",
+		aster_service_logf(2,"qpanel: glass is %ux%u pitch %u, logical is %ux%u -- not opening",
 			(unsigned)w, (unsigned)h, (unsigned)pitch, (unsigned)lw, (unsigned)lh);
 		return false;
 	}
 	if (!s_snap) {
-		s_snap = aster_psram_alloc((size_t)lw * lh * 2u);
+		s_snap = aster_os_alloc_external((size_t)lw * lh * 2u);
 		if (!s_snap) {
-			LOG_ERR("qpanel: no PSRAM for the %u B glass snapshot",
+			aster_service_logf(1,"qpanel: no PSRAM for the %u B glass snapshot",
 				(unsigned)(lw * lh * 2u));
 			return false;
 		}
@@ -399,12 +395,12 @@ static void glass_put_back(void)
 	 * passing bytes/row makes the staging gather step twice as far per row
 	 * as the buffer holds and read off its end. `true` is the byte order:
 	 * the glass record is panel order, which is what the record wants. */
-	aster_plat_display_write_at_ex(s_snap, 0, 0, lw, lh, lw, true);
+	aster_device_display_write_at_ex(s_snap, 0, 0, lw, lh, lw, true);
 	/* write_at_ex hands a whole-panel rect to the async worker and returns
 	 * before the wire is finished. The guest resumes the moment this
 	 * function returns, so without the drain its next present would race
 	 * the restore out of the same slot. */
-	aster_plat_display_flush_drain();
+	aster_device_display_flush_drain();
 }
 
 /* ---------- rows ---------- */
@@ -426,13 +422,13 @@ static void on_vol(lv_event_t *e)
 	/* Applied live (a codec register write), persisted on release only:
 	 * dragging a 0..100 slider fires VALUE_CHANGED dozens of times, and
 	 * every one of those would be an SD file write on the UI thread. */
-	(void)aster_plat_audio_set_volume(v);
+	(void)aster_device_audio_set_volume(v);
 	vol_show(v);
 	if (code == LV_EVENT_RELEASED) {
 		uint8_t raw = (uint8_t)v;
 
-		(void)aster_kv_set(QPANEL_KV_ID, QPANEL_KV_VOL, &raw, 1);
-		LOG_INF("qpanel: volume %d saved", v);
+		(void)aster_service_kv_set(QPANEL_KV_ID, QPANEL_KV_VOL, &raw, 1);
+		aster_service_logf(3,"qpanel: volume %d saved", v);
 	}
 }
 
@@ -448,7 +444,7 @@ static void vol_refresh(void)
 	if (lv_obj_has_state(s_vol_slider, LV_STATE_PRESSED)) {
 		return;
 	}
-	v = aster_plat_audio_get_volume();
+	v = aster_device_audio_get_volume();
 	if (v < 0) {
 		v = 0;
 	} else if (v > 100) {
@@ -468,13 +464,13 @@ void aster_qpanel_restore_volume(void)
 	/* kv lives on the SD card, so there is nothing to restore from until
 	 * it is up. The launcher's show path is the only caller and the only
 	 * place that runs on the UI thread knowing that. */
-	if (!aster_storage_mounted()) {
+	if (!aster_service_storage_mounted()) {
 		return;
 	}
-	if (aster_kv_get(QPANEL_KV_ID, QPANEL_KV_VOL, &raw, 1, &n) == 0 && n == 1 &&
+	if (aster_service_kv_get(QPANEL_KV_ID, QPANEL_KV_VOL, &raw, 1, &n) == 0 && n == 1 &&
 	    raw <= 100) {
-		(void)aster_plat_audio_set_volume((int)raw);
-		LOG_INF("qpanel: volume %u restored", (unsigned)raw);
+		(void)aster_device_audio_set_volume((int)raw);
+		aster_service_logf(3,"qpanel: volume %u restored", (unsigned)raw);
 	}
 }
 #else
@@ -507,11 +503,11 @@ static void wifi_refresh(void)
 	if (!s_wifi_lbl) {
 		return;
 	}
-	err = aster_plat_wifi_status(&ws);
-	linked = !err && ws.state == WIFI_STATE_COMPLETED;
+	err = aster_device_wifi_status(&ws);
+	linked = !err && ws.state == ASTER_PLAT_WIFI_STATE_COMPLETED;
 	/* -EBUSY while a join is in flight, and -ENOENT when the device has
 	 * never been told to join anything. Same reading either way here. */
-	remembered = aster_plat_wifi_last_ssid(last, sizeof(last)) == 0;
+	remembered = aster_device_wifi_last_ssid(last, sizeof(last)) == 0;
 
 	set_label(s_wifi_lbl, aster_ui_wifi_word(err ? -1 : ws.state));
 	dot_color(s_dot_wifi, linked ? s_pal.accent : s_pal.dim);
@@ -548,7 +544,7 @@ static void wifi_refresh(void)
 
 static void sd_refresh(void)
 {
-	bool mounted = aster_storage_mounted();
+	bool mounted = aster_service_storage_mounted();
 
 	if (!s_sd_lbl) {
 		return;
@@ -578,7 +574,7 @@ static void on_theme_btn(lv_event_t *e)
 		return;
 	}
 	i = (i + 1) % n;
-	LOG_INF("qpanel: theme -> %d of %d", i, n);
+	aster_service_logf(3,"qpanel: theme -> %d of %d", i, n);
 	s_ops->apply(i);
 	/* Nothing below may touch a widget: apply() asks the host to rebuild
 	 * its tree for the new palette, and that rebuild takes this sheet
@@ -751,9 +747,9 @@ static void build(void)
 
 #if IS_ENABLED(CONFIG_ASTER_AUDIO)
 	if (has_vol) {
-		lv_slider_set_value(s_vol_slider, aster_plat_audio_get_volume(),
+		lv_slider_set_value(s_vol_slider, aster_device_audio_get_volume(),
 				    LV_ANIM_OFF);
-		vol_show(aster_plat_audio_get_volume());
+		vol_show(aster_device_audio_get_volume());
 	}
 #endif
 #if IS_ENABLED(CONFIG_ASTER_WIFI)
@@ -771,7 +767,7 @@ static void build(void)
 static void on_exit_cancel(lv_event_t *e)
 {
  ARG_UNUSED(e);
- LOG_INF("return: cancelled");
+ aster_service_logf(3,"return: cancelled");
  aster_qpanel_dismiss();
 }
 static void on_exit_confirm(lv_event_t *e)
@@ -780,7 +776,7 @@ static void on_exit_confirm(lv_event_t *e)
  /* Runtime consumes this immediately after the LVGL tick. Keep the glass
   * held until normal app teardown; no guest frame can overwrite the modal. */
  s_exit_confirmed=true;
- LOG_INF("return: confirmed");
+ aster_service_logf(3,"return: confirmed");
 }
 bool aster_qpanel_request_exit(const char *name)
 {
@@ -817,7 +813,7 @@ bool aster_qpanel_request_exit(const char *name)
  lv_obj_t *yes=mk_button(s_sheet,26+bw,138,bw,42,"返回主页",on_exit_confirm,NULL);
  lv_obj_set_style_bg_color(yes,hexc(s_pal.accent),0);
  lv_obj_set_style_text_color(lv_obj_get_child(yes,0),hexc(0x211d28),0);
- LOG_INF("return: confirmation opened");return true;
+ aster_service_logf(3,"return: confirmation opened");return true;
 }
 bool aster_qpanel_exit_is_open(void) {return s_exit_mode && s_sheet;}
 bool aster_qpanel_take_exit_confirmed(void)
@@ -875,20 +871,20 @@ void aster_qpanel_open(aster_qpanel_host_t host)
 	if (s_sheet || !aster_ui_lvgl_screen()) {
 		return;
 	}
-	uint32_t open_start = k_uptime_get_32();
+	uint32_t open_start = aster_os_uptime32();
 	if (host == ASTER_QPANEL_OVER_APP && !snapshot_take()) {
 		return; /* refused: see snapshot_take */
 	}
-	uint32_t snap_ms = k_uptime_get_32() - open_start;
+	uint32_t snap_ms = aster_os_uptime32() - open_start;
 	build();
 	/* Armed only now that there is a sheet to shield, and only over an
 	 * app: the launcher's own tree is what repaints its band, and freezing
 	 * would stop nothing there anyway -- a guest present is not what puts
 	 * pixels back under the sheet. */
 	s_frozen = (host == ASTER_QPANEL_OVER_APP && s_sheet != NULL);
-	LOG_INF("qpanel: open%s (snapshot %u ms, build %u ms)",
+	aster_service_logf(3,"qpanel: open%s (snapshot %u ms, build %u ms)",
 		s_frozen ? " (over app)" : "", snap_ms,
-		k_uptime_get_32() - open_start - snap_ms);
+		aster_os_uptime32() - open_start - snap_ms);
 }
 
 void aster_qpanel_close(bool restore)
@@ -913,12 +909,12 @@ void aster_qpanel_close(bool restore)
 	if (s_frozen) {
 		if (restore) {
 			lv_refr_now(NULL); /* settle the invalidation above */
-			aster_plat_display_flush_drain();
+			aster_device_display_flush_drain();
 			glass_put_back();
 		}
 		s_frozen = false;
 	}
-	LOG_INF("qpanel: close");
+	aster_service_logf(3,"qpanel: close");
 }
 
 void aster_qpanel_on_app_stop(void)
@@ -953,7 +949,7 @@ void aster_qpanel_tick(void)
 	 * trips, not variable reads, so "how often" is the sheet's business and
 	 * not something two call sites should each have to remember. */
 	static uint32_t last_ms;
-	uint32_t now = (uint32_t)k_uptime_get();
+	uint32_t now = (uint32_t)aster_os_uptime_ms();
 
 	if (!s_sheet || s_exit_mode || (now - last_ms) < 1000u) {
 		return;

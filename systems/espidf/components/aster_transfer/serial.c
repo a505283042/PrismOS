@@ -2,6 +2,7 @@
 #include "transfer.h"
 #include "aster_storage.h"
 #include "aster_sysinfo.h"
+#include "aster_deploy.h"
 #include <aster/system.h>
 #include "esp_console.h"
 #include "driver/uart.h"
@@ -25,6 +26,13 @@ static int receive(void *context,uint8_t *data,size_t size)
 }
 static void reply(void *context,const char *line)
 {(void)context;printf("\n%s\n",line);fflush(stdout);}
+static void progress(void *context,unsigned phase,uint32_t done,uint32_t total,int error)
+{
+    (void)context;
+    if(error){aster_deploy_finish(error);return;}
+    static const aster_deploy_phase phases[]={ASTER_DEPLOY_RECEIVE,ASTER_DEPLOY_VERIFY,ASTER_DEPLOY_RECEIVED};
+    if(phase<3)aster_deploy_update(phases[phase],done,total,NULL);
+}
 static int put(int argc,char **argv)
 {
     /* The SDK sender waits for ACK before sending a byte. While this handler
@@ -42,7 +50,8 @@ static int put(int argc,char **argv)
         if(!argv[i][0] || argv[i][0]=='-' || *end || errno || value>UINT32_MAX){reply(NULL,"ERR -22");return 0;}
         values[i-2]=(uint32_t)value;
     }
-    const aster_transfer_io_t io={receive,reply,NULL};
+    aster_deploy_begin(argv[1],values[0],values[2]);
+    const aster_transfer_io_t io={receive,reply,NULL,progress};
     int result=aster_transfer_receive(path,values[0],values[1],values[2],&io);
     if(result)uart_flush_input(CONFIG_ESP_CONSOLE_UART_NUM);
     return 0;

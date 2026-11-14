@@ -39,6 +39,7 @@ static bool has_touch(void) { return io.touch || io.touch_frame; }
 static uint32_t touch_capacity(void) {
     return io.touch_frame ? io.max_touch_points : (io.touch ? 1 : 0);
 }
+uint32_t aster_idf_touch_capacity(void) {return touch_capacity();}
 uint32_t aster_idf_touch_mask(void) { return delivered_mask; }
 bool aster_idf_touch_pending(void) { return touch_next < touch_count; }
 void aster_idf_graphics_reset_touch(void) {

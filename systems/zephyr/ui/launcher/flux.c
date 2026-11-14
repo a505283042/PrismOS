@@ -1,12 +1,12 @@
+#include "aster_services.h"
+#include "aster_port_util.h"
+#include "aster_os.h"
+#include "aster_device.h"
 /* SPDX-License-Identifier: MIT
  * FLUX Rev.04, native LVGL port of the supplied 320x480 design.
  * Widget, registry and filesystem mutations run only on the UI worker.
  * Icons keep their original RGB565/A8 planes; only five ribbons are resident.
  */
-#include <zephyr/kernel.h>
-#include <zephyr/fs/fs.h>
-#include <zephyr/logging/log.h>
-#include <zephyr/sys/util.h>
 #include <lvgl.h>
 #include <aster/icon.h>
 #include <aster/event.h>
@@ -25,17 +25,10 @@
 #include "gesture.h"
 #include "touch_ui.h"
 #include "aster_platform.h"
-#include "aster_app_mgr.h"
-#include "aster_runtime.h"
-#include "aster_storage.h"
-#include "aster_mem.h"
-#include "aster_kv.h"
 #include <aster/font_metrics.h>
-#include "aster_time.h"
 #if defined(CONFIG_ASTER_FIRST_BOOT)
 #include "setup_ui.h"
 #endif
-LOG_MODULE_REGISTER(aster_flux, LOG_LEVEL_INF);
 #include "flux_icons.inc"
 #include "flux_motion.h"
 #include "flux_sounds.inc"
@@ -45,7 +38,7 @@ LOG_MODULE_REGISTER(aster_flux, LOG_LEVEL_INF);
 #define ACCENT 0xd8ff8c
 #define DIM 0xa0ae92
 #define INK 0x211d28
-#define MAX_ENTRIES (ASTER_APP_MAX_RECS + 4)
+#define MAX_ENTRIES (ASTER_SERVICE_MAX_APPS + 4)
 #define RIBBONS 5
 #define FLUX_FRAME_MS 16
 #define KV_ID "aster.launcher.flux"
@@ -63,7 +56,7 @@ enum { ICON_SETTINGS, ICON_LEFT, ICON_RIGHT, ICON_CLOCK, ICON_FILES,
 typedef struct {
  char id[64], name[40];
  const char *code;
- char description[ASTER_APP_DESCRIPTION_MAX];
+ char description[ASTER_SERVICE_DESCRIPTION_MAX];
  uint32_t color;
  uint8_t group, builtin, icon;
 } entry_t;
@@ -184,11 +177,11 @@ static bool sound_return, sound_launch_started;
 static int sound_pending=-1;
 static void sound_play(int which, int speed)
 {
- if(quiet || volume_pending==0 || !aster_plat_audio_get_volume()) {
-  aster_plat_audio_ui_stop();return;
+ if(quiet || volume_pending==0 || !aster_device_audio_get_volume()) {
+  aster_device_audio_ui_stop();return;
  }
  const int16_t *pcm;size_t frames;unsigned gain=1000;
- uint64_t now=k_uptime_get();
+ uint64_t now=aster_os_uptime_ms();
  if(which==S_TICK) {
   unsigned velocity=abs(speed);
   if(sound_tick_ms && now-sound_tick_ms<(velocity>650?160:95)) return;
@@ -201,7 +194,7 @@ static void sound_play(int which, int speed)
 #undef SOUND_CASE
  default:return;
  }
- int err=aster_plat_audio_ui_play(pcm,frames,gain,which==S_TICK?0:1);
+ int err=aster_device_audio_ui_play(pcm,frames,gain,which==S_TICK?0:1);
  if(!err && which==S_TICK) sound_tick_ms=now;
 }
 
@@ -265,7 +258,7 @@ static lv_obj_t *icon(lv_obj_t *parent,int number,int x,int y,int size,uint32_t 
 static void clicked(lv_event_t *e)
 {
  action=(int)(intptr_t)lv_event_get_user_data(e);
- LOG_INF("flux: action %d",action);
+ aster_service_logf(3,"flux: action %d",action);
 }
 static lv_obj_t *button(lv_obj_t *parent,const char *label,int x,int y,int w,int h,uint32_t color,int act)
 {
@@ -284,7 +277,7 @@ static void notify(const char *value)
  if(toast) lv_obj_delete(toast);
  toast=box(root,22,343,276,48,ACCENT,9);
  text(toast,value,12,13,252,0x354324,16,220);
- toast_until=k_uptime_get()+2200;
+ toast_until=aster_os_uptime_ms()+2200;
 }
 static int nearest(int p) {return (p+(p<0?-500:500))/1000;}
 static int wrap(int i,int n) { return n?((i%n)+n)%n:0; }
@@ -300,31 +293,33 @@ static entry_t *current(void) { return count?&entries[ids[wrap(selected[group],c
 static void save_now(void)
 {
  uint8_t state[]={group,selected[0],selected[1],selected[2],selected[3],brightness,motion,quiet};
- (void)aster_kv_set(KV_ID,"state",state,sizeof(state));
+ (void)aster_service_kv_set(KV_ID,"state",state,sizeof(state));
  save_due=0;
 }
 /* Coalesce preference writes until the gesture and settling finish. */
-static void save(void) {save_due=k_uptime_get()+750;}
+static void save(void) {save_due=aster_os_uptime_ms()+750;}
 static void read_entries(void)
 {
  entry_n=0;
  /* Known IDs retain theme ordering/colors; all application names and
   * introductions belong to package metadata, including known IDs. */
  for(size_t k=0;k<ARRAY_SIZE(known);k++) {
-  const aster_app_rec_t *r=aster_app_mgr_find(known[k].id);
-  if(!r) continue;
+  aster_service_app_t rec;
+  if(!aster_service_app_find(known[k].id,&rec)) continue;
+  const aster_service_app_t *r=&rec;
   entry_t *e=&entries[entry_n++];memset(e,0,sizeof(*e));
-  snprintf(e->id,sizeof(e->id),"%s",r->id);snprintf(e->name,sizeof(e->name),"%s",r->name);
-  e->code=known[k].code;snprintf(e->description,sizeof(e->description),"%s",r->description);e->color=known[k].color;e->group=known[k].group;e->icon=ICON_BOX;
+  snprintf(e->id,sizeof(e->id),"%.*s",(int)sizeof(e->id)-1,r->id);snprintf(e->name,sizeof(e->name),"%.*s",(int)sizeof(e->name)-1,r->name);
+  e->code=known[k].code;snprintf(e->description,sizeof(e->description),"%.*s",(int)sizeof(e->description)-1,r->description);e->color=known[k].color;e->group=known[k].group;e->icon=ICON_BOX;
  }
- for(int i=0;i<aster_app_mgr_count() && entry_n<MAX_ENTRIES-4;i++) {
-  const aster_app_rec_t *r=aster_app_mgr_get(i);if(!r) continue;
+ for(int i=0;i<aster_service_app_count() && entry_n<MAX_ENTRIES-4;i++) {
+  aster_service_app_t rec;if(!aster_service_app_snapshot(i,&rec)) continue;
+  const aster_service_app_t *r=&rec;
   bool present=false;for(int j=0;j<entry_n;j++) if(!strcmp(entries[j].id,r->id)) present=true;
   if(present) continue;
   entry_t *e=&entries[entry_n++];memset(e,0,sizeof(*e));
-  snprintf(e->id,sizeof(e->id),"%s",r->id);snprintf(e->name,sizeof(e->name),"%s",r->name);
+  snprintf(e->id,sizeof(e->id),"%.*s",(int)sizeof(e->id)-1,r->id);snprintf(e->name,sizeof(e->name),"%.*s",(int)sizeof(e->name)-1,r->name);
   e->group=!strcmp(r->category,"game")?2:3;e->code=e->group==2?"PLAY":"LOCAL APP";
-  snprintf(e->description,sizeof(e->description),"%s",r->description);e->color=0xd8c0ff;e->icon=ICON_BOX;
+  snprintf(e->description,sizeof(e->description),"%.*s",(int)sizeof(e->description)-1,r->description);e->color=0xd8c0ff;e->icon=ICON_BOX;
  }
  const entry_t builtin[]={
   {.id="files",.name="文件",.code="STORAGE",.description="每一份收藏，都有它的位置。",.color=0x8fbfff,.group=3,.builtin=FILES,.icon=ICON_FILES},
@@ -370,7 +365,7 @@ static void ribbon_art_drop(lv_draw_buf_t *art)
 {
  if(!art) return;
  aster_flux_draw_forget(art->data);
- aster_psram_free(art->unaligned_data);
+ aster_os_free_external(art->unaligned_data);
  lv_free(art);
 }
 #if CONFIG_ASTER_FLUX_ART_CACHE > 0
@@ -427,13 +422,13 @@ static lv_draw_buf_t *ribbon_bake(lv_obj_t *obj)
  if(w<=0 || h<=0) return NULL;
  stride=lv_draw_buf_width_to_stride((uint32_t)w,LV_COLOR_FORMAT_RGB565);
  bytes=(size_t)stride*(size_t)h;
- px=aster_psram_alloc(bytes);
+ px=aster_os_alloc_external(bytes);
  db=lv_malloc_zeroed(sizeof(*db));
  if(!px || !db ||
     lv_draw_buf_init(db,(uint32_t)w,(uint32_t)h,LV_COLOR_FORMAT_RGB565,stride,px,(uint32_t)bytes)!=LV_RESULT_OK ||
     lv_snapshot_take_to_draw_buf(obj,LV_COLOR_FORMAT_RGB565,db)!=LV_RESULT_OK) {
-  LOG_WRN("ribbon bake failed (%dx%d)",(int)w,(int)h);
-  aster_psram_free(px);
+  aster_service_logf(2,"ribbon bake failed (%dx%d)",(int)w,(int)h);
+  aster_os_free_external(px);
   if(db) lv_free(db);
   return NULL;
  }
@@ -443,26 +438,26 @@ static void release_icon(int i)
 {
  if(ribbons[i].art) {ribbon_art_drop(ribbons[i].art);ribbons[i].art=NULL;}
  if(ribbons[i].data) {
-  aster_psram_free(ribbons[i].data);ribbons[i].data=NULL;
+  aster_os_free_external(ribbons[i].data);ribbons[i].data=NULL;
  }
 }
 static bool load_icon_locked(int i,const char *id)
 {
- char dir[192],path[224];struct fs_dirent st;struct fs_file_t f;
- if(aster_storage_app_code_dir(dir,sizeof(dir),id))return false;
+ char dir[192],path[224];aster_os_entry_t st;aster_os_file_t f;
+ if(aster_service_app_code_dir(dir,sizeof(dir),id))return false;
  snprintf(path,sizeof(path),"%s/icon.bin",dir);
- if(fs_stat(path,&st) || st.size<ASTER_ICON_HDR_SIZE || st.size>65536) return false;
- uint8_t *data=aster_psram_alloc(st.size);if(!data) return false;
- fs_file_t_init(&f);int err=fs_open(&f,path,FS_O_READ);
- if(!err) {err=aster_fs_read_safe(&f,data,st.size);fs_close(&f);}
+ if(aster_os_stat(path,&st) || st.size<ASTER_ICON_HDR_SIZE || st.size>65536) return false;
+ uint8_t *data=aster_os_alloc_external(st.size);if(!data) return false;
+ aster_os_file_init(&f);int err=aster_os_file_open(&f,path,ASTER_OS_READ);
+ if(!err) {err=aster_os_file_read(&f,data,st.size);aster_os_file_close(&f);}
  aster_icon_hdr_t h;
  if(err<0 || (size_t)err!=st.size || aster_icon_parse(data,st.size,&h) || h.w>128 || h.h>128) {
-  aster_psram_free(data);return false;
+  aster_os_free_external(data);return false;
  }
  lv_color_format_t format=h.cf==ASTER_ICON_CF_A8?LV_COLOR_FORMAT_A8:
   h.cf==ASTER_ICON_CF_RGB565?LV_COLOR_FORMAT_RGB565:
   h.cf==ASTER_ICON_CF_RGB565A8?LV_COLOR_FORMAT_RGB565A8:LV_COLOR_FORMAT_UNKNOWN;
- if(format==LV_COLOR_FORMAT_UNKNOWN) {aster_psram_free(data);return false;}
+ if(format==LV_COLOR_FORMAT_UNKNOWN) {aster_os_free_external(data);return false;}
  ribbons[i].data=data;
  ribbons[i].icon=(lv_image_dsc_t){.header={.magic=LV_IMAGE_HEADER_MAGIC,.cf=format,.w=h.w,.h=h.h,.stride=h.w*(h.cf==ASTER_ICON_CF_A8?1:2)},.data_size=h.data_size,.data=data+ASTER_ICON_HDR_SIZE};
  return true;
@@ -471,9 +466,9 @@ static bool load_icon(int i,const char *id)
 {
  /* Keep an icon read on the generation selected by the registry, including
   * the short interval in which an installer publishes and rescans. */
- aster_app_mgr_files_lock();
+ aster_service_files_lock();
  bool loaded=load_icon_locked(i,id);
- aster_app_mgr_files_unlock();
+ aster_service_files_unlock();
  return loaded;
 }
 
@@ -635,7 +630,7 @@ static void redraw(void)
  }
  ribbon_order(index);
  lv_obj_set_x(handle,ax(3+MIN(230,pull)));
- last_draw=k_uptime_get();
+ last_draw=aster_os_uptime_ms();
  aster_ui_lvgl_request_frame();
 }
 static void settle(int target)
@@ -643,7 +638,7 @@ static void settle(int target)
  selected[group]=wrap(nearest(target),count);
  from_phase=phase;target_phase=phase+distance(selected[group],phase,count);
  from_pull=pull;scroll_duration=FLUX_SNAP_MS;coasting=false;
- animation_ms=k_uptime_get();animating=motion && (target_phase!=phase || pull!=0);caption();save();
+ animation_ms=aster_os_uptime_ms();animating=motion && (target_phase!=phase || pull!=0);caption();save();
  if(!motion) {phase=target_phase;pull=0;draw_pending=true;}
 }
 static void release_scroll(uint64_t now)
@@ -653,7 +648,7 @@ static void release_scroll(uint64_t now)
  from_phase=phase;target_phase=p.target;from_pull=pull;
  scroll_duration=p.duration;animation_ms=now;coasting=true;animating=true;
  selected[group]=wrap(nearest(phase),count);caption();save();
- LOG_INF("flux coast: speed=%d px/s travel=%d duration=%u ms",drag.track.speed,target_phase-from_phase,scroll_duration);
+ aster_service_logf(3,"flux coast: speed=%d px/s travel=%d duration=%u ms",drag.track.speed,target_phase-from_phase,scroll_duration);
 }
 static void slider_changed(lv_event_t *e)
 {
@@ -686,7 +681,7 @@ static void slider_card(int y,const char *name,const char *hint,uint32_t color,i
 }
 static void build_home(void)
 {
- bool lckfb=IS_ENABLED(CONFIG_ASTER_HW_LCKFB_S3);
+ bool lckfb=(view_w<320);
  text(body,"流光",16,0,110,FG,20,320);
  lv_obj_t *filter=button(body,NULL,lckfb?236:250,lckfb?0:8,lckfb?68:53,lckfb?36:25,0x22261f,ACT_FILTERS);
  lv_obj_set_style_border_width(filter,1,0);lv_obj_set_style_border_color(filter,lv_color_hex(0x394330),0);
@@ -765,7 +760,7 @@ static void build_mixer(void)
   if(i==1) lv_obj_clear_flag(b,LV_OBJ_FLAG_CLICKABLE);
  }
  slider_card(172,"光","屏幕亮度",ACCENT,brightness,0);
- int volume=volume_pending>=0?volume_pending:aster_plat_audio_get_volume();slider_card(297,"声","输出音量",0xffb8a5,MAX(0,volume),1);
+ int volume=volume_pending>=0?volume_pending:aster_device_audio_get_volume();slider_card(297,"声","输出音量",0xffb8a5,MAX(0,volume),1);
  icon(body,ICON_BATTERY,17,420,15,DIM);
  text(body,"USB 供电",38,422,220,DIM,16,160);
  lv_obj_t *settings=button(body,NULL,273,413,30,27,0x252d22,ACT_SYSTEM);
@@ -775,26 +770,27 @@ static void build_files(void)
 {
  text(body,"LOCAL STORAGE",17,15,280,DIM,16,128);
  text(body,"文件",17,38,286,FG,20,320);
- text(body,aster_storage_mounted()?"SD 卡 /SD:":"SD 卡未挂载",17,85,286,DIM,16,256);
+ text(body,aster_service_storage_mounted()?"SD 卡 /SD:":"SD 卡未挂载",17,85,286,DIM,16,256);
  lv_obj_t *list=box(body,17,125,286,295,0x191d1a,12);
  lv_obj_add_flag(list,LV_OBJ_FLAG_SCROLLABLE);lv_obj_set_scroll_dir(list,LV_DIR_VER);
- struct fs_dir_t d;fs_dir_t_init(&d);int row=0;
- if(!fs_opendir(&d,"/SD:")) {
-  struct fs_dirent ent;
-  while(row<24 && !fs_readdir(&d,&ent) && ent.name[0]) {
-   char line[sizeof(ent.name)+16];snprintf(line,sizeof(line),"%s  %s",ent.type==FS_DIR_ENTRY_DIR?"+":"·",ent.name);
+ aster_os_dir_t d;aster_os_dir_init(&d);int row=0;
+ if(!aster_os_dir_open(&d,"/SD:")) {
+  aster_os_entry_t ent;
+  while(row<24 && !aster_os_dir_read(&d,&ent) && ent.name[0]) {
+   char line[sizeof(ent.name)+16];snprintf(line,sizeof(line),"%s  %s",ent.type==ASTER_OS_DIRECTORY?"+":"·",ent.name);
    text(list,line,12,12+row++*32,262,FG,16,220);
   }
-  fs_closedir(&d);
+  aster_os_dir_close(&d);
  }
  if(!row) text(list,"没有可读取的文件。",12,18,262,DIM,16,220);
 }
 static void build_system(void)
 {
+ aster_system_info_t profile={0};(void)aster_service_system_info(&profile);
  text(body,"SYSTEM / ASTER",17,15,280,DIM,16,128);
  text(body,"设备与运行状态",17,38,286,FG,20,280);
  char info[480];
- snprintf(info,sizeof(info),"%s\n\n显示   %u × %u\nABI     3.8.0\n应用   %d 个已安装\nSD       %s\n运行   %llu 秒\n\n启动与错误日志通过 USB shell 查看。",CONFIG_ASTER_BOARD_ID,(unsigned)aster_ui_lvgl_width(),(unsigned)aster_ui_lvgl_height(),aster_app_mgr_count(),aster_storage_mounted()?"已挂载":"未挂载",(unsigned long long)(k_uptime_get()/1000));
+ snprintf(info,sizeof(info),"%s\n\n显示   %u × %u\nABI     %u.%u.%u\n应用   %d 个已安装\nSD       %s\n运行   %llu 秒\n\n启动与错误日志通过 USB shell 查看。",profile.board,(unsigned)aster_ui_lvgl_width(),(unsigned)aster_ui_lvgl_height(),(unsigned)(profile.abi_version>>16),(unsigned)((profile.abi_version>>8)&255),(unsigned)(profile.abi_version&255),aster_service_app_count(),aster_service_storage_mounted()?"已挂载":"未挂载",(unsigned long long)(aster_os_uptime_ms()/1000));
  text(body,info,17,100,286,FG,16,256);
 }
 static void show_page(int next)
@@ -825,8 +821,8 @@ static void open_current(void)
 {
  entry_t *e=current();if(!e) return;
  if(e->builtin) {prior_page=HOME;show_page(e->builtin);return;}
- int err=aster_runtime_launch_async(e->id);
- LOG_INF("flux: launch %s -> %d",e->id,err);
+ int err=aster_service_app_start(e->id);
+ aster_service_logf(3,"flux: launch %s -> %d",e->id,err);
  if(err) {launching=false;pull=0;notify("应用启动失败，请查看日志。 ");redraw();}
 }
 static void removal(void)
@@ -841,7 +837,7 @@ static void removal(void)
  text(card,"应用和目录数据将删除。\n此操作无法撤销。",16,108,254,DIM,16,230);
  button(card,"取消",16,190,118,43,0x343e2b,ACT_CANCEL);
  button(card,"卸载",151,190,118,43,0x5d3933,ACT_UNINSTALL);
- LOG_INF("flux: uninstall prompt %s",remove_id);
+ aster_service_logf(3,"flux: uninstall prompt %s",remove_id);
 }
 static int ribbon_hit(int x,int y)
 {
@@ -895,7 +891,7 @@ static void touch(const aster_touch_evt_t *raw)
    drag.down=true;drag.handle=e->y>=404;drag.x=e->x;drag.y=e->y;
    drag.hit=drag.handle?-1:ribbon_hit(raw->x,raw->y);
    drag.stopped=animating && !drag.handle;
-   drag.base=phase;drag.started=k_uptime_get();animating=false;coasting=false;
+   drag.base=phase;drag.started=aster_os_uptime_ms();animating=false;coasting=false;
    selected[group]=wrap(nearest(phase),count);caption();
    flux_velocity_reset(&drag.track,e->y,drag.started);
   }
@@ -909,7 +905,7 @@ static void touch(const aster_touch_evt_t *raw)
  if(!drag.handle && drag.axis==3 && abs(dy)>=6) drag.axis=2;
  if(!drag.blocked) {
   if(drag.axis==2) {
-   flux_velocity_sample(&drag.track,e->y,k_uptime_get());
+   flux_velocity_sample(&drag.track,e->y,aster_os_uptime_ms());
    phase=drag.base-dy*1000/FLUX_RIBBON_PITCH;
    {int sel=wrap(nearest(phase),count);
     if(sel!=selected[group]) {selected[group]=sel;caption();}}
@@ -919,11 +915,11 @@ static void touch(const aster_touch_evt_t *raw)
  if(!pressed) {
   if(!drag.blocked) {
    if(drag.axis==2) {
-    release_scroll(k_uptime_get());
+    release_scroll(aster_os_uptime_ms());
    } else if(drag.handle && drag.axis==1 && dx>95 && abs(dy)<24) {
-    launching=true;animation_ms=k_uptime_get();from_pull=pull;
+    launching=true;animation_ms=aster_os_uptime_ms();from_pull=pull;
    } else if(drag.moved || drag.stopped) settle(nearest(phase)*1000);
-   else if(k_uptime_get()-drag.started>300) settle(nearest(phase)*1000);
+   else if(aster_os_uptime_ms()-drag.started>300) settle(nearest(phase)*1000);
    else if(drag.handle) action=ACT_OPEN;
    else {
     if(drag.hit>=0 && ribbon_hit(raw->x,raw->y)==drag.hit) {
@@ -936,14 +932,14 @@ static void touch(const aster_touch_evt_t *raw)
 }
 static void tick_clock(void)
 {
- uint64_t sec=k_uptime_get()/1000;if(sec==clock_sec) return;clock_sec=sec;
+ uint64_t sec=aster_os_uptime_ms()/1000;if(sec==clock_sec) return;clock_sec=sec;
  aster_time_info_t t={0};char value[48];
- if(!aster_time_read(&t)) snprintf(value,sizeof(value),"%02u:%02u",(unsigned)t.hour,(unsigned)t.minute);
+ if(!aster_os_wall_clock(&t)) snprintf(value,sizeof(value),"%02u:%02u",(unsigned)t.hour,(unsigned)t.minute);
  else snprintf(value,sizeof(value),"--:--");
  set_text(bar_time,value);set_text(clock_value,value);
  snprintf(value,sizeof(value),"%04d-%02u-%02u%s",(int)t.year,(unsigned)t.month,(unsigned)t.day,(t.flags&ASTER_TIME_FLAG_SYNCED)?"":" · 默认时间");set_text(clock_date,value);
  if(wifi_state) {
-  aster_wifi_status_t s={0};int err=aster_plat_wifi_status(&s);
+  aster_wifi_status_t s={0};int err=aster_device_wifi_status(&s);
   set_text(wifi_state,err || !s.ip[0]?"未连接":"已连接");
  }
 }
@@ -977,9 +973,9 @@ int aster_launcher_init(void)
   chrome[face][i]=(lv_image_dsc_t){.header={.magic=LV_IMAGE_HEADER_MAGIC,.cf=LV_COLOR_FORMAT_A8,.w=px,.h=px,.stride=px},.data_size=px*px,.data=flux_icon_data[face][i]};
  }
  for(int i=0;i<RIBBONS;i++) ribbons[i].entry=-1;
- aster_app_mgr_set_change_cb(aster_launcher_on_registry_change);aster_qpanel_bind_theme(&theme);
+ aster_service_registry_callback(aster_launcher_on_registry_change);aster_qpanel_bind_theme(&theme);
  uint8_t s[8];size_t n=0;
- if(!aster_kv_get(KV_ID,"state",s,sizeof(s),&n) && n==sizeof(s)) {
+ if(!aster_service_kv_get(KV_ID,"state",s,sizeof(s),&n) && n==sizeof(s)) {
   group=MIN(s[0],3);for(int i=0;i<4;i++) selected[i]=s[i+1];brightness=CLAMP(s[5],25,100);motion=s[6]!=0;quiet=s[7]!=0;
  }
  return 0;
@@ -988,7 +984,7 @@ void aster_launcher_show(void)
 {
  if(visible || !aster_ui_lvgl_screen()) return;
  aster_launcher_init();aster_touch_ui_reset(&launcher_touch_ui);aster_qpanel_force_close();aster_gesture_reset();
- if(aster_plat_display_orientation_get()!=ASTER_ORIENT_PORTRAIT) (void)aster_plat_display_orientation_set(ASTER_ORIENT_PORTRAIT);
+ if(aster_device_display_orientation_get()!=ASTER_ORIENT_PORTRAIT) (void)aster_device_display_orientation_set(ASTER_ORIENT_PORTRAIT);
  aster_ui_lvgl_resync_window();
  view_w=(int)aster_ui_lvgl_width();view_h=(int)aster_ui_lvgl_height();
  if(view_w<1) view_w=320;
@@ -1004,7 +1000,7 @@ void aster_launcher_show(void)
  icon(back,ICON_LEFT,9,7,14,FG);
  text(back,"收回",29,6,40,FG,16,256);
  lv_obj_set_style_bg_opa(back,LV_OPA_TRANSP,0);
- bool lckfb=IS_ENABLED(CONFIG_ASTER_HW_LCKFB_S3);
+ bool lckfb=(view_w<320);
  lv_obj_t *brand_name=text(bar,"aster",lckfb?36:32,lckfb?0:11,105,0xd4e6b2,16,lckfb?288:192);
  lv_obj_t *brand_mark=icon(bar,ICON_ASTER,15,lckfb?0:13,lckfb?18:12,0xd4e6b2);
  if(lckfb) {
@@ -1018,12 +1014,12 @@ void aster_launcher_show(void)
  }
  body=NULL;show_page(HOME);tick_clock();
  aster_qpanel_restore_volume();brightness_pending=brightness;
- saved_volume=aster_plat_audio_get_volume();
+ saved_volume=aster_device_audio_get_volume();
  if(quiet) volume_pending=0;
  sound_entry=current()?(int)(current()-entries):-1;sound_group=group;
- sound_phase=phase;sound_sample_ms=k_uptime_get();sound_launch_started=false;
+ sound_phase=phase;sound_sample_ms=aster_os_uptime_ms();sound_launch_started=false;
  if(sound_return) {sound_pending=S_CLOSE;sound_return=false;}
- LOG_INF("FLUX Rev.04: 320x480, %d entries (%d installed)",entry_n,aster_app_mgr_count());
+ aster_service_logf(3,"FLUX Rev.04: 320x480, %d entries (%d installed)",entry_n,aster_service_app_count());
 }
 void aster_launcher_hide(void)
 {
@@ -1032,7 +1028,7 @@ void aster_launcher_hide(void)
  aster_ui_lvgl_pointer(launcher_touch_x,launcher_touch_y,false);
  aster_touch_ui_reset(&launcher_touch_ui);
  aster_qpanel_force_close();save_now();aster_gesture_reset();
- aster_plat_audio_ui_release();
+ aster_device_audio_ui_release();
  lv_obj_clean(aster_ui_lvgl_screen());
  for(int i=0;i<RIBBONS;i++) {release_icon(i);ribbons[i].obj=NULL;}
  ribbon_cache_clear();
@@ -1049,7 +1045,7 @@ uint32_t aster_launcher_idle_wait_ms(void)
 }
 void aster_launcher_pump_idle(void)
 {
- if(!aster_plat_display_count()) return;
+ if(!aster_device_display_count()) return;
 #if defined(CONFIG_ASTER_FIRST_BOOT)
  if(aster_setup_ui_tick())return;
 #endif
@@ -1064,7 +1060,7 @@ void aster_launcher_pump_idle(void)
   lv_obj_invalidate(aster_ui_lvgl_screen());
  }
  if(!visible && want_show) {
-  uint64_t now=k_uptime_get();if(!hold_ms) hold_ms=now?now:1;
+  uint64_t now=aster_os_uptime_ms();if(!hold_ms) hold_ms=now?now:1;
   /* Stay on the splash until the SD face can accept a warm, the installed
    * names and descriptions have been queued, and those bitmaps have landed.
    * Marking the catalog warm before the face is READY used to skip the
@@ -1081,7 +1077,7 @@ void aster_launcher_pump_idle(void)
  if(!visible) return;
  if(dirty && !modal) {aster_launcher_hide();sound_return=false;aster_launcher_show();}
  aster_touch_evt_t events[ASTER_PLAT_TOUCH_EVENT_QUEUE];
- int n=aster_plat_input_poll(events,ARRAY_SIZE(events));
+ int n=aster_device_input_poll(events,ARRAY_SIZE(events));
  uint32_t masks[ASTER_PLAT_TOUCH_EVENT_QUEUE];
  for(int i=0;i<n;i++) masks[i]=events[i].contact_mask;
  aster_touch_ui_begin_batch(&launcher_touch_ui,masks,(uint8_t)n);
@@ -1100,8 +1096,8 @@ void aster_launcher_pump_idle(void)
    touch(&events[i]);
   }
  }
- aster_key_evt_t keys[ASTER_PLAT_MAX_KEYS];while(aster_plat_input_keys_poll(keys,ASTER_PLAT_MAX_KEYS)>0) {}
- uint64_t now=k_uptime_get();
+ aster_key_evt_t keys[ASTER_PLAT_MAX_KEYS];while(aster_device_input_keys_poll(keys,ASTER_PLAT_MAX_KEYS)>0) {}
+ uint64_t now=aster_os_uptime_ms();
  if(drag.down && !drag.moved && !drag.handle && !drag.blocked && now-drag.started>=650 && drag.hit==selected[group] && current() && !current()->builtin) {
   drag.blocked=true;removal();
  }
@@ -1116,14 +1112,14 @@ void aster_launcher_pump_idle(void)
  else if(a==ACT_WIFI) {aster_wifi_settings_open(root,NULL);sound_pending=S_TAP;}
  else if(a==ACT_QUIET) {
   quiet=!quiet;
-  if(quiet) {saved_volume=aster_plat_audio_get_volume();volume_pending=0;} else volume_pending=saved_volume;
-  if(quiet) aster_plat_audio_ui_stop();else sound_pending=S_TAP;
+  if(quiet) {saved_volume=aster_device_audio_get_volume();volume_pending=0;} else volume_pending=saved_volume;
+  if(quiet) aster_device_audio_ui_stop();else sound_pending=S_TAP;
   show_page(MIXER);save();
  } else if(a==ACT_MOTION) {motion=!motion;save();sound_pending=S_TAP;}
  else if(a==ACT_CANCEL && modal) {lv_obj_delete(modal);modal=NULL;}
  else if(a==ACT_UNINSTALL && modal) {
   char id[64];snprintf(id,sizeof(id),"%s",remove_id);lv_obj_delete(modal);modal=NULL;
-  int err=aster_app_mgr_uninstall(id);LOG_INF("flux: uninstall %s -> %d",id,err);
+  int err=aster_service_app_uninstall(id);aster_service_logf(3,"flux: uninstall %s -> %d",id,err);
   if(err) notify("卸载失败，请查看系统日志。");
  }
  if(want_page>=0) {int p=want_page;want_page=-1;show_page(p);}
@@ -1149,11 +1145,11 @@ void aster_launcher_pump_idle(void)
   if(t==1000) {launching=false;pull=0;open_current();}
  }
  if(draw_pending) redraw();
- if(brightness_pending>=0) {(void)aster_plat_backlight_set(true,brightness_pending*255/100);brightness_pending=-1;}
- if(volume_pending>=0) {(void)aster_plat_audio_set_volume(volume_pending);volume_pending=-1;}
+ if(brightness_pending>=0) {(void)aster_device_backlight_set(true,brightness_pending*255/100);brightness_pending=-1;}
+ if(volume_pending>=0) {(void)aster_device_audio_set_volume(volume_pending);volume_pending=-1;}
  if(volume_save) {
-  uint8_t value=CLAMP(aster_plat_audio_get_volume(),0,100);
-  (void)aster_kv_set("aster.qpanel","volume",&value,1);volume_save=false;
+  uint8_t value=CLAMP(aster_device_audio_get_volume(),0,100);
+  (void)aster_service_kv_set("aster.qpanel","volume",&value,1);volume_save=false;
  }
  int sound_now=current()?(int)(current()-entries):-1;
  if(sound_pending>=0) {sound_play(sound_pending,0);sound_pending=-1;}

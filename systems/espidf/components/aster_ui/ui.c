@@ -10,6 +10,8 @@
 #include "qpanel.h"
 #include "wifi_settings.h"
 #include "aster_setup.h"
+#include "aster_deploy.h"
+#include "aster_deploy_ui.h"
 #include "gesture.h"
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
@@ -213,12 +215,13 @@ int aster_idf_ui_init(int (*launch)(const char *))
 void aster_idf_ui_idle(void)
 {
     if(!display)return;
+    if(aster_deploy_ui_tick())return;
     perf_tick();uint64_t start=esp_timer_get_time();aster_launcher_pump_idle();
     uint32_t us=(uint32_t)(esp_timer_get_time()-start);perf.pump_us+=us;
     if(us>perf.max_pump_us)perf.max_pump_us=us;
 }
 void aster_idf_ui_before_app(void)
-{bench_end=bench_warm=0;app_active=true;aster_launcher_hide();aster_qpanel_force_close();aster_gesture_reset();aster_launcher_app_touch_cancel();}
+{aster_deploy_snapshot s;if(aster_deploy_get(&s))aster_deploy_dismiss(s.generation);aster_deploy_ui_close();bench_end=bench_warm=0;app_active=true;aster_launcher_hide();aster_qpanel_force_close();aster_gesture_reset();aster_launcher_app_touch_cancel();}
 void aster_idf_ui_after_app(void)
 {app_active=false;aster_qpanel_on_app_stop();aster_launcher_request_show();}
 

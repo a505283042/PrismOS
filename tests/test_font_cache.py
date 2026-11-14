@@ -7,30 +7,37 @@ from test_waveshare import ROOT, run_c
 class SparseCache(unittest.TestCase):
     def test_unchanged_app_caption_does_not_request_another_warm(self):
         s = (ROOT / 'systems/zephyr/ui/launcher/flux.c').read_text()
-        helper = s[s.index('static void set_sd_text'):s.index('static void caption(void)')]
+        helper = s[s.index('static void set_label_text'):s.index('static lv_obj_t *icon(')]
         run_c(r'''
 #include <assert.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
 typedef struct {int px;} lv_font_t;
-typedef struct {const char *text;const lv_font_t *font;} lv_obj_t;
-static lv_font_t placeholder={0},generic={16};
-static int ready,warm_calls;
-static const lv_font_t *aster_ui_font(int px) {assert(px==16);return ready?&generic:&placeholder;}
+typedef struct {const char *text;const lv_font_t *font;uintptr_t spec;} lv_obj_t;
+static lv_font_t generic={0};
+static int warm_calls;
+static const lv_font_t *aster_ui_font(int px) {(void)px;return &generic;}
+static unsigned aster_flux_font_pixels(int size,int zoom,const char *text) {(void)size;(void)zoom;return (unsigned char)*text>=128?14:10;}
+static const lv_font_t *aster_flux_font(unsigned px,const char *text) {assert(text);generic.px=px;warm_calls++;return &generic;}
 static const char *lv_label_get_text(lv_obj_t *o) {return o->text;}
-static const lv_font_t *lv_obj_get_style_text_font(lv_obj_t *o,int part) {(void)part;return o->font;}
-static void aster_ui_font_warm(int px,const char *s) {assert(px==16 && s);warm_calls++;}
+static void *lv_obj_get_user_data(lv_obj_t *o) {return (void *)o->spec;}
+static int as(int px){return px*3/4;}
+static int ax(int px){return px*3/4;}
+static void lv_obj_set_width(lv_obj_t *o,int width){(void)o;assert(width==75);}
+static void lv_obj_set_style_transform_scale_x(lv_obj_t *o,int scale,int part){(void)o;(void)part;assert(scale==256);}
+static void lv_obj_set_style_transform_scale_y(lv_obj_t *o,int scale,int part){(void)o;(void)part;assert(scale==256);}
+static void aster_ui_font_warm(int px,const char *s) {(void)px;(void)s;}
 static void lv_obj_set_style_text_font(lv_obj_t *o,const lv_font_t *f,int part) {(void)part;o->font=f;}
 static void lv_label_set_text(lv_obj_t *o,const char *s) {o->text=s;}
 ''' + helper + r'''
 int main(void) {
- lv_obj_t label={.text="",.font=&placeholder};
- set_sd_text(&label,16,"包元数据");assert(warm_calls==1);
- for(int i=0;i<10;i++) set_sd_text(&label,16,"包元数据");
+ lv_obj_t label={.text="",.spec=(16u<<24)|(160u<<12)|100u};
+ set_caption_text(&label,"Package");assert(warm_calls==1 && generic.px==10);
+ for(int i=0;i<10;i++) set_caption_text(&label,"Package");
  assert(warm_calls==1);
- ready=1;set_sd_text(&label,16,"包元数据");
- assert(warm_calls==2 && label.font==&generic);
- set_sd_text(&label,16,"新的介绍");assert(warm_calls==3);
+ set_caption_text(&label,"包元数据");assert(warm_calls==2 && generic.px==10);
+ set_caption_text(&label,"新的介绍");assert(warm_calls==3);
  return 0;
 }
 ''')
@@ -51,8 +58,8 @@ int main(void) {
 #define ASTER_FONT_MAX_SCRATCH 2352
 #define CLAMP(v,l,h) ((v)<(l)?(l):(v)>(h)?(h):(v))
 #define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
-#define LOG_INF(...) ((void)0)
-#define FS_O_READ 1
+#define aster_service_logf(...) ((void)0)
+#define ASTER_OS_READ 1
 #define CPF_REC 16
 #define SPARSE_BYTES (48u*1024u)
 #define SPARSE_N 192u
@@ -68,15 +75,15 @@ static unsigned s_generation,reload_polls;
 static int aster_font_sd_poll(void){reload_polls++;return 0;}
 static unsigned s_full_refs,disk_reads,live_allocs,fail_next,io_opens,io_closes,fail_io;
 static struct {unsigned reads,read_bytes,evictions,misses,miss_filled,hits,load_us,max_load_us,open_us,record_us,bitmap_us,close_us,load_failures;} s_st;
-static uint32_t k_cycle_get_32(void){static uint32_t clock;return ++clock;}
-static uint32_t k_cyc_to_us_floor64(uint32_t t){return t;}
-static void *aster_psram_alloc(unsigned n) {if(fail_next && --fail_next==0) return NULL;void *p=malloc(n);if(p) live_allocs++;return p;}
-static void aster_psram_free(void *p) {if(p) {live_allocs--;free(p);}}
-struct fs_file_t {int px;};
-static void fs_file_t_init(struct fs_file_t *f) {memset(f,0,sizeof(*f));}
-static int fs_open(struct fs_file_t *f,const char *p,int flags) {assert(flags==1);if(fail_io==1){fail_io=0;return -1;}io_opens++;f->px=atoi(p);return 0;}
-static int fs_close(struct fs_file_t *f) {(void)f;io_closes++;if(fail_io==3){fail_io=0;return -1;}return 0;}
-static bool read_at(struct fs_file_t *f,unsigned off,void *buf,unsigned len) {
+static uint32_t aster_os_cycle_us(void){static uint32_t clock;return ++clock;}
+static uint32_t aster_os_elapsed_us(uint32_t t){return t;}
+static void *aster_os_alloc_external(unsigned n) {if(fail_next && --fail_next==0) return NULL;void *p=malloc(n);if(p) live_allocs++;return p;}
+static void aster_os_free_external(void *p) {if(p) {live_allocs--;free(p);}}
+typedef struct {int px;} aster_os_file_t;
+static void aster_os_file_init(aster_os_file_t *f) {memset(f,0,sizeof(*f));}
+static int aster_os_file_open(aster_os_file_t *f,const char *p,int flags) {assert(flags==1);if(fail_io==1){fail_io=0;return -1;}io_opens++;f->px=atoi(p);return 0;}
+static int aster_os_file_close(aster_os_file_t *f) {(void)f;io_closes++;if(fail_io==3){fail_io=0;return -1;}return 0;}
+static bool read_at(aster_os_file_t *f,unsigned off,void *buf,unsigned len) {
  disk_reads++;if(fail_io==2){fail_io=0;return false;}
  if(len==16) {unsigned index=(off-32)/CPF_REC;memcpy(buf,&index,4);}
  else {assert(len==64 && off>=100000);memset(buf,((off-100000)/64+f->px)&255,len);}
@@ -147,7 +154,7 @@ int main(void) {
  assert(s_st.load_failures==failures+1 && io_opens==io_closes);
  aster_font_sd_cache_drop();assert(!live_allocs);
  for(unsigned i=0;i<2;i++) {
-  s_slots[i].ivs=aster_psram_alloc(24);s_slots[i].state=ST_SPARSE;
+  s_slots[i].ivs=aster_os_alloc_external(24);s_slots[i].state=ST_SPARSE;
   s_slots[i].iv_cnt=2;s_slots[i].gl_cnt=100;s_slots[i].fsize=1000000;
  }
  assert(sparse_fetch(s_slots,0x9000,71));s_probe_first=true;

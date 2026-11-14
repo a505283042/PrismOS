@@ -242,14 +242,14 @@ int main(void) {
 #include <stdbool.h>
 #include <stddef.h>
 #define ARG_UNUSED(x) ((void)(x))
-#define LOG_INF(...) ((void)0)
+#define aster_service_logf(...) ((void)0)
 typedef int lv_event_t;
 static bool s_frozen,s_exit_mode,s_exit_confirmed;
 static void *s_scrim,*s_sheet;
 static int restored,drained,refresh;
 static void ui_teardown(void) {s_scrim=s_sheet=NULL;s_exit_mode=false;}
 static void lv_refr_now(void *p) {(void)p;refresh++;}
-static void aster_plat_display_flush_drain(void) {drained++;}
+static void aster_device_display_flush_drain(void) {drained++;}
 static void glass_put_back(void) {restored++;}
 ''' + code + r'''
 static void open(void) {s_sheet=s_scrim=(void*)1;s_frozen=s_exit_mode=true;}

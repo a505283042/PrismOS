@@ -15,23 +15,23 @@
 #ifndef ASTER_UI_WIFI_H
 #define ASTER_UI_WIFI_H
 
-#include <zephyr/net/wifi.h>
+#include "aster_device.h"
 
 static inline const char *aster_ui_wifi_word(int state)
 {
 	switch (state) {
-	case WIFI_STATE_COMPLETED:
+	case ASTER_PLAT_WIFI_STATE_COMPLETED:
 		return "WiFi 已连接";
-	case WIFI_STATE_AUTHENTICATING:
-	case WIFI_STATE_ASSOCIATING:
-	case WIFI_STATE_ASSOCIATED:
-	case WIFI_STATE_4WAY_HANDSHAKE:
-	case WIFI_STATE_GROUP_HANDSHAKE:
+	case ASTER_PLAT_WIFI_STATE_AUTHENTICATING:
+	case ASTER_PLAT_WIFI_STATE_ASSOCIATING:
+	case ASTER_PLAT_WIFI_STATE_ASSOCIATED:
+	case ASTER_PLAT_WIFI_STATE_FOUR_WAY:
+	case ASTER_PLAT_WIFI_STATE_GROUP_HANDSHAKE:
 		return "WiFi 连接中";
-	case WIFI_STATE_SCANNING:
+	case ASTER_PLAT_WIFI_STATE_SCANNING:
 		return "WiFi 扫描中";
-	case WIFI_STATE_INTERFACE_DISABLED:
-	case WIFI_STATE_INACTIVE:
+	case ASTER_PLAT_WIFI_STATE_DISABLED:
+	case ASTER_PLAT_WIFI_STATE_INACTIVE:
 		return "WiFi 未启用";
 	default:
 		return "WiFi 未连接";

@@ -9,7 +9,8 @@ class Transfer(unittest.TestCase):
         run_c('#define _POSIX_C_SOURCE 200809L\n#include "' + str(source) + '"\n' + r'''
 #include <assert.h>
 #include <stdlib.h>
-typedef struct {const uint8_t *data;size_t size,position;char last[64];unsigned acks;} channel;
+typedef struct {const uint8_t *data;size_t size,position;char last[64];unsigned acks,phase;uint32_t done,total;int error;} channel;
+static void progress(void *p,unsigned phase,uint32_t done,uint32_t total,int error){channel *c=p;c->phase=phase;c->done=done;c->total=total;c->error=error;}
 static int receive(void *p,uint8_t *out,size_t size) {
  channel *c=p;if(c->position==c->size)return -ETIMEDOUT;
  if(size>17)size=17;
@@ -40,14 +41,16 @@ int main(void) {
  uint8_t data[4096];for(unsigned i=0;i<sizeof(data);i++)data[i]=(uint8_t)(i*37);
  uint32_t crc=aster_transfer_crc32(0,data,sizeof(data));
  channel ch={.data=data,.size=sizeof(data)};
- aster_transfer_io_t io={receive,reply,&ch};
+ aster_transfer_io_t io={receive,reply,&ch,progress};
  assert(!aster_transfer_receive(file,sizeof(data),crc,0,&io));
  assert(!strcmp(ch.last,"OK") && ch.acks==8);expect_file(file,data,sizeof(data));
+ assert(ch.phase==2&&ch.done==sizeof(data)&&ch.total==sizeof(data)&&!ch.error);
  /* Interrupted transfer cannot replace the old verified file. */
  data[0]^=0x7f;crc=aster_transfer_crc32(0,data,sizeof(data));
  ch=(channel){.data=data,.size=700};
  assert(aster_transfer_receive(file,sizeof(data),crc,0,&io));
  assert(!strcmp(ch.last,"RESUME 512"));
+ assert(ch.phase==3&&ch.error);
  data[0]^=0x7f;expect_file(file,data,sizeof(data));data[0]^=0x7f;
  /* Overclaimed resume is clamped to the actual .part size. */
  ch=(channel){.data=data+512,.size=sizeof(data)-512};
@@ -56,6 +59,7 @@ int main(void) {
  ch=(channel){.data=data,.size=sizeof(data)};
  assert(aster_transfer_receive(file,sizeof(data),crc^1,0,&io));
  assert(!strcmp(ch.last,"ERR retry") && access(part,F_OK));expect_file(file,data,sizeof(data));
+ assert(ch.phase==3&&ch.error==-EBADMSG);
  ch=(channel){.data=data};assert(aster_transfer_receive(file,0,crc,0,&io));
  assert(!strcmp(ch.last,"ERR -22"));
  /* Entire valid .part is published without asking the host for a body. */

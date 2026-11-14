@@ -21,7 +21,7 @@ static uint64_t clock_ms, input, available, output;
 static unsigned calls,writes,mode;
 static int64_t k_uptime_get(void){return clock_ms;}
 static void k_msleep(unsigned ms){clock_ms+=ms;}
-static int aster_http_svc_read(uint64_t owner,int h,void *out,size_t cap){
+static int aster_network_http_read(uint64_t owner,int h,void *out,size_t cap){
  assert(owner==OWNER && h==7 && cap);calls++;
  if(calls%3==0)return -EAGAIN;
  if(mode==1 && input>=4096)return -EIO;

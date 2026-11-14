@@ -1,3 +1,4 @@
+#include "aster_device.h"
 #include <zephyr/sys/util.h>
 /* SPDX-License-Identifier: MIT
  * Host LVGL display + pointer. PARTIAL bands live in PSRAM.
@@ -101,10 +102,10 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 	uint32_t submit_start=k_cycle_get_32();
 	int err;
 #if IS_ENABLED(CONFIG_ASTER_LAUNCHER_FLUX)
- err=aster_plat_display_write_persistent_ui(px_map,w,h,pitch);
+ err=aster_device_display_write_persistent_ui(px_map,w,h,pitch);
  if(err==ASTER_EINVAL)
 #endif
- err = aster_plat_display_write_at_ex(px_map, x, y, w, h, pitch, true);
+ err = aster_device_display_write_at_ex(px_map, x, y, w, h, pitch, true);
 	s_submit_us+=k_cyc_to_us_floor64((uint32_t)(k_cycle_get_32()-submit_start));
 
 	if (err != ASTER_OK) {
@@ -145,7 +146,7 @@ static void flush_wait_cb(lv_display_t *disp)
 {
 	ARG_UNUSED(disp);
 	uint32_t start = k_cycle_get_32();
-	aster_plat_display_flush_drain();
+	aster_device_display_flush_drain();
 	if (IS_ENABLED(CONFIG_ASTER_LVGL_PROFILER)) {
 		s_wait_us += k_cyc_to_us_floor64((uint32_t)(k_cycle_get_32() - start));
 	}
@@ -176,7 +177,7 @@ int aster_ui_lvgl_init(void)
 	if (s_ready) {
 		return ASTER_OK;
 	}
-	if (aster_plat_display_get_info(0, &di) != ASTER_OK || !di.width || !di.height) {
+	if (aster_device_display_get_info(0, &di) != ASTER_OK || !di.width || !di.height) {
 		return ASTER_ENOENT;
 	}
 	s_w = di.width;
@@ -259,7 +260,7 @@ void aster_ui_lvgl_resync_window(void)
 	if (!s_ready) {
 		return;
 	}
-	if (aster_plat_display_get_info(0, &di) != ASTER_OK || !di.width || !di.height) {
+	if (aster_device_display_get_info(0, &di) != ASTER_OK || !di.width || !di.height) {
 		return;
 	}
 	if (di.width == s_w && di.height == s_h) {
@@ -269,7 +270,7 @@ void aster_ui_lvgl_resync_window(void)
 	/* Nothing may be mid-flight before the buffers are re-pointed: the
 	 * re-init below hands LVGL back to buf_1, and a queued direct-send job
 	 * may still be reading buf_2 off the wire. */
-	aster_plat_display_flush_drain();
+	aster_device_display_flush_drain();
 
 	/* The record describes the window the panel has stopped showing, and the
 	 * repaint at the bottom of this function is what fills it back in -- so
@@ -279,7 +280,7 @@ void aster_ui_lvgl_resync_window(void)
 	 * repaint: measured on the reference board, band 1 (240x213+0+0) was
 	 * composited and then wiped, band 2 (240x107+0+213) survived, and the
 	 * grab showed a crop of the screen that reads as a coherent picture. */
-	aster_plat_display_glass_rearm();
+	aster_device_display_glass_rearm();
 
 	ow = s_w;
 	oh = s_h;
@@ -349,7 +350,7 @@ void aster_ui_lvgl_request_frame(void)
 
 void aster_ui_lvgl_pump(void)
 {
-    if (!aster_plat_display_count()) return;
+    if (!aster_device_display_count()) return;
 	if (!s_ready) {
 		return;
 	}

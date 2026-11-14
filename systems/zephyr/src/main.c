@@ -15,6 +15,11 @@
 #include "aster_app_mgr.h"
 #include "aster_sysinfo.h"
 #include "aster_platform.h"
+#include "aster_device.h"
+#include "aster_os.h"
+#include "aster_deploy.h"
+#include "aster_services.h"
+#include "aster_network.h"
 #include "aster_runtime.h"
 #include "aster_file_svc.h"
 #if IS_ENABLED(CONFIG_ASTER_LVGL)
@@ -29,6 +34,11 @@ int main(void)
 		ASTER_ABI_MAJOR, ASTER_ABI_MINOR, ASTER_ABI_PATCH);
 
 	aster_core_init();
+    (void)aster_deploy_init();
+	aster_device_seal();
+	aster_os_seal();
+	aster_services_seal();
+	aster_network_seal();
 
 	/* after core mem: the ring lives in the PSRAM shared heap */
 	if (aster_logring_init()) {
