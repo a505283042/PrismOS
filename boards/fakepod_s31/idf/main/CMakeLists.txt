@@ -1,0 +1,8 @@
+if(ASTER_S31_DIAGNOSTIC)
+    idf_component_register(SRCS "diagnostic.c" "board_lcd.c" "aot_probe.c" INCLUDE_DIRS "." "../../../../build/fakepod-s31"
+        REQUIRES wamr esp_mm esp_lcd esp_lcd_co5300 esp_driver_spi esp_driver_i2c esp_driver_gpio esp_psram spi_flash esp_hw_support fatfs sdmmc esp_driver_sdmmc)
+else()
+    idf_component_register(SRCS "main.c" "board_lcd.c" "board_input.c" "storage.c" INCLUDE_DIRS "."
+        REQUIRES aster_apps aster_transfer aster_connectivity aster_runtime aster_audio
+        esp_lcd esp_lcd_co5300 esp_driver_spi esp_driver_i2c esp_driver_gpio esp_psram spi_flash fatfs sdmmc esp_driver_sdmmc)
+endif()

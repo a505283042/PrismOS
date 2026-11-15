@@ -29,6 +29,8 @@ bool aster_sysinfo_feature_by_name(const char *name)
     if (!strcmp(name,"display")) return aster_idf_feature(ASTER_FEATURE_DISPLAY);
     if (!strcmp(name,"touch")) return aster_idf_feature(ASTER_FEATURE_TOUCH);
     if (!strcmp(name,"framebuffer")) return aster_idf_feature(ASTER_FEATURE_FRAMEBUFFER);
+    if (!strcmp(name,"accelerometer"))return aster_idf_feature(ASTER_FEATURE_ACCELEROMETER);
+    if (!strcmp(name,"gyroscope"))return aster_idf_feature(ASTER_FEATURE_GYROSCOPE);
     if (!strcmp(name,"filesystem") || !strcmp(name,"storage.app")) return aster_storage_mounted();
 #ifndef ASTER_IDF_HOST_TEST
     if(!strcmp(name,"wifi"))return aster_idf_wifi_available();

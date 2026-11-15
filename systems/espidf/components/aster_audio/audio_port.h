@@ -34,3 +34,9 @@ int i2s_configure(const struct device *device,enum i2s_dir dir,const struct i2s_
 int i2s_trigger(const struct device *device,enum i2s_dir dir,int trigger);
 int i2s_write(const struct device *device,void *block,size_t size);
 int i2s_read(const struct device *device,void **block,size_t *size);
+
+#if defined(CONFIG_ASTER_AUDIO_CS43131) && CONFIG_ASTER_AUDIO_CS43131
+int aster_idf_codec_init(void);
+int aster_idf_codec_enable(void);
+int aster_idf_codec_volume(uint8_t percent);
+#endif

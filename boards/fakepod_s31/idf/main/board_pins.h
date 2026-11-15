@@ -1,0 +1,40 @@
+/* SPDX-License-Identifier: MIT */
+#pragma once
+/* FAKE POD NANO PRO S31 V1. GPIO numbers, not package pin numbers. */
+#define FP_LCD_WIDTH 460
+#define FP_LCD_HEIGHT 460
+#define FP_LCD_X_OFFSET 10
+#define FP_LCD_POWER 44
+#define FP_LCD_RESET 36
+#define FP_LCD_CS 37
+#define FP_LCD_CLOCK 38
+#define FP_LCD_D0 39
+#define FP_LCD_D1 40
+#define FP_LCD_D2 42
+#define FP_LCD_D3 43
+#define FP_LCD_TE 35
+#define FP_I2C0_SDA 48
+#define FP_I2C0_SCL 47
+#define FP_TOUCH_IRQ 45
+#define FP_TOUCH_RESET 46
+#define FP_PMU_IRQ 49
+#define FP_BUTTON 61
+#define FP_DAC_SDA 55
+#define FP_DAC_SCL 54
+#define FP_DAC_RESET 53
+#define FP_DAC_BCLK 52
+#define FP_DAC_WS 51
+#define FP_DAC_DOUT 50
+#define FP_MIC_DATA 2
+#define FP_MIC_CLOCK 6
+#define FP_SD_D0 20
+#define FP_SD_D1 21
+#define FP_SD_D2 22
+#define FP_SD_D3 23
+#define FP_SD_CLOCK 24
+#define FP_SD_CMD 25
+#define FP_TOUCH_ADDRESS 0x15
+#define FP_PMU_ADDRESS 0x34
+#define FP_IMU_ADDRESS 0x6b
+#define FP_RTC_ADDRESS 0x51
+#define FP_DAC_ADDRESS 0x30

@@ -21,11 +21,14 @@ typedef struct {
     /* Fixed hardware slots; returns active bitmask, negative = no valid frame. */
     int (*touch_frame)(aster_idf_touch_point_t points[ASTER_IDF_MAX_TOUCH]);
     uint32_t max_touch_points;
+    int (*backlight)(bool on,uint8_t level);
+    int (*imu_read)(float *ax,float *ay,float *az,float *gx,float *gy,float *gz);
     void (*display_perf_reset)(void);
     void (*display_perf_report)(void);
     const aster_system_info_t *system_info;
 } aster_idf_io_t;
 void aster_idf_set_io(const aster_idf_io_t *io);
+int aster_idf_board_backlight(bool on,uint8_t level);
 
 void aster_idf_request_stop(void);
 int aster_idf_request_pause(bool pause);
@@ -49,3 +52,5 @@ bool aster_idf_app_glass_frozen(void);
 void aster_idf_set_capture(const uint8_t *(*capture)(void));
 void aster_idf_system_info(aster_system_info_t *info);
 const uint8_t *aster_idf_capture(void);
+
+int aster_idf_imu_read(float *ax,float *ay,float *az,float *gx,float *gy,float *gz);

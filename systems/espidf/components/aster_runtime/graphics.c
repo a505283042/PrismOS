@@ -17,6 +17,10 @@
 #include <stdlib.h>
 
 static aster_idf_io_t io;
+int aster_idf_imu_read(float *ax,float *ay,float *az,float *gx,float *gy,float *gz)
+{return io.imu_read?io.imu_read(ax,ay,az,gx,gy,gz):ASTER_ENODEV;}
+int aster_idf_board_backlight(bool on,uint8_t level)
+{return io.backlight?io.backlight(on,level):ASTER_ENOTSUP;}
 void aster_idf_system_info(aster_system_info_t *info)
 {*info=io.system_info?*io.system_info:(aster_system_info_t){0};}
 void aster_idf_graphics_perf_reset(void) {if(io.display_perf_reset)io.display_perf_reset();}
@@ -73,6 +77,7 @@ int aster_idf_feature(uint32_t bit)
     if (bit == ASTER_FEATURE_DISPLAY || bit == ASTER_FEATURE_FRAMEBUFFER)
         return io.present != NULL;
     if (bit == ASTER_FEATURE_TOUCH) return has_touch();
+    if (bit == ASTER_FEATURE_ACCELEROMETER || bit == ASTER_FEATURE_GYROSCOPE)return io.imu_read!=NULL;
     return 0;
 }
 

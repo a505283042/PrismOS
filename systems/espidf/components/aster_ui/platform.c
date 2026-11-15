@@ -36,12 +36,15 @@ int aster_plat_display_write_at_ex(const uint8_t *data,uint32_t x,uint32_t y,uin
 }
 bool aster_plat_display_glass_frame(const uint8_t **data,uint32_t *w,uint32_t *h,uint32_t *pitch)
 {
-    static uint8_t *copy;
+    static uint8_t *copy;static size_t capacity;
+    aster_display_info_t info;
+    if(aster_plat_display_get_info(0,&info))return false;
     const uint8_t *pixels=aster_idf_capture();if(!pixels)return false;
-    if(!copy)copy=aster_psram_alloc(480*480*2);
+    size_t bytes=(size_t)info.width*info.height*2;
+    if(bytes>capacity){aster_psram_free(copy);copy=aster_psram_alloc(bytes);capacity=copy?bytes:0;}
     if(!copy)return false;
-    for(unsigned i=0;i<480*480*2;i+=2){copy[i]=pixels[i+1];copy[i+1]=pixels[i];}
-    *data=copy;*w=*h=*pitch=480;return true;
+    for(size_t i=0;i<bytes;i+=2){copy[i]=pixels[i+1];copy[i+1]=pixels[i];}
+    *data=copy;*w=*pitch=info.width;*h=info.height;return true;
 }
 int aster_plat_input_poll(aster_touch_evt_t *out,int capacity)
 {
@@ -53,6 +56,9 @@ int aster_plat_input_poll(aster_touch_evt_t *out,int capacity)
 int aster_plat_input_keys_poll(aster_key_evt_t *out,int capacity) {(void)out;(void)capacity;return 0;}
 int aster_plat_backlight_set(bool on,uint8_t level)
 {
+#if CONFIG_IDF_TARGET_ESP32S31
+    return aster_idf_board_backlight(on,level);
+#else
     static bool ready;
     esp_err_t r;
     if(!ready) {
@@ -67,4 +73,5 @@ int aster_plat_backlight_set(bool on,uint8_t level)
     r=ledc_set_duty(LEDC_LOW_SPEED_MODE,LEDC_CHANNEL_0,on?level:0);
     if(r==ESP_OK)r=ledc_update_duty(LEDC_LOW_SPEED_MODE,LEDC_CHANNEL_0);
     return r==ESP_OK?0:ASTER_EIO;
+#endif
 }

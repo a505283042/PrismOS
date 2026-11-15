@@ -6,6 +6,7 @@
 #include <aster/system.h>
 #include "esp_console.h"
 #include "driver/uart.h"
+#include "driver/usb_serial_jtag.h"
 #include "sdkconfig.h"
 #include <stdio.h>
 #include <string.h>
@@ -21,7 +22,12 @@ static int ping(int argc,char **argv)
 }
 static int receive(void *context,uint8_t *data,size_t size)
 {
-    (void)context;int n=uart_read_bytes(CONFIG_ESP_CONSOLE_UART_NUM,data,size,pdMS_TO_TICKS(30000));
+    (void)context;
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+    int n=usb_serial_jtag_read_bytes(data,size,pdMS_TO_TICKS(30000));
+#else
+    int n=uart_read_bytes(CONFIG_ESP_CONSOLE_UART_NUM,data,size,pdMS_TO_TICKS(30000));
+#endif
     return n>0?n:-ETIMEDOUT;
 }
 static void reply(void *context,const char *line)
@@ -53,7 +59,14 @@ static int put(int argc,char **argv)
     aster_deploy_begin(argv[1],values[0],values[2]);
     const aster_transfer_io_t io={receive,reply,NULL,progress};
     int result=aster_transfer_receive(path,values[0],values[1],values[2],&io);
-    if(result)uart_flush_input(CONFIG_ESP_CONSOLE_UART_NUM);
+    if(result) {
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+        uint8_t discarded[64];
+        while(usb_serial_jtag_read_bytes(discarded,sizeof(discarded),0)>0){}
+#else
+        uart_flush_input(CONFIG_ESP_CONSOLE_UART_NUM);
+#endif
+    }
     return 0;
 }
 int aster_idf_transfer_register(void)

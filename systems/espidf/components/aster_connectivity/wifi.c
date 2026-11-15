@@ -72,8 +72,13 @@ void aster_idf_network_start(void)
     /* Package parsing/install paths exceed the default 4 KiB REPL stack. */
     config.task_stack_size=16384;
     config.prompt="aster:~$ ";
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+    esp_console_dev_usb_serial_jtag_config_t usb=ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
+    r=esp_console_new_repl_usb_serial_jtag(&usb,&config,&repl);
+#else
     esp_console_dev_uart_config_t uart=ESP_CONSOLE_DEV_UART_CONFIG_DEFAULT();
     r=esp_console_new_repl_uart(&uart,&config,&repl);
+#endif
     if (r!=ESP_OK) {ESP_LOGE(TAG,"Console unavailable: %s",esp_err_to_name(r));return;}
     const esp_console_cmd_t cmd={.command="aster",.help="Aster device commands",.func=command};
     ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));

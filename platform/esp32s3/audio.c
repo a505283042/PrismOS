@@ -57,7 +57,9 @@ LOG_MODULE_REGISTER(aster_audio, LOG_LEVEL_INF);
  * camera's power-down line from here -- silently, while looking correct at
  * both ends. See the zephyr,user block in the board overlay. */
 static const struct gpio_dt_spec pa_en =
-#ifdef ASTER_SYSTEM_ESP_IDF
+#if defined(CONFIG_ASTER_AUDIO_CS43131) && CONFIG_ASTER_AUDIO_CS43131
+    {0};
+#elif defined(ASTER_SYSTEM_ESP_IDF)
     {.port=&aster_idf_gpio_device,.pin=53};
 #else
 	GPIO_DT_SPEC_GET_OR(DT_PATH(zephyr_user), pa_en_gpios, {0});
@@ -207,16 +209,23 @@ static uint8_t vol_to_reg(uint8_t percent)
 
 static int es8311_apply_vol(void)
 {
+#if defined(CONFIG_ASTER_AUDIO_CS43131) && CONFIG_ASTER_AUDIO_CS43131
+    return aster_idf_codec_volume(g_vol);
+#else
 	int err = codec_wr(DAC_ADDR, 0x32, vol_to_reg(g_vol));
 	if (err) {
 		return err;
 	}
 	return codec_wr(DAC_ADDR, 0x31, g_vol == 0 ? 0x60 : 0x00);
+#endif
 }
 
 /* Official 05-audio_es8311 open + start, clocks for 16 kHz @ MCLK=256*fs. */
 static int es8311_dac_on(void)
 {
+#if defined(CONFIG_ASTER_AUDIO_CS43131) && CONFIG_ASTER_AUDIO_CS43131
+    return aster_idf_codec_enable();
+#else
 	static const uint8_t tbl[][2] = {
 		{0x00, 0x80}, /* slave, analog on, MCLK from pin */
 		{0x01, 0x3F}, /* clocks on, MCLK pin */
@@ -240,10 +249,14 @@ static int es8311_dac_on(void)
 		}
 	}
 	return es8311_apply_vol();
+#endif
 }
 
 static int es8311_init(void)
 {
+#if defined(CONFIG_ASTER_AUDIO_CS43131) && CONFIG_ASTER_AUDIO_CS43131
+    return aster_idf_codec_init();
+#else
 	uint8_t id = 0;
 	int err = codec_rd(DAC_ADDR, 0xFD, &id);
 
@@ -299,6 +312,7 @@ static int es8311_init(void)
 	}
 	LOG_INF("es8311 ready id=0x%02x", id);
 	return 0;
+#endif
 }
 
 static int es7210_init(void)
@@ -436,7 +450,11 @@ static int codecs_init(void)
 	if (err) {
 		return err;
 	}
+#if defined(CONFIG_ASTER_AUDIO_CS43131) && CONFIG_ASTER_AUDIO_CS43131
+    err=0;
+#else
 	err = IS_ENABLED(CONFIG_ASTER_AUDIO_ADC_ES8311) ? 0 : es7210_init();
+#endif
 	if (err) {
 		LOG_WRN("es7210 init %d (playback still available)", err);
 	}
@@ -486,7 +504,11 @@ static int i2s_setup_rate(enum i2s_dir dir, uint32_t rate)
     if (active_dir) i2s_shutdown();
     output_rate = rate;
     output_block = audio_rate_block(rate);
+#if defined(CONFIG_ASTER_AUDIO_CS43131) && CONFIG_ASTER_AUDIO_CS43131
+    int err=0;
+#else
     int err = codec_wr(DAC_ADDR, 0x04, rate > 16000 ? 0x10 : 0x20);
+#endif
     if (err) return err;
     err = i2s_apply(dir, dir == I2S_DIR_TX ? &tx_slab : &rx_slab);
     if (err) return err;
@@ -1762,6 +1784,10 @@ int aster_plat_audio_probe(uint8_t *dac_id, uint8_t *adc_id_out)
 {
 	k_mutex_lock(&audio_lock, K_FOREVER);
 	int err = codecs_init();
+#if defined(CONFIG_ASTER_AUDIO_CS43131) && CONFIG_ASTER_AUDIO_CS43131
+    if(dac_id)*dac_id=err?0:0x31;
+    if(adc_id_out)*adc_id_out=0; /* PDM has no I2C identity register. */
+#else
 	if (dac_id) {
 		*dac_id = 0;
 		if (i2c_dev && device_is_ready(i2c_dev)) {
@@ -1775,6 +1801,7 @@ int aster_plat_audio_probe(uint8_t *dac_id, uint8_t *adc_id_out)
 			               IS_ENABLED(CONFIG_ASTER_AUDIO_ADC_ES8311) ? 0xFD : 0x3D, adc_id_out);
 		}
 	}
+#endif
 	k_mutex_unlock(&audio_lock);
 	return err;
 }

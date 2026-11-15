@@ -7,6 +7,7 @@ static bool touch_available(void){return aster_idf_feature(ASTER_FEATURE_TOUCH)!
 const aster_device_ops_t aster_device_backend = {
  .size=sizeof(aster_device_ops_t), .version=ASTER_DEVICE_API_VERSION,
  .name="espidf",
+ .imu_read=aster_idf_imu_read,
  .display_count=aster_plat_display_count,
  .display_get_info=aster_plat_display_get_info,
  .display_write_at=aster_plat_display_write_at,

@@ -694,15 +694,15 @@ static void build_home(void)
  lv_obj_t *subtitle=text(body,"SCROLL THE MOMENT",17,38,190,0x91a184,16,128);
  position=text(body,"",lckfb?211:250,38,lckfb?92:55,0x91a184,16,128);
  stage=box(body,0,53,320,280,BG,0);
- if(lckfb) {
-  /* Native glyphs keep their line height when the design spacing shrinks.
-   * Reserve the entire header row before clipping the ribbon stage. */
-  int line_h=lv_font_get_line_height(lv_obj_get_style_text_font(subtitle,0));
-  int stage_top=MAX(ay(53),ay(38)+line_h+as(6));
-  lv_obj_set_y(stage,stage_top);
-  lv_obj_set_height(stage,MAX(1,ay(333)-stage_top));
-  lv_obj_set_style_text_align(position,LV_TEXT_ALIGN_RIGHT,0);
- }
+ /* Native fonts do not shrink continuously with design coordinates.
+  * Reserve both labels' actual line heights on every panel, including
+  * square resolutions below the 480px reference height. */
+ int subtitle_h=lv_font_get_line_height(lv_obj_get_style_text_font(subtitle,0));
+ int position_h=lv_font_get_line_height(lv_obj_get_style_text_font(position,0));
+ int stage_top=MAX(ay(53),ay(38)+MAX(subtitle_h,position_h)+as(6));
+ lv_obj_set_y(stage,stage_top);
+ lv_obj_set_height(stage,MAX(1,ay(333)-stage_top));
+ lv_obj_set_style_text_align(position,LV_TEXT_ALIGN_RIGHT,0);
  text(stage,"FLUX",18,3,130,0x24202c,20,600);
  for(int k=0;k<RIBBONS;k++) {
   ribbons[k].entry=-1;ribbons[k].obj=lv_image_create(stage);
