@@ -3,6 +3,7 @@
 #include "aster_idf_runtime.h"
 #include "graphics.h"
 #include "aster_platform.h"
+#include "aster_device.h"
 #include "ui_lvgl.h"
 #include "ui_font.h"
 #include "font_sd.h"
@@ -59,6 +60,10 @@ static void perf_print(void)
            (unsigned long long)perf.pump_us,(unsigned long)perf.max_pump_us,(unsigned long)aster_flux_draw_time_reset());
     aster_idf_graphics_perf_report();
     printf("UI ART bakes=%lu hits=%lu inactive_bytes=%lu\n",(unsigned long)bakes,(unsigned long)hits,(unsigned long)cached);
+    aster_launcher_slider_stats_t slider;aster_launcher_slider_stats(&slider);
+    printf("UI SLIDER presses=%lu releases=%lu changes=%lu value=%ld saves=%lu set_max_us=%lu save_max_ms=%lu\n",
+           (unsigned long)slider.presses,(unsigned long)slider.releases,(unsigned long)slider.changes,(long)slider.value,
+           (unsigned long)slider.saves,(unsigned long)slider.max_set_us,(unsigned long)slider.max_save_ms);
 #ifndef ASTER_IDF_HOST_TEST
     aster_idf_ppa_fill_report();
     aster_idf_render_workers_report();
@@ -88,7 +93,11 @@ int aster_idf_ui_command(int argc,char **argv)
     if(argc==3 && !strcmp(argv[2],"setup"))return aster_setup_repair();
     if(argc==4 && !strcmp(argv[2],"setup-source"))return aster_setup_repair_source(argv[3]);
     int request;
-    if(argc==3 && !strcmp(argv[2],"perf"))request=1;
+    if(argc==4 && !strcmp(argv[2],"volume")) {
+        char *end=NULL;long value=strtol(argv[3],&end,10);
+        if(*end || value<0 || value>100)return ASTER_EINVAL;
+        request=1000+(int)value;
+    } else if(argc==3 && !strcmp(argv[2],"perf"))request=1;
     else if((argc==3 || argc==4) && !strcmp(argv[2],"bench")) {
         char *end=NULL;long seconds=argc==4?strtol(argv[3],&end,10):8;
         if(seconds<2 || seconds>20 || (end && *end))return ASTER_EINVAL;
@@ -100,7 +109,12 @@ static void perf_tick(void)
 {
     uint64_t now=esp_timer_get_time();int request=atomic_exchange(&perf_request,0);
     if(request==1)perf_print();
-    else if(request>100) {
+    else if(request>=1000 && request<=1100) {
+        uint64_t start=esp_timer_get_time();
+        int result=aster_device_audio_set_volume(request-1000);
+        printf("UI VOLUME percent=%d result=%d elapsed_us=%llu\n",request-1000,result,
+               (unsigned long long)(esp_timer_get_time()-start));
+    } else if(request>100) {
         if(app_active){puts("UI BENCH busy: stop the application first");return;}
         aster_launcher_show_page(0);bench_step=now;bench_warm=now+2000000;
         bench_end=bench_warm+(request-100)*1000000ULL;

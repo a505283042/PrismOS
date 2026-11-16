@@ -40,14 +40,14 @@ class Contract(unittest.TestCase):
 
     def test_hardware_exports_and_separate_selection(self):
         records = list((ROOT / "hardware").glob("*.json"))
-        self.assertEqual({p.stem for p in records}, {"lckfb-s3", "waveshare-35b"})
+        self.assertEqual({p.stem for p in records}, {"lckfb-s3", "waveshare-35b", "osptek-p4", "fakepod-s31"})
         for record in records:
             public = json.loads(record.read_text())["public"]
             self.assertEqual(public["id"], record.stem)
-            self.assertEqual(set(public["display"]["modes"]), {"landscape", "portrait", "headless"})
+            self.assertTrue({"landscape", "portrait"}.issubset(public["display"]["modes"]))
         bundle = bundle_files()
         self.assertEqual({name for name in bundle if name.startswith("targets/")},
-                         {"targets/lckfb-s3.json", "targets/waveshare-35b.json"})
+                         {"targets/lckfb-s3.json", "targets/waveshare-35b.json", "targets/osptek-p4.json", "targets/fakepod-s31.json"})
         import firmware
         selected = ROOT / "boards/waveshare_35b/selection.conf"
         config = firmware.load_kconfig(selected)

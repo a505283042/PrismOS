@@ -6,7 +6,7 @@
 
 固件拥有设备功能、系统资源和运行时。SDK 拥有 APP API 副本、应用库、工具链与部署工具。固件的 `tools/export_contract.py` 输出 ZIP，SDK 的 `tools/import_contract.py` 显式校验导入；正常编译只读取各自仓库内容。
 
-接口使用 `aster_*` 和固定宽度 ABI 类型。命名空间、产品身份和固定宽度标识都已改为 Aster：ASTP 包、ASTI 图标、ASTR 资源块、ASTERFS 文件传输协议。旧 MJX 拼写一律不再接受（改名前的包和固件互相拒绝），旧 APP 需重新编译。当前 ABI 为 4.3.0。网络传输只有 `aster_net_info`、`aster_net_open`、`aster_net_io`、`aster_net_status`、`aster_net_cancel`、`aster_net_close` 六个导入；3.x 包会被拒绝。
+接口使用 `aster_*` 和固定宽度 ABI 类型。命名空间、产品身份和固定宽度标识都已改为 Aster：ASTP 包、ASTI 图标、ASTR 资源块、ASTERFS 文件传输协议。旧 MJX 拼写一律不再接受（改名前的包和固件互相拒绝），旧 APP 需重新编译。当前 ABI 为 4.5.0。网络传输只有 `aster_net_info`、`aster_net_open`、`aster_net_io`、`aster_net_status`、`aster_net_cancel`、`aster_net_close` 六个导入；3.x 包会被拒绝。
 
 ## 公共核心与系统后端
 
@@ -27,9 +27,11 @@
 <!-- hardware-models:start -->
 - `lckfb-s3`：立创开发板 ESP32-S3 实战派。
 - `waveshare-35b`：微雪 ESP32-S3-Touch-LCD-3.5B，实验性板级支持。
+- `osptek-p4`：鱼鹰 P4C5，ESP-IDF。
+- `fakepod-s31`：FAKE POD NANO PRO，ESP-IDF，Hi-Fi 功能开发中。
 <!-- hardware-models:end -->
 
-两款硬件均使用 Xtensa CPU 平台。SDK 构建、校验和部署使用 `--target xtensa`；APP 产物位于工程的 `dist/xtensa/`。硬件型号由固件配置选择，SDK 不接受板卡名作为编译目标。
+S3 硬件使用 `--target xtensa`，P4/S31 使用 `--target riscv`。硬件型号由固件配置选择，SDK 不接受板卡名作为编译目标。
 
 无屏、横屏、竖屏是同一固件的工作模式，不能通过创建多个产品 ID 或编译目标实现。它们共用驱动、内存、运行时和服务。显示模式不参与 APP 包的硬件身份判断。
 

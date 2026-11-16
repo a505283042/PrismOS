@@ -20,12 +20,14 @@
 #include "aster_perms.h"
 #include "files.h"
 #include "aster_storage.h"
+#include "aster_player_service.h"
 #ifndef ASTER_IDF_HOST_TEST
 #include "wifi_service.h"
 #include "aster_idf_audio.h"
 #endif
 bool aster_sysinfo_feature_by_name(const char *name)
 {
+    if (!strcmp(name,"media-player")) return aster_player_service_available();
     if (!strcmp(name,"display")) return aster_idf_feature(ASTER_FEATURE_DISPLAY);
     if (!strcmp(name,"touch")) return aster_idf_feature(ASTER_FEATURE_TOUCH);
     if (!strcmp(name,"framebuffer")) return aster_idf_feature(ASTER_FEATURE_FRAMEBUFFER);
@@ -132,6 +134,7 @@ static int32_t has_feature(wasm_exec_env_t env, uint32_t bit)
 {
     (void)env;
 #ifdef ESP_PLATFORM
+    if(bit==ASTER_FEATURE_MEDIA_PLAYER)return aster_player_service_available();
     if(bit==ASTER_FEATURE_FILESYSTEM)return aster_storage_mounted();
     if(bit==ASTER_FEATURE_PSRAM)return true;
 #ifndef ASTER_IDF_HOST_TEST

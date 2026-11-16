@@ -2837,7 +2837,11 @@ static uint32_t n_memcpy(wasm_exec_env_t env, uint32_t dest, uint32_t src,
 }
 
 /* symbol table (sorted by name: WAMR uses it as-is with linear search) */
+#include "aster_player_native.inc"
 static NativeSymbol syms[] = {
+ { "aster_player_bt_list", (void *)n_player_bt_list, "(ii)i", NULL },
+ { "aster_player_get_info", (void *)n_player_get_info, "(ii)i", NULL },
+ { "aster_player_control", (void *)n_player_control, "(ii)i", NULL },
 	{ "memcpy", (void *)n_memcpy, "(iii)i", NULL },
 	{ "aster_app_exit", (void *)n_app_exit, "(i)", NULL },
 	{ "aster_app_set_framerate", (void *)n_set_framerate, "(i)i", NULL },

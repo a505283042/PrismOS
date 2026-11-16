@@ -40,6 +40,11 @@ void aster_launcher_pump_idle(void);
 uint32_t aster_launcher_idle_wait_ms(void);
 /* UI-thread diagnostics: cumulative bakes/hits and detached PSRAM bytes. */
 void aster_launcher_art_stats(uint32_t *bakes,uint32_t *hits,uint32_t *cached_bytes);
+typedef struct {
+ uint32_t presses,releases,changes,saves,max_save_ms,max_set_us;
+ int32_t value;
+} aster_launcher_slider_stats_t;
+void aster_launcher_slider_stats(aster_launcher_slider_stats_t *out);
 
 /* The app registry changed (install/uninstall/scan): flag the drawer and
  * the resident name-subset for a rebuild on the next pump. Thread-safe. */

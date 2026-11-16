@@ -462,7 +462,11 @@ void aster_idf_audio_cleanup(void)
  aster_native_release_audio_stream(&context);
  aster_plat_audio_stop();aster_plat_audio_effect_reset();
 }
+#include "aster_player_native.inc"
 static NativeSymbol symbols[]={
+ { "aster_player_bt_list", (void *)n_player_bt_list, "(ii)i", NULL },
+ { "aster_player_get_info", (void *)n_player_get_info, "(ii)i", NULL },
+ { "aster_player_control", (void *)n_player_control, "(ii)i", NULL },
 	{ "aster_audio_get_info", (void *)n_audio_get_info, "(ii)i", NULL },
 	{ "aster_audio_get_lyrics", (void *)n_audio_get_lyrics, "(ii)i", NULL },
 	{ "aster_audio_get_state", (void *)n_audio_get_state, "(ii)i", NULL },

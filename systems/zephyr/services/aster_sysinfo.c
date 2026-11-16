@@ -2,6 +2,7 @@
 /* SPDX-License-Identifier: MIT */
 #include "aster_sysinfo.h"
 #include "aster_platform.h"
+#include "aster_player_service.h"
 #include <string.h>
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
@@ -83,6 +84,7 @@ void aster_sysinfo_get(aster_system_info_t *info)
 	if (IS_ENABLED(CONFIG_ASTER_AUDIO)) {
 		f |= (1ull << ASTER_FEATURE_AUDIO_STREAM) | (1ull << ASTER_FEATURE_AUDIO_EFFECTS) | (1ull << ASTER_FEATURE_AUDIO_EFFECTS_MEMORY);
 	}
+	if(aster_player_service_available())f |= 1ull << ASTER_FEATURE_MEDIA_PLAYER;
 	info->feature_flags = f;
 }
 
@@ -99,6 +101,7 @@ bool aster_sysinfo_has_feature(uint32_t bit)
 bool aster_sysinfo_feature_by_name(const char *name)
 {
 	static const struct { const char *name; uint32_t bit; } map[] = {
+		{ "media-player", ASTER_FEATURE_MEDIA_PLAYER },
 		{ "display", ASTER_FEATURE_DISPLAY },
 		{ "touch", ASTER_FEATURE_TOUCH },
 		{ "mouse", ASTER_FEATURE_MOUSE },

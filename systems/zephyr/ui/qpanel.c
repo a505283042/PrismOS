@@ -704,6 +704,10 @@ static void build(void)
 
 		s_vol_slider = lv_slider_create(row);
 		lv_slider_set_range(s_vol_slider, 0, 100);
+		/* 16px visual track + 14px on both sides: 44px touch band. */
+		lv_obj_set_ext_click_area(s_vol_slider, 14);
+		lv_obj_add_flag(s_vol_slider, LV_OBJ_FLAG_PRESS_LOCK);
+		lv_obj_remove_flag(s_vol_slider, LV_OBJ_FLAG_ADV_HITTEST);
 		lv_obj_set_size(s_vol_slider, dw - QP_VOL_SL_X - QP_VOL_GAP -
 				QP_VOL_VAL_W - QP_PAD_X, 16);
 		lv_obj_set_pos(s_vol_slider, QP_VOL_SL_X, (QP_ROW_H - 16) / 2);

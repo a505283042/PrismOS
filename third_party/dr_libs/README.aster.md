@@ -1,0 +1,9 @@
+# dr_libs
+
+Upstream: https://github.com/mackron/dr_libs
+Commit: f12e197fd462e4c22873fbd70d11b1d2f2c1dc3c
+License: MIT-0 (license text retained at the end of each header).
+Unmodified upstream headers. Used with custom Aster OS I/O/allocation callbacks, no stdio.
+
+- `dr_flac.h` SHA256 `3f010d3142a5b9df80a0bd8b325de54317468b1aff85abb257c86dbfefe9bd2a`
+- `dr_wav.h` SHA256 `7c9660d75361ad6175e6217c63a1075c9512445c06bc951197fc479179f76b39`

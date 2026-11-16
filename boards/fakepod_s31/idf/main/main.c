@@ -11,6 +11,9 @@
 #include "aster_network.h"
 #include "transfer.h"
 #include "aster_idf_audio.h"
+#include "aster_media.h"
+#include "aster_audio_output.h"
+#include "bt_source.h"
 #include "esp_log.h"
 #include "esp_chip_info.h"
 #include "esp_flash.h"
@@ -18,6 +21,8 @@
 #include "esp_clk_tree.h"
 static const char *TAG="fakepod";
 void fakepod_storage_start(void);
+void fakepod_audio_diagnostic_register(void);
+int aster_idf_player_register(void);
 void app_main(void){
  ESP_LOGI(TAG,"Aster FAKE POD NANO PRO / ESP32-S31");
  ESP_ERROR_CHECK(fakepod_lcd_init());
@@ -33,8 +38,12 @@ void app_main(void){
  aster_device_seal();aster_os_seal();aster_services_seal();aster_network_seal();
  fakepod_storage_start();
  int audio=aster_idf_audio_start();if(audio)ESP_LOGW(TAG,"Audio: %d",audio);
+ if(!audio){aster_bt_tx_register();int media=aster_media_init();if(media)ESP_LOGW(TAG,"Media: %d",media);else aster_idf_player_register();}
+ aster_audio_output_seal();
  int apps=aster_idf_apps_start();if(apps)ESP_LOGE(TAG,"APP worker: %d",apps);
  aster_idf_set_app_command(aster_idf_apps_command);
  aster_idf_network_start();
+ fakepod_audio_diagnostic_register();
+ aster_idf_bt_audio_register();
  int transfer=aster_idf_transfer_register();if(transfer)ESP_LOGE(TAG,"Package transfer: %d",transfer);
 }

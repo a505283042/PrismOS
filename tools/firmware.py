@@ -26,7 +26,7 @@ def hardware(path=None):
     matches = []
     for path in (ROOT / "hardware").glob("*.json"):
         item = json.loads(path.read_text())
-        if re.search(r"^CONFIG_" + item["build"]["kconfig"] + "=y$", text, re.M):
+        if item["build"].get("kconfig") and re.search(r"^CONFIG_" + item["build"]["kconfig"] + "=y$", text, re.M):
             matches.append(item)
     if len(matches) != 1:
         raise SystemExit("Select one hardware model with: python tools/firmware.py menuconfig")

@@ -143,6 +143,7 @@ static volatile int want_page=-1;
 static int page, prior_page, action, brightness=90, saved_volume=60;
 static int brightness_pending=-1, volume_pending=-1;
 static bool volume_save;
+static aster_launcher_slider_stats_t slider_stats;
 static uint64_t save_due;
 static char remove_id[64], remove_name[40];
 static lv_obj_t *root,*body,*stage,*bar_time,*description,*position,*pull_label,*handle;
@@ -401,6 +402,7 @@ static void ribbon_cache_clear(void) {}
 static void ribbon_cache_store(int slot) {(void)slot;}
 static lv_draw_buf_t *ribbon_cache_take(int entry) {(void)entry;return NULL;}
 #endif
+void aster_launcher_slider_stats(aster_launcher_slider_stats_t *out){if(out)*out=slider_stats;}
 void aster_launcher_art_stats(uint32_t *bakes,uint32_t *hits,uint32_t *cached_bytes)
 {
  *bakes=art_bakes;*hits=art_hits;*cached_bytes=0;
@@ -653,13 +655,16 @@ static void release_scroll(uint64_t now)
 static void slider_changed(lv_event_t *e)
 {
  int kind=(int)(intptr_t)lv_event_get_user_data(e);
+ if(lv_event_get_code(e)==LV_EVENT_PRESSED){if(kind==1)slider_stats.presses++;return;}
  int v=lv_slider_get_value(lv_event_get_target(e));
+ if(kind==1){slider_stats.value=v;if(lv_event_get_code(e)==LV_EVENT_VALUE_CHANGED)slider_stats.changes++;}
  if(kind==0) {brightness=v;brightness_pending=v;} else volume_pending=v;
  lv_obj_t *l=lv_obj_get_user_data(lv_event_get_target(e));char value[16];
  snprintf(value,sizeof(value),"%d%%",v);set_text(l,value);
  if(lv_event_get_code(e)==LV_EVENT_RELEASED) {
   save();
   if(kind==1) volume_save=true;
+  if(kind==1)slider_stats.releases++;
  }
 }
 static void slider_card(int y,const char *name,const char *hint,uint32_t color,int value,int kind)
@@ -668,13 +673,20 @@ static void slider_card(int y,const char *name,const char *hint,uint32_t color,i
  text(card,name,15,10,60,color,20,280);
  char buf[16];snprintf(buf,sizeof(buf),"%d%%",value);
  lv_obj_t *out=text(card,buf,205,16,65,DIM,16,220);
- lv_obj_t *s=lv_slider_create(card);lv_obj_set_pos(s,ax(15),ay(55));lv_obj_set_size(s,ax(250),ay(8));
+ lv_obj_t *s=lv_slider_create(card);int track_h=MAX(1,ay(8));
+ lv_obj_set_pos(s,ax(15),ay(55));lv_obj_set_size(s,ax(250),track_h);
+ /* Keep the thin visual track, but give fingers at least 44 physical pixels
+  * vertically. Capture the whole stroke even when it leaves that band. */
+ lv_obj_set_ext_click_area(s,MAX(0,(44-track_h+1)/2));
+ lv_obj_add_flag(s,LV_OBJ_FLAG_PRESS_LOCK);
+ lv_obj_remove_flag(s,LV_OBJ_FLAG_ADV_HITTEST);
  lv_slider_set_range(s,kind==0?25:0,100);lv_slider_set_value(s,value,LV_ANIM_OFF);
  lv_obj_set_style_bg_color(s,lv_color_hex(0x394330),LV_PART_MAIN);
  lv_obj_set_style_bg_color(s,lv_color_hex(color),LV_PART_INDICATOR);
  lv_obj_set_style_bg_color(s,lv_color_hex(color),LV_PART_KNOB);
  lv_obj_set_style_pad_all(s,as(5),LV_PART_KNOB);
  lv_obj_set_user_data(s,out);
+ lv_obj_add_event_cb(s,slider_changed,LV_EVENT_PRESSED,(void *)(intptr_t)kind);
  lv_obj_add_event_cb(s,slider_changed,LV_EVENT_VALUE_CHANGED,(void *)(intptr_t)kind);
  lv_obj_add_event_cb(s,slider_changed,LV_EVENT_RELEASED,(void *)(intptr_t)kind);
  text(card,hint,15,82,250,DIM,16,160);
@@ -1146,10 +1158,16 @@ void aster_launcher_pump_idle(void)
  }
  if(draw_pending) redraw();
  if(brightness_pending>=0) {(void)aster_device_backlight_set(true,brightness_pending*255/100);brightness_pending=-1;}
- if(volume_pending>=0) {(void)aster_device_audio_set_volume(volume_pending);volume_pending=-1;}
+ if(volume_pending>=0) {
+  uint32_t since=aster_os_cycle_us();(void)aster_device_audio_set_volume(volume_pending);volume_pending=-1;
+  uint32_t elapsed=aster_os_cycle_us()-since;if(elapsed>slider_stats.max_set_us)slider_stats.max_set_us=elapsed;
+ }
  if(volume_save) {
   uint8_t value=CLAMP(aster_device_audio_get_volume(),0,100);
+  uint32_t since=aster_os_uptime32();
   (void)aster_service_kv_set("aster.qpanel","volume",&value,1);volume_save=false;
+  uint32_t elapsed=aster_os_uptime32()-since;slider_stats.saves++;
+  if(elapsed>slider_stats.max_save_ms)slider_stats.max_save_ms=elapsed;
  }
  int sound_now=current()?(int)(current()-entries):-1;
  if(sound_pending>=0) {sound_play(sound_pending,0);sound_pending=-1;}

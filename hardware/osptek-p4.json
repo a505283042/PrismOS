@@ -1,0 +1,56 @@
+{
+  "public": {
+    "schema": 1,
+    "id": "osptek-p4",
+    "product": "aster",
+    "abi": "4.5.0",
+    "system": "esp-idf",
+    "cpu": "riscv",
+    "aot_target": "riscv32",
+    "aot_profile": "rv32-ilp32f-interruptible",
+    "capabilities": [
+      "display",
+      "touch",
+      "audio-out",
+      "filesystem",
+      "storage.app",
+      "wifi",
+      "rtc",
+      "psram",
+      "framebuffer",
+      "network",
+      "http",
+      "tls",
+      "audio-stream",
+      "audio-effects",
+      "audio-effects-memory",
+      "mqtt",
+      "websocket"
+    ],
+    "display": {
+      "width": 480,
+      "height": 480,
+      "format": "rgb565",
+      "modes": [
+        "portrait",
+        "landscape"
+      ],
+      "runtime_switch": true
+    },
+    "memory": {
+      "max_linear": 8388608
+    },
+    "deployment": {
+      "transport": "serial",
+      "console": "",
+      "data_glob": "",
+      "package_dir": "/SD:"
+    },
+    "status": "experimental",
+    "name": "鱼鹰 P4C5 ST7102"
+  },
+  "build": {
+    "system": "esp-idf",
+    "project": "boards/osptek_p4/idf"
+  }
+}
