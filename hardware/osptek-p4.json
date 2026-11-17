@@ -47,7 +47,9 @@
       "package_dir": "/SD:"
     },
     "status": "experimental",
-    "name": "鱼鹰 P4C5 ST7102"
+    "name": "鱼鹰光电 P4C5 开发板（ST7102，480×480）",
+    "board_id": "osptek-p4-st7102",
+    "soc": "esp32p4"
   },
   "build": {
     "system": "esp-idf",

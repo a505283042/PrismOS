@@ -1,3 +1,23 @@
+# Board identity is independent of the chip target.
+config ASTER_BOARD_FAKEPOD_S31
+    bool
+    default y
+config ASTER_BOARD_ID
+    string
+    default "fakepod-s31"
+config ASTER_BOARD_NAME
+    string
+    default "FAKE POD NANO PRO · ESP32-S31"
+config ASTER_DISPLAY_WIDTH
+    int
+    default 460
+config ASTER_DISPLAY_HEIGHT
+    int
+    default 460
+config ASTER_BOARD_CODEC_CS43131
+    bool
+    default y
+
 config ASTER_APP_WATCHDOG_MS
     int "Maximum duration of a guest lifecycle/event callback (ms)"
     range 100 30000

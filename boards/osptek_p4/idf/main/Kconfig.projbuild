@@ -1,3 +1,23 @@
+# Board identity is independent of the chip target.
+config ASTER_BOARD_OSPTEK_P4
+    bool
+    default y
+config ASTER_BOARD_ID
+    string
+    default "osptek-p4-st7102"
+config ASTER_BOARD_NAME
+    string
+    default "鱼鹰光电 P4C5 开发板 · ST7102 480×480"
+config ASTER_DISPLAY_WIDTH
+    int
+    default 480
+config ASTER_DISPLAY_HEIGHT
+    int
+    default 480
+config ASTER_BOARD_CODEC_ES8311
+    bool
+    default y
+
 menu "Aster OSPTEK P4 baseboard V1.5 wiring"
 config ASTER_P4_BACKLIGHT_GPIO
     int "BACKLIGHT_GPIO"

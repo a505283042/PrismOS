@@ -55,23 +55,4 @@ int aster_plat_input_poll(aster_touch_evt_t *out,int capacity)
 }
 int aster_plat_input_keys_poll(aster_key_evt_t *out,int capacity) {(void)out;(void)capacity;return 0;}
 int aster_plat_backlight_set(bool on,uint8_t level)
-{
-#if CONFIG_IDF_TARGET_ESP32S31
-    return aster_idf_board_backlight(on,level);
-#else
-    static bool ready;
-    esp_err_t r;
-    if(!ready) {
-        ledc_timer_config_t timer={.speed_mode=LEDC_LOW_SPEED_MODE,.duty_resolution=LEDC_TIMER_8_BIT,
-            .timer_num=LEDC_TIMER_1,.freq_hz=5000,.clk_cfg=LEDC_AUTO_CLK};
-        r=ledc_timer_config(&timer);if(r!=ESP_OK)return ASTER_EIO;
-        ledc_channel_config_t channel={.gpio_num=CONFIG_ASTER_P4_BACKLIGHT_GPIO,.speed_mode=LEDC_LOW_SPEED_MODE,
-            .channel=LEDC_CHANNEL_0,.timer_sel=LEDC_TIMER_1,.duty=on?level:0};
-        r=ledc_channel_config(&channel);if(r!=ESP_OK)return ASTER_EIO;
-        ready=true;
-    }
-    r=ledc_set_duty(LEDC_LOW_SPEED_MODE,LEDC_CHANNEL_0,on?level:0);
-    if(r==ESP_OK)r=ledc_update_duty(LEDC_LOW_SPEED_MODE,LEDC_CHANNEL_0);
-    return r==ESP_OK?0:ASTER_EIO;
-#endif
-}
+{return aster_idf_board_backlight(on,level);}

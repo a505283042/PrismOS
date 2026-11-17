@@ -4,6 +4,7 @@
 #include "graphics.h"
 #include "aster_platform.h"
 #include "aster_device.h"
+#include "aster_power.h"
 #include "ui_lvgl.h"
 #include "ui_font.h"
 #include "font_sd.h"
@@ -98,6 +99,7 @@ int aster_idf_ui_command(int argc,char **argv)
         if(*end || value<0 || value>100)return ASTER_EINVAL;
         request=1000+(int)value;
     } else if(argc==3 && !strcmp(argv[2],"perf"))request=1;
+    else if(argc==3 && !strcmp(argv[2],"power-status"))request=2;
     else if((argc==3 || argc==4) && !strcmp(argv[2],"bench")) {
         char *end=NULL;long seconds=argc==4?strtol(argv[3],&end,10):8;
         if(seconds<2 || seconds>20 || (end && *end))return ASTER_EINVAL;
@@ -109,6 +111,14 @@ static void perf_tick(void)
 {
     uint64_t now=esp_timer_get_time();int request=atomic_exchange(&perf_request,0);
     if(request==1)perf_print();
+    else if(request==2){
+        aster_power_caps_t caps={0};aster_power_battery_t battery={0};
+        int c=aster_power_caps(&caps),b=aster_power_battery(&battery);
+        const aster_power_ops_t *ops=aster_power_ops();
+        printf("POWER adapter=%s caps_status=%d modes=%lu screen_wake=%lu battery_status=%d flags=%lu percent=%lu keys=%d\n",
+          ops?ops->name:"none",c,(unsigned long)caps.modes,(unsigned long)caps.screen_wake,b,
+          (unsigned long)battery.flags,(unsigned long)battery.percent,caps.keys);
+    }
     else if(request>=1000 && request<=1100) {
         uint64_t start=esp_timer_get_time();
         int result=aster_device_audio_set_volume(request-1000);
@@ -184,6 +194,7 @@ static bool touch(void *value)
     static bool suppress_multi;
     static uint32_t primary=UINT32_MAX;
     uint32_t mask=aster_idf_touch_mask();
+    if(aster_launcher_power_touch(mask!=0))return true;
     bool open=aster_qpanel_is_open();
     if(mask && (mask&(mask-1))) {
         suppress_multi=true;primary=UINT32_MAX;

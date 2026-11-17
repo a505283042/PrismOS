@@ -6,8 +6,8 @@ if(IDF_TARGET STREQUAL "esp32p4")
 endif()
 idf_component_register(SRCS ${CONNECTIVITY_SOURCES} INCLUDE_DIRS "." "../../../../contract/include" REQUIRES ${CONNECTIVITY_DEPS})
 
-# Only the P4's external C5 shares the SDMMC host with the storage slot.
-if(CONFIG_IDF_TARGET_ESP32P4 AND NOT CMAKE_BUILD_EARLY_EXPANSION)
+# Only the OSPTEK P4C5 board's external C5 shares the SDMMC host with the storage slot.
+if(CONFIG_ASTER_BOARD_OSPTEK_P4 AND NOT CMAKE_BUILD_EARLY_EXPANSION)
     idf_component_get_property(HOSTED_LIB espressif__esp_hosted COMPONENT_LIB)
     idf_component_get_property(HOSTED_DIR espressif__esp_hosted COMPONENT_DIR)
     set_property(SOURCE "${HOSTED_DIR}/host/port/esp/freertos/src/port_esp_hosted_host_sdio.c"

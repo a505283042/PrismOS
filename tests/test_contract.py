@@ -44,6 +44,9 @@ class Contract(unittest.TestCase):
         for record in records:
             public = json.loads(record.read_text())["public"]
             self.assertEqual(public["id"], record.stem)
+            self.assertTrue(public["board_id"])
+            self.assertNotEqual(public["id"], public["soc"])
+            self.assertTrue(public["name"])
             self.assertTrue({"landscape", "portrait"}.issubset(public["display"]["modes"]))
         bundle = bundle_files()
         self.assertEqual({name for name in bundle if name.startswith("targets/")},

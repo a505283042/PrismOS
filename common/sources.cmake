@@ -8,7 +8,7 @@ set(ASTER_COMMON_INCLUDE_DIRS
     "${ASTER_COMMON_ROOT}/net"
     "${ASTER_COMMON_ROOT}/setup"
     "${ASTER_COMMON_ROOT}/audio")
-set(ASTER_COMMON_DEVICE_SOURCES "${ASTER_COMMON_ROOT}/port/aster_device.c")
+set(ASTER_COMMON_DEVICE_SOURCES "${ASTER_COMMON_ROOT}/port/aster_device.c" "${ASTER_COMMON_ROOT}/port/aster_power.c" "${ASTER_COMMON_ROOT}/port/aster_power_device.c")
 set(ASTER_COMMON_OS_SOURCES "${ASTER_COMMON_ROOT}/port/aster_os.c")
 set(ASTER_COMMON_SERVICE_SOURCES "${ASTER_COMMON_ROOT}/port/aster_services.c")
 set(ASTER_COMMON_PORT_CHECK "${ASTER_COMMON_ROOT}/port/aster_port_check.c")

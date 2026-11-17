@@ -102,9 +102,9 @@ int main(void) {
         drag=source[start:source.index('static void show_page',start)]
         cyclic=source[source.index('static int nearest'):source.index('static entry_t *current')]
         start=source.index('static void settle(int target)\n{')
-        settle=source[start:source.index('static void slider_changed',start)]
+        settle=source[start:source.index('/* Decide the stroke',start)]
         start=source.index('static void touch(const aster_touch_evt_t *')
-        touch=source[start:source.index('static void tick_clock',start)]
+        touch=source[start:source.index('/* Geometry, rather than a font glyph',start)]
         run_c(r'''
 #include <assert.h>
 #include <string.h>
@@ -113,7 +113,7 @@ int main(void) {
 #define CLAMP(v,lo,hi) ((v)<(lo)?(lo):(v)>(hi)?(hi):(v))
 #define aster_service_logf(...) ((void)0)
 ''' + HEADER + r'''
-enum {HOME,ASTER_TOUCH_DOWN=1,ASTER_TOUCH_MOVE,ASTER_TOUCH_UP,ACT_OPEN};
+enum {HOME,MIXER,ASTER_TOUCH_DOWN=1,ASTER_TOUCH_MOVE,ASTER_TOUCH_UP,ACT_OPEN};
 typedef struct {uint32_t x,y,action;} aster_touch_evt_t;
 static int page=HOME,group,count=13,selected[4],phase,from_phase,target_phase,pull,from_pull,action;
 static unsigned scroll_duration;
@@ -123,6 +123,8 @@ static uint64_t aster_os_uptime_ms(void) {return now;}
 static bool aster_wifi_settings_is_open(void) {return false;}
 static bool header_touch(const aster_touch_evt_t *raw) {(void)raw;return false;}
 static void aster_ui_lvgl_pointer(int x,int y,bool pressed) {(void)x;(void)y;(void)pressed;}
+static void *aster_ui_lvgl_indev(void) {return 0;}
+static void lv_indev_read(void *p) {(void)p;}
 static int ribbon_hit(int x,int y) {(void)x;(void)y;return selected[group];}
 static void caption(void) {}
 static void save(void) {}
@@ -232,11 +234,10 @@ int main(void) {
  wifi=modal=panel=launching=false;page=MIXER;
  for(view_h=320;view_h<=480;view_h+=160) {
   assert(!sample(100,view_h-5,ASTER_TOUCH_DOWN));
-  assert(sample(100,view_h-40,ASTER_TOUCH_MOVE) && action==ACT_MIXER);
   int before=waits;
-  page=HOME; /* page changes before the finger is released */
+  assert(!sample(100,view_h-40,ASTER_TOUCH_MOVE) && !action);
   assert(!sample(100,view_h-70,ASTER_TOUCH_MOVE) && waits==before);
-  release();page=MIXER;
+  release(); /* mixer upward scrolling must not dismiss the settings */
  }
  view_h=320;
  assert(!sample(100,4,ASTER_TOUCH_DOWN));

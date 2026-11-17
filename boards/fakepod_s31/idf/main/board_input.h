@@ -8,3 +8,5 @@ int fakepod_touch_read(uint32_t *x,uint32_t *y);
 
 int fakepod_imu_read(float *ax,float *ay,float *az,float *gx,float *gy,float *gz);
 bool fakepod_imu_available(void);
+
+void fakepod_power_register(void);

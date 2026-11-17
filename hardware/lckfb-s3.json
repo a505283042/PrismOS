@@ -52,7 +52,9 @@
       "package_dir": "/SD:"
     },
     "status": "build-supported",
-    "name": "\u7acb\u521b\u5f00\u53d1\u677f ESP32-S3 \u5b9e\u6218\u6d3e"
+    "name": "立创开发板 ESP32-S3 实战派（lckfb，240×320）",
+    "board_id": "aster.esp32s3.lckfb",
+    "soc": "esp32s3"
   },
   "build": {
     "system": "zephyr",

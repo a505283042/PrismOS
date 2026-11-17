@@ -1,3 +1,4 @@
+#include "launcher.h"
 #include "aster_services.h"
 #include "aster_port_util.h"
 #include "aster_os.h"
@@ -946,6 +947,7 @@ void aster_qpanel_force_close(void)
 
 void aster_qpanel_tick(void)
 {
+ aster_launcher_power_tick();
 	/* Self-throttled to 1 Hz rather than left to the caller's gate. There
 	 * are two callers now and they run at completely different rates: the
 	 * launcher's home refresh is already once a second, while the app loop

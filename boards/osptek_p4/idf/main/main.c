@@ -33,6 +33,7 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_mipi_dsi.h"
 #include "driver/gpio.h"
+#include "driver/ledc.h"
 #include "esp_ldo_regulator.h"
 
 
@@ -90,6 +91,23 @@ static void example_bsp_enable_dsi_phy_power(void)
     ESP_ERROR_CHECK(esp_ldo_acquire_channel(&ldo_mipi_phy_config, &ldo_mipi_phy));
     ESP_LOGI(TAG, "MIPI DSI PHY Powered on");
 #endif
+}
+
+/* OSPTEK P4C5 backlight wiring; other ESP32-P4 boards supply their own IO callback. */
+static int osptek_backlight(bool on,uint8_t level)
+{
+ static bool ready;esp_err_t r;
+ if(!ready){
+  ledc_timer_config_t timer={.speed_mode=LEDC_LOW_SPEED_MODE,.duty_resolution=LEDC_TIMER_8_BIT,
+   .timer_num=LEDC_TIMER_1,.freq_hz=5000,.clk_cfg=LEDC_AUTO_CLK};
+  r=ledc_timer_config(&timer);if(r)return ASTER_EIO;
+  ledc_channel_config_t channel={.gpio_num=CONFIG_ASTER_P4_BACKLIGHT_GPIO,.speed_mode=LEDC_LOW_SPEED_MODE,
+   .channel=LEDC_CHANNEL_0,.timer_sel=LEDC_TIMER_1,.duty=on?level:0};
+  r=ledc_channel_config(&channel);if(r)return ASTER_EIO;ready=true;
+ }
+ r=ledc_set_duty(LEDC_LOW_SPEED_MODE,LEDC_CHANNEL_0,on?level:0);
+ if(!r)r=ledc_update_duty(LEDC_LOW_SPEED_MODE,LEDC_CHANNEL_0);
+ return r?ASTER_EIO:0;
 }
 
 static void example_bsp_init_lcd_backlight(void)
@@ -421,12 +439,12 @@ void app_main(void)
     if (ret != ESP_OK)
         ESP_LOGW(TAG, "Touch unavailable: %s; display remains available", esp_err_to_name(ret));
     static const aster_system_info_t identity={
-        .platform="esp-idf",.board="osptek-p4-st7102",.soc="esp32p4",
+        .platform="esp-idf",.board=CONFIG_ASTER_BOARD_ID,.soc="esp32p4",
         .cpu_arch=ASTER_ARCH_RISCV,.cpu_freq_hz=400000000,.cpu_count=2,
         .ram_internal=768*1024,.ram_external=32*1024*1024,.flash_size=16*1024*1024,
     };
     aster_idf_io_t io = {
-        .width=480, .height=480, .present=present_pixels,.system_info=&identity,
+        .width=CONFIG_ASTER_DISPLAY_WIDTH, .height=CONFIG_ASTER_DISPLAY_HEIGHT, .present=present_pixels,.system_info=&identity,.backlight=osptek_backlight,
         .touch_frame=ret == ESP_OK ? read_touch_frame : NULL,
         .max_touch_points=ASTER_IDF_MAX_TOUCH,
         .display_perf_reset=display_perf_reset,.display_perf_report=display_perf_report,

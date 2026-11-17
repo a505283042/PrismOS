@@ -55,4 +55,7 @@ void aster_launcher_on_registry_change(void);
 bool aster_launcher_app_touch(int32_t x, int32_t y, bool pressed);
 void aster_launcher_app_touch_cancel(void);
 
+bool aster_launcher_power_touch(bool contacts_down);
+void aster_launcher_power_tick(void);
+
 #endif /* ASTER_LAUNCHER_H */

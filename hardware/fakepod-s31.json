@@ -50,7 +50,9 @@
       "package_dir": "/SD:"
     },
     "status": "experimental",
-    "name": "FAKE POD NANO PRO ESP32-S31"
+    "name": "FAKE POD NANO PRO ESP32-S31",
+    "board_id": "fakepod-s31",
+    "soc": "esp32s31"
   },
   "build": {
     "system": "esp-idf",

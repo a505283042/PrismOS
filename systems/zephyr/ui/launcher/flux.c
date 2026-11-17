@@ -2,6 +2,8 @@
 #include "aster_port_util.h"
 #include "aster_os.h"
 #include "aster_device.h"
+#include "aster_power.h"
+#include "aster_player_service.h"
 /* SPDX-License-Identifier: MIT
  * FLUX Rev.04, native LVGL port of the supplied 320x480 design.
  * Widget, registry and filesystem mutations run only on the UI worker.
@@ -49,7 +51,7 @@ static uint32_t art_bakes,art_hits;
 enum { HOME, FILTERS, MIXER, FILES, CLOCK, SYSTEM };
 enum { ACT_NONE, ACT_BACK, ACT_FILTERS, ACT_MIXER, ACT_PREV, ACT_NEXT,
        ACT_OPEN, ACT_WIFI, ACT_QUIET, ACT_MOTION, ACT_SYSTEM,
-       ACT_CANCEL, ACT_UNINSTALL, ACT_GROUP=32 };
+       ACT_CANCEL, ACT_UNINSTALL, ACT_TIMEOUT, ACT_SCREEN_OFF, ACT_BT, ACT_GROUP=32 };
 enum { ICON_SETTINGS, ICON_LEFT, ICON_RIGHT, ICON_CLOCK, ICON_FILES,
        ICON_TERMINAL, ICON_BT, ICON_MOON, ICON_WIFI, ICON_MOVE, ICON_BATTERY, ICON_BOX, ICON_ARROW, ICON_ASTER };
 
@@ -148,6 +150,14 @@ static uint64_t save_due;
 static char remove_id[64], remove_name[40];
 static lv_obj_t *root,*body,*stage,*bar_time,*description,*position,*pull_label,*handle;
 static lv_obj_t *filter_label,*modal,*toast,*clock_value,*clock_date,*wifi_state;
+static lv_obj_t *battery_label,*power_label,*timeout_button;
+static lv_obj_t *battery_body,*battery_terminal,*battery_fill;
+static bool battery_charging;
+static aster_power_idle_t power_idle;
+static uint8_t timeout_index;
+static bool power_contacts_down;
+static const uint32_t screen_timeouts[]={0,30000,60000,120000,300000};
+static const char *const screen_timeout_names[]={"永不","30 秒","1 分钟","2 分钟","5 分钟"};
 static uint64_t toast_until;
 static lv_image_dsc_t chrome[ARRAY_SIZE(flux_icon_sizes)][ARRAY_SIZE(flux_icon_data[0])]
 	__attribute__((section(".ext_ram.bss")));
@@ -295,6 +305,7 @@ static void save_now(void)
 {
  uint8_t state[]={group,selected[0],selected[1],selected[2],selected[3],brightness,motion,quiet};
  (void)aster_service_kv_set(KV_ID,"state",state,sizeof(state));
+ (void)aster_service_kv_set(KV_ID,"screen-timeout",&timeout_index,1);
  save_due=0;
 }
 /* Coalesce preference writes until the gesture and settling finish. */
@@ -652,6 +663,59 @@ static void release_scroll(uint64_t now)
  selected[group]=wrap(nearest(phase),count);caption();save();
  aster_service_logf(3,"flux coast: speed=%d px/s travel=%d duration=%u ms",drag.track.speed,target_phase-from_phase,scroll_duration);
 }
+/* Decide the stroke before LVGL's slider class sees PRESSING/RELEASED.
+ * A vertical stroke must never briefly change the value (which would also
+ * disable LVGL's vertical scroll chain). Taps retain normal track selection. */
+struct slider_axis_state {
+ lv_point_t origin,last;uint8_t axis,horizontal_samples;int peak;
+};
+static struct slider_axis_state slider_axes[2];
+static void slider_axis_guard(lv_event_t *event)
+{
+ lv_indev_t *indev=lv_indev_active();
+ if(!indev||lv_indev_get_type(indev)!=LV_INDEV_TYPE_POINTER)return;
+ struct slider_axis_state *state=lv_event_get_user_data(event);
+ lv_event_code_t code=lv_event_get_code(event);
+ if(code==LV_EVENT_PRESSED){
+  lv_indev_get_point(indev,&state->origin);
+  state->last=state->origin;state->axis=state->horizontal_samples=0;state->peak=0;return;
+ }
+ if(code!=LV_EVENT_PRESSING&&code!=LV_EVENT_RELEASED&&code!=LV_EVENT_PRESS_LOST)return;
+ lv_point_t point;lv_indev_get_point(indev,&point);
+ int dx=abs(point.x-state->origin.x),dy=abs(point.y-state->origin.y);
+ state->peak=MAX(state->peak,MAX(dx,dy));
+ if(!state->axis){
+  if(code==LV_EVENT_PRESS_LOST)state->axis=2;
+  else if(dy>=MAX(8,as(6))&&dy>=dx)state->axis=2;
+  else if(dx>=MAX(12,as(9))&&dx>=2*dy){
+   /* Timer repeats at one coordinate do not confirm a horizontal stroke. */
+   if(point.x!=state->last.x)state->horizontal_samples++;
+   if(state->horizontal_samples>=2||code==LV_EVENT_RELEASED)state->axis=1;
+  }else state->horizontal_samples=0;
+  /* A moved but undecided release is a canceled drag, never a track tap. */
+  if(code==LV_EVENT_RELEASED&&!state->axis&&state->peak>=MAX(8,as(6)))state->axis=2;
+ }
+ state->last=point;
+ if(state->axis==2||(code==LV_EVENT_PRESSING&&!state->axis))lv_event_stop_processing(event);
+}
+/* Large power controls must not turn a scrolling stroke into a click,
+ * including at a scroll boundary where LVGL cannot move the container. */
+struct power_button_stroke {lv_point_t origin;bool moved;};
+static struct power_button_stroke power_button_strokes[2];
+static void power_button_guard(lv_event_t *event)
+{
+ lv_indev_t *indev=lv_indev_active();
+ if(!indev||lv_indev_get_type(indev)!=LV_INDEV_TYPE_POINTER)return;
+ struct power_button_stroke *stroke=lv_event_get_user_data(event);
+ lv_event_code_t code=lv_event_get_code(event);
+ if(code==LV_EVENT_PRESSED){
+  lv_indev_get_point(indev,&stroke->origin);stroke->moved=false;
+ }else if(code==LV_EVENT_PRESSING||code==LV_EVENT_RELEASED){
+  lv_point_t point;lv_indev_get_point(indev,&point);
+  if(MAX(abs(point.x-stroke->origin.x),abs(point.y-stroke->origin.y))>=MAX(8,as(6)))stroke->moved=true;
+ }else if(code==LV_EVENT_PRESS_LOST)stroke->moved=true;
+ else if(code==LV_EVENT_CLICKED&&stroke->moved)lv_event_stop_processing(event);
+}
 static void slider_changed(lv_event_t *e)
 {
  int kind=(int)(intptr_t)lv_event_get_user_data(e);
@@ -675,11 +739,12 @@ static void slider_card(int y,const char *name,const char *hint,uint32_t color,i
  lv_obj_t *out=text(card,buf,205,16,65,DIM,16,220);
  lv_obj_t *s=lv_slider_create(card);int track_h=MAX(1,ay(8));
  lv_obj_set_pos(s,ax(15),ay(55));lv_obj_set_size(s,ax(250),track_h);
- /* Keep the thin visual track, but give fingers at least 44 physical pixels
-  * vertically. Capture the whole stroke even when it leaves that band. */
+ /* A generous hit target stays usable; axis arbitration lets vertical
+  * strokes scroll the page even when they begin on the track or knob. */
  lv_obj_set_ext_click_area(s,MAX(0,(44-track_h+1)/2));
- lv_obj_add_flag(s,LV_OBJ_FLAG_PRESS_LOCK);
+ lv_obj_add_flag(s,LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLL_CHAIN_VER);
  lv_obj_remove_flag(s,LV_OBJ_FLAG_ADV_HITTEST);
+ lv_obj_add_event_cb(s,slider_axis_guard,LV_EVENT_ALL|LV_EVENT_PREPROCESS,&slider_axes[kind]);
  lv_slider_set_range(s,kind==0?25:0,100);lv_slider_set_value(s,value,LV_ANIM_OFF);
  lv_obj_set_style_bg_color(s,lv_color_hex(0x394330),LV_PART_MAIN);
  lv_obj_set_style_bg_color(s,lv_color_hex(color),LV_PART_INDICATOR);
@@ -758,23 +823,49 @@ static void build_filters(void)
 }
 static void build_mixer(void)
 {
+ lv_obj_add_flag(body,LV_OBJ_FLAG_SCROLLABLE);lv_obj_set_scroll_dir(body,LV_DIR_VER);
  text(body,"DEVICE MIXER",17,15,280,DIM,16,128);
  text(body,"调到你的节奏。",17,36,286,FG,20,280);
- const char *names[]={"Wi-Fi","蓝牙","静谧"};int acts[]={ACT_WIFI,ACT_NONE,ACT_QUIET};
+ aster_player_info_t player={0};
+ bool bt=!aster_player_service_info(&player)&&(player.capabilities&(ASTER_PLAYER_CAP_BT_SINK|ASTER_PLAYER_CAP_BT_SOURCE));
+ const char *names[]={"Wi-Fi","蓝牙","静谧"};int acts[]={ACT_WIFI,ACT_BT,ACT_QUIET};
  int art[]={ICON_WIFI,ICON_BT,ICON_MOON};
- for(int i=0;i<3;i++) {
+ for(int i=0,column=0;i<3;i++) {
+  if(i==1&&!bt)continue;
+  int columns=bt?3:2,width=bt?90:139;
   uint32_t color=(i==2 && quiet)?ACCENT:0x252d22;
-  lv_obj_t *b=button(body,NULL,17+i*98,89,90,68,color,acts[i]);
+  lv_obj_t *b=button(body,NULL,17+column++*(286/columns+3),89,width,68,color,acts[i]);
   icon(b,art[i],12,8,19,color==ACCENT?0x394b20:DIM);
   text(b,names[i],12,30,70,color==ACCENT?0x394b20:FG,16,180);
-  lv_obj_t *status=text(b,i==0?"读取状态":i==1?"未启用":quiet?"已开启":"已关闭",12,49,74,DIM,16,128);
+  lv_obj_t *status=text(b,i==0?"读取状态":i==1?(player.flags&ASTER_PLAYER_F_CONNECTED?"已连接":"音频设置"):quiet?"已开启":"已关闭",12,49,74,DIM,16,128);
   if(i==0) wifi_state=status;
-  if(i==1) lv_obj_clear_flag(b,LV_OBJ_FLAG_CLICKABLE);
+
  }
  slider_card(172,"光","屏幕亮度",ACCENT,brightness,0);
  int volume=volume_pending>=0?volume_pending:aster_device_audio_get_volume();slider_card(297,"声","输出音量",0xffb8a5,MAX(0,volume),1);
- icon(body,ICON_BATTERY,17,420,15,DIM);
- text(body,"USB 供电",38,422,220,DIM,16,160);
+ aster_power_caps_t power={0};(void)aster_power_caps(&power);
+ if(power.battery){
+  icon(body,ICON_BATTERY,17,420,15,DIM);
+  power_label=text(body,"正在读取电池状态",38,422,220,DIM,16,160);
+ }
+ int y=465;
+ if(power.modes&ASTER_POWER_SCREEN_OFF){
+  char title[64];snprintf(title,sizeof(title),"自动熄屏   %s",screen_timeout_names[timeout_index]);
+  /* Keep at least 56 physical pixels of height and 18 of separation on
+   * compact portrait panels too, rather than shrinking every touch target. */
+  int height=MAX(76,(56*480+view_h-1)/view_h);
+  int gap=MAX(24,(18*480+view_h-1)/view_h);
+  timeout_button=button(body,title,17,y,286,height,0x252d22,ACT_TIMEOUT);y+=height+gap;
+  lv_obj_t *off_button=button(body,"立即熄屏",17,y,286,height,0x191f18,ACT_SCREEN_OFF);y+=height+gap;
+  lv_obj_set_style_border_width(off_button,MAX(1,as(1)),0);
+  lv_obj_set_style_border_color(off_button,lv_color_hex(0x394330),0);
+  lv_obj_add_flag(timeout_button,LV_OBJ_FLAG_PRESS_LOCK);
+  lv_obj_add_flag(off_button,LV_OBJ_FLAG_PRESS_LOCK);
+  lv_obj_add_event_cb(timeout_button,power_button_guard,LV_EVENT_ALL|LV_EVENT_PREPROCESS,&power_button_strokes[0]);
+  lv_obj_add_event_cb(off_button,power_button_guard,LV_EVENT_ALL|LV_EVENT_PREPROCESS,&power_button_strokes[1]);
+  text(body,(power.screen_wake&(ASTER_WAKE_TOUCH|ASTER_WAKE_KEY))==(ASTER_WAKE_TOUCH|ASTER_WAKE_KEY)?"轻触屏幕或按设备按键唤醒":power.screen_wake&ASTER_WAKE_TOUCH?"轻触屏幕唤醒":"按设备按键唤醒",17,y,286,DIM,16,160);y+=40;
+ }
+ if(!(power.modes&ASTER_POWER_SCREEN_OFF))text(body,"暂无可配置的电源选项",17,y,286,DIM,16,160);
  lv_obj_t *settings=button(body,NULL,273,413,30,27,0x252d22,ACT_SYSTEM);
  icon(settings,ICON_SETTINGS,6,4,18,ACCENT);
 }
@@ -813,7 +904,7 @@ static void show_page(int next)
  for(int i=0;i<RIBBONS;i++) {ribbons[i].obj=NULL;ribbons[i].entry=-1;}
  if(body) lv_obj_delete(body);
  for(int i=0;i<RIBBONS;i++) release_icon(i);
- stage=description=position=pull_label=handle=filter_label=wifi_state=clock_value=clock_date=NULL;
+ stage=description=position=pull_label=handle=filter_label=wifi_state=clock_value=clock_date=power_label=timeout_button=NULL;
  page=next;body=box(root,0,40,320,440,next==HOME?BG:0x181b18,0);
  lv_obj_t *brand=lv_obj_get_child(root,0);
  /* Top bar is independent of page destruction. */
@@ -879,7 +970,7 @@ static bool header_touch(const aster_touch_evt_t *raw)
  bool pressed=raw->action!=ASTER_TOUCH_UP;
  bool enabled=visible && !modal && !aster_wifi_settings_is_open() &&
               !aster_qpanel_is_open() && !launching;
- uint32_t allow=page==MIXER?ASTER_GEST_ALLOW_EXIT:ASTER_GEST_ALLOW_PANEL;
+ uint32_t allow=page==MIXER?0:ASTER_GEST_ALLOW_PANEL;
  aster_gest_t g=aster_gesture_feed(raw->x,raw->y,pressed,enabled?allow:0,view_h);
  if(!enabled || (page==MIXER?g!=ASTER_GEST_PANEL_UP:g!=ASTER_GEST_PANEL_DOWN)) return false;
  aster_ui_lvgl_pointer(raw->x,raw->y,pressed);
@@ -908,7 +999,14 @@ static void touch(const aster_touch_evt_t *raw)
    flux_velocity_reset(&drag.track,e->y,drag.started);
   }
  }
- if(!drag.down) {aster_ui_lvgl_pointer(raw->x,raw->y,pressed);return;}
+ if(!drag.down) {
+  aster_ui_lvgl_pointer(raw->x,raw->y,pressed);
+  /* Consume every mixer input edge before the next sample overwrites the
+   * platform pointer snapshot. Otherwise a fast/batched stroke can lose its
+   * real DOWN position and appear to LVGL as a track tap on release. */
+  if(page==MIXER)lv_indev_read(aster_ui_lvgl_indev());
+  return;
+ }
  int dx=(int)e->x-drag.x,dy=(int)e->y-drag.y;
  if(!drag.axis && dx*dx+dy*dy>36) {
   drag.axis=drag.handle?1:abs(dy)>=6?2:3;drag.moved=true;
@@ -942,6 +1040,56 @@ static void touch(const aster_touch_evt_t *raw)
   drag.down=false;
  }
 }
+/* Geometry, rather than a font glyph: consistent even before SD fonts are
+ * ready, with a real charge-level fill and a separate charging indicator. */
+static void battery_graphic_update(const aster_power_battery_t *battery)
+{
+ if(!battery_body)return;
+ bool present=battery&&(battery->flags&ASTER_POWER_BATTERY_PRESENT);
+ if(!present){
+  lv_obj_add_flag(battery_body,LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(battery_terminal,LV_OBJ_FLAG_HIDDEN);return;
+ }
+ lv_obj_remove_flag(battery_body,LV_OBJ_FLAG_HIDDEN);
+ lv_obj_remove_flag(battery_terminal,LV_OBJ_FLAG_HIDDEN);
+ bool valid=battery->flags&ASTER_POWER_PERCENT_VALID;
+ bool charging=battery->flags&ASTER_POWER_CHARGING;
+ uint32_t color=charging?ACCENT:valid&&battery->percent<=15?0xff927f:DIM;
+ lv_obj_set_style_border_color(battery_body,lv_color_hex(color),0);
+ lv_obj_set_style_bg_color(battery_terminal,lv_color_hex(color),0);
+ lv_obj_set_style_bg_color(battery_fill,lv_color_hex(color),0);
+ if(valid&&battery->percent){
+  lv_obj_set_width(battery_fill,MAX(1,ax(14)*(int)battery->percent/100));
+  lv_obj_remove_flag(battery_fill,LV_OBJ_FLAG_HIDDEN);
+ }else lv_obj_add_flag(battery_fill,LV_OBJ_FLAG_HIDDEN);
+ if(charging!=battery_charging){battery_charging=charging;lv_obj_invalidate(battery_body);}
+}
+static void battery_graphic_draw(lv_event_t *event)
+{
+ if(!battery_charging)return;
+ lv_area_t a;lv_obj_get_coords(lv_event_get_target(event),&a);
+ const int x[]={11,7,11,7},y[]={1,6,6,10};
+ lv_draw_line_dsc_t line;lv_draw_line_dsc_init(&line);
+ line.color=lv_color_hex(0xffa347);line.width=MAX(1,as(2));
+ for(unsigned i=1;i<4;i++){
+  line.p1=(lv_point_precise_t){a.x1+ax(x[i-1]),a.y1+ay(y[i-1])};
+  line.p2=(lv_point_precise_t){a.x1+ax(x[i]),a.y1+ay(y[i])};
+  lv_draw_line(lv_event_get_layer(event),&line);
+ }
+}
+static void battery_graphic_create(lv_obj_t *group)
+{
+ lv_obj_t *graphic=box(group,0,0,20,13,BG,0);
+ lv_obj_align(graphic,LV_ALIGN_RIGHT_MID,0,0);
+ battery_body=box(graphic,0,0,18,13,BG,2);
+ lv_obj_set_style_border_width(battery_body,MAX(1,as(1)),0);
+ lv_obj_set_style_border_opa(battery_body,LV_OPA_COVER,0);
+ battery_fill=box(battery_body,1,1,14,9,DIM,1);
+ battery_terminal=box(graphic,18,4,2,5,DIM,1);
+ battery_charging=false;
+ lv_obj_add_event_cb(battery_body,battery_graphic_draw,LV_EVENT_DRAW_POST,NULL);
+ battery_graphic_update(NULL);
+}
 static void tick_clock(void)
 {
  uint64_t sec=aster_os_uptime_ms()/1000;if(sec==clock_sec) return;clock_sec=sec;
@@ -950,6 +1098,20 @@ static void tick_clock(void)
  else snprintf(value,sizeof(value),"--:--");
  set_text(bar_time,value);set_text(clock_value,value);
  snprintf(value,sizeof(value),"%04d-%02u-%02u%s",(int)t.year,(unsigned)t.month,(unsigned)t.day,(t.flags&ASTER_TIME_FLAG_SYNCED)?"":" · 默认时间");set_text(clock_date,value);
+ aster_power_battery_t battery;
+ if(!aster_power_battery(&battery)){
+  char short_text[24],long_text[80];
+  if(battery.flags&ASTER_POWER_PERCENT_VALID){
+   snprintf(short_text,sizeof(short_text),"%u%%",(unsigned)battery.percent);
+   snprintf(long_text,sizeof(long_text),"电量 %u%% · %s",(unsigned)battery.percent,
+    battery.flags&ASTER_POWER_CHARGING?"正在充电":battery.flags&ASTER_POWER_EXTERNAL_PRESENT?"外部供电":"电池供电");
+  }else{
+   snprintf(short_text,sizeof(short_text),"%s",battery.flags&ASTER_POWER_EXTERNAL_PRESENT?"USB":"--");
+   snprintf(long_text,sizeof(long_text),"%s",battery.flags&ASTER_POWER_BATTERY_PRESENT?"电池电量暂不可用":battery.flags&ASTER_POWER_EXTERNAL_PRESENT?"USB 供电 · 未检测到电池":"未检测到电池");
+  }
+  battery_graphic_update(&battery);
+  set_text(battery_label,short_text);set_text(power_label,long_text);
+ }else{battery_graphic_update(NULL);set_text(battery_label,"");set_text(power_label,"设备未提供电池状态");}
  if(wifi_state) {
   aster_wifi_status_t s={0};int err=aster_device_wifi_status(&s);
   set_text(wifi_state,err || !s.ip[0]?"未连接":"已连接");
@@ -979,6 +1141,10 @@ int aster_launcher_init(void)
 {
  if(initialized) return 0;
  initialized=true;
+ aster_power_default_init();aster_power_seal();
+ size_t timeout_bytes=0;uint8_t saved_timeout=0;
+ if(!aster_service_kv_get(KV_ID,"screen-timeout",&saved_timeout,1,&timeout_bytes)&&timeout_bytes==1&&saved_timeout<ARRAY_SIZE(screen_timeouts))timeout_index=saved_timeout;
+ aster_power_idle_init(&power_idle,aster_os_uptime_ms(),screen_timeouts[timeout_index],230);
  aster_touch_ui_reset(&launcher_touch_ui);
  for(size_t face=0;face<ARRAY_SIZE(flux_icon_sizes);face++) for(size_t i=0;i<ARRAY_SIZE(chrome[face]);i++) {
   unsigned px=flux_icon_sizes[face];
@@ -990,6 +1156,7 @@ int aster_launcher_init(void)
  if(!aster_service_kv_get(KV_ID,"state",s,sizeof(s),&n) && n==sizeof(s)) {
   group=MIN(s[0],3);for(int i=0;i<4;i++) selected[i]=s[i+1];brightness=CLAMP(s[5],25,100);motion=s[6]!=0;quiet=s[7]!=0;
  }
+ power_idle.brightness=(uint8_t)(brightness*255/100);
  return 0;
 }
 void aster_launcher_show(void)
@@ -1019,7 +1186,13 @@ void aster_launcher_show(void)
   lv_obj_align(brand_name,LV_ALIGN_LEFT_MID,ax(36),0);
   lv_obj_align(brand_mark,LV_ALIGN_LEFT_MID,ax(15),0);
  }
- /* The rightmost 48 design pixels are reserved for future battery status. */
+ /* A shared 40px-high group keeps the number and graphic centered together.
+  * Right-aligned numbers retain a two-design-pixel gap for 1/2/3 digits. */
+ lv_obj_t *battery_group=box(bar,269,0,49,40,BG,0);
+ battery_label=text(battery_group,"",0,0,27,DIM,16,144);
+ lv_obj_set_style_text_align(battery_label,LV_TEXT_ALIGN_RIGHT,0);
+ lv_obj_align(battery_label,LV_ALIGN_LEFT_MID,0,0);
+ battery_graphic_create(battery_group);
  bar_time=text(bar,"--:--",205,lckfb?0:14,60,DIM,16,lckfb?288:160);
  if(lckfb) {
   lv_obj_align(bar_time,LV_ALIGN_LEFT_MID,ax(205),0);
@@ -1045,7 +1218,7 @@ void aster_launcher_hide(void)
  for(int i=0;i<RIBBONS;i++) {release_icon(i);ribbons[i].obj=NULL;}
  ribbon_cache_clear();
  sound_return=true;
- root=body=stage=bar_time=modal=toast=NULL;visible=false;hold_ms=0;clock_sec=UINT64_MAX;
+ root=body=stage=bar_time=battery_label=power_label=battery_body=battery_terminal=battery_fill=modal=toast=NULL;visible=false;hold_ms=0;clock_sec=UINT64_MAX;
 }
 void aster_launcher_request_show(void) {want_show=true;}
 void aster_launcher_on_registry_change(void) {dirty=true;}
@@ -1094,6 +1267,7 @@ void aster_launcher_pump_idle(void)
  for(int i=0;i<n;i++) masks[i]=events[i].contact_mask;
  aster_touch_ui_begin_batch(&launcher_touch_ui,masks,(uint8_t)n);
  for(int i=0;i<n;i++) {
+  if(aster_launcher_power_touch(events[i].contact_mask!=0))continue;
   struct aster_touch_ui_decision ui=aster_touch_ui_accept(&launcher_touch_ui,(uint8_t)i,
    events[i].action,events[i].slot,events[i].contact_mask);
   if(ui.reset_gesture) {
@@ -1122,6 +1296,25 @@ void aster_launcher_pump_idle(void)
  else if(a==ACT_OPEN) {launching=true;animation_ms=now;from_pull=pull;}
  else if(a==ACT_SYSTEM) {prior_page=MIXER;show_page(SYSTEM);sound_pending=S_TAP;}
  else if(a==ACT_WIFI) {aster_wifi_settings_open(root,NULL);sound_pending=S_TAP;}
+ else if(a==ACT_BT) {
+  /* Service capability gates the entry; APP absence is reported explicitly. */
+  aster_service_app_t app;
+  if(aster_service_app_find("aster.hifi",&app)){
+   int err=aster_service_app_start(app.id);if(err)notify("无法打开音频设置。");
+  }else notify("请先安装 Aster 音乐以管理蓝牙音频。");
+ }
+ else if(a==ACT_TIMEOUT){
+  timeout_index=(timeout_index+1)%ARRAY_SIZE(screen_timeouts);
+  power_idle.timeout_ms=screen_timeouts[timeout_index];save();
+  char title[64];snprintf(title,sizeof(title),"自动熄屏   %s",screen_timeout_names[timeout_index]);
+  if(timeout_button)set_text(lv_obj_get_child(timeout_button,0),title);
+ }
+ else if(a==ACT_SCREEN_OFF){
+  aster_power_caps_t caps={0};(void)aster_power_caps(&caps);
+  aster_power_request_t r={sizeof(r),ASTER_POWER_API_VERSION,ASTER_POWER_SCREEN_OFF,caps.screen_wake,0};
+  if(!aster_power_transition(&r,power_idle.brightness))power_idle.screen_off=true;
+  else notify("当前设备无法熄屏。");
+ }
  else if(a==ACT_QUIET) {
   quiet=!quiet;
   if(quiet) {saved_volume=aster_device_audio_get_volume();volume_pending=0;} else volume_pending=saved_volume;
@@ -1157,7 +1350,7 @@ void aster_launcher_pump_idle(void)
   if(t==1000) {launching=false;pull=0;open_current();}
  }
  if(draw_pending) redraw();
- if(brightness_pending>=0) {(void)aster_device_backlight_set(true,brightness_pending*255/100);brightness_pending=-1;}
+ if(brightness_pending>=0) {power_idle.brightness=brightness_pending*255/100;(void)aster_device_backlight_set(true,power_idle.brightness);brightness_pending=-1;}
  if(volume_pending>=0) {
   uint32_t since=aster_os_cycle_us();(void)aster_device_audio_set_volume(volume_pending);volume_pending=-1;
   uint32_t elapsed=aster_os_cycle_us()-since;if(elapsed>slider_stats.max_set_us)slider_stats.max_set_us=elapsed;
@@ -1180,4 +1373,36 @@ void aster_launcher_pump_idle(void)
  if(toast && now>=toast_until) {lv_obj_delete(toast);toast=NULL;}
  if(save_due && now>=save_due && !drag.down && !animating && !launching) save_now();
  tick_clock();aster_wifi_settings_tick();aster_qpanel_tick();aster_ui_lvgl_pump();
+}
+
+/* Same owner as Launcher and APP event dispatch. The waking gesture is fully
+ * consumed, preventing a wake tap from launching an APP or moving a slider. */
+bool aster_launcher_power_touch(bool contacts_down)
+{power_contacts_down=contacts_down;return aster_power_idle_activity(&power_idle,aster_os_uptime_ms(),contacts_down);}
+void aster_launcher_power_tick(void)
+{
+ if(!power_idle.initialized)return;
+ uint64_t now=aster_os_uptime_ms();
+ /* Do not let a held finger time out while its coordinates are unchanged. */
+ bool held=power_contacts_down;
+ (void)aster_power_idle_tick(&power_idle,now,held);
+ const aster_power_ops_t *ops=aster_power_ops();
+ if(!ops||!ops->map_key)return;
+ aster_power_key_t events[8];int n=aster_power_keys(events,ARRAY_SIZE(events));
+ static uint64_t key_down_ms;static uint32_t key_code;static bool key_down,key_woke;
+ for(int i=0;i<n;i++){
+  aster_power_key_t *e=&events[i];
+  if(e->pressed){key_down=true;key_code=e->code;key_down_ms=e->timestamp_ms;key_woke=aster_power_idle_activity(&power_idle,now,true);continue;}
+  if(!key_down||key_code!=e->code)continue;
+  key_down=false;bool consumed=aster_power_idle_activity(&power_idle,now,false);
+  if(key_woke||consumed)continue;
+  aster_power_key_action_t a=aster_power_map_key(e->code,false,(uint32_t)(e->timestamp_ms-key_down_ms));
+  if(a==ASTER_KEY_ACTION_SCREEN){
+   aster_power_caps_t caps={0};(void)aster_power_caps(&caps);
+   aster_power_request_t r={sizeof(r),1,ASTER_POWER_SCREEN_OFF,caps.screen_wake,0};
+   if(!aster_power_transition(&r,power_idle.brightness))power_idle.screen_off=true;
+  }else if(a==ASTER_KEY_ACTION_HOME){
+   if(visible)want_page=HOME;else aster_qpanel_request_exit("应用");
+  }
+ }
 }

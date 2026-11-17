@@ -716,6 +716,7 @@ static void ui_service(aster_app_ctx_t *ctx)
 	aster_touch_ui_begin_batch(&runtime_touch_ui, masks, (uint8_t)n);
 
 	for (int i = 0; i < n && !ctx->quit; i++) {
+		if(aster_launcher_power_touch(tev[i].contact_mask!=0))continue;
 		bool pressed = tev[i].action != ASTER_TOUCH_UP;
 		struct aster_touch_ui_decision ui = aster_touch_ui_accept(
 			&runtime_touch_ui, (uint8_t)i, tev[i].action, tev[i].slot,

@@ -6,7 +6,11 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
-static i2c_master_dev_handle_t touch,imu;
+#include "aster_power.h"
+#include "aster_os.h"
+#include <errno.h>
+static i2c_master_dev_handle_t touch,imu,pmu;
+static bool pmu_ready;
 static bool imu_ready;
 static esp_err_t read_register(i2c_master_dev_handle_t d,uint8_t reg,void *data,size_t size){
  return i2c_master_transmit_receive(d,&reg,1,data,size,100);
@@ -44,6 +48,13 @@ esp_err_t fakepod_input_init(void){
   .clk_source=I2C_CLK_SRC_DEFAULT,.glitch_ignore_cnt=7,.flags.enable_internal_pullup=true};
  esp_err_t err=i2c_new_master_bus(&cfg,&bus);if(err)return err;
  imu_init(bus);
+ i2c_device_config_t pmu_cfg={.dev_addr_length=I2C_ADDR_BIT_LEN_7,.device_address=FP_PMU_ADDRESS,.scl_speed_hz=400000};
+ if(i2c_master_bus_add_device(bus,&pmu_cfg,&pmu)==ESP_OK){
+  uint8_t id=0;if(read_register(pmu,0x03,&id,1)==ESP_OK&&(id&0xcf)==0x4a)pmu_ready=true;
+  ESP_LOGI("fakepod","AXP2101 ID=0x%02x ready=%d",id,pmu_ready);
+ }
+ gpio_config_t key_cfg={.pin_bit_mask=1ULL<<FP_BUTTON,.mode=GPIO_MODE_INPUT,.pull_up_en=true};
+ ESP_ERROR_CHECK(gpio_config(&key_cfg));
  gpio_config_t reset={.pin_bit_mask=1ULL<<FP_TOUCH_RESET,.mode=GPIO_MODE_OUTPUT};
  err=gpio_config(&reset);if(err)return err;
  gpio_set_level(FP_TOUCH_RESET,0);vTaskDelay(pdMS_TO_TICKS(10));
@@ -63,4 +74,52 @@ int fakepod_touch_read(uint32_t *x,uint32_t *y){
  uint32_t px=((data[1]&0x0f)<<8)|data[2],py=((data[3]&0x0f)<<8)|data[4];
  if(px>=FP_LCD_WIDTH||py>=FP_LCD_HEIGHT)return -1;
  *x=px;*y=py;return 1;
+}
+
+/* Read-only AXP2101 telemetry: STATUS1 0x00, STATUS2 0x01, SOC 0xa4.
+ * Register semantics cross-checked against XPowersLib AXP2101 implementation.
+ * Do not alter charger, fuel-gauge calibration, or regulator settings. */
+static int power_battery(void *context,aster_power_battery_t *out)
+{
+ (void)context;if(!pmu_ready)return -ENODEV;
+ uint8_t status[2];if(read_register(pmu,0x00,status,sizeof(status)))return -EIO;
+ *out=(aster_power_battery_t){.size=sizeof(*out),.version=ASTER_POWER_API_VERSION};
+ if(status[0]&0x20)out->flags|=ASTER_POWER_EXTERNAL_PRESENT;
+ if(status[0]&0x08){
+  out->flags|=ASTER_POWER_BATTERY_PRESENT;
+  if(((status[1]>>5)&3)==1)out->flags|=ASTER_POWER_CHARGING;
+  uint8_t percent;if(read_register(pmu,0xa4,&percent,1))return -EIO;
+  if(percent<=100){out->percent=percent;out->flags|=ASTER_POWER_PERCENT_VALID;}
+ }
+ return 0;
+}
+static int power_caps(void *context,aster_power_caps_t *out)
+{
+ int r=aster_power_device_base.caps(context,out);if(r)return r;
+ out->battery=pmu_ready;out->keys=true;
+ out->modes|=ASTER_POWER_SCREEN_OFF;out->screen_wake|=ASTER_WAKE_KEY;
+ return 0;
+}
+static int power_keys(void *context,aster_power_key_t *out,uint32_t capacity)
+{
+ (void)context;(void)capacity;
+ static bool candidate,stable;static uint64_t changed;
+ uint64_t now=aster_os_uptime_ms();bool pressed=!gpio_get_level(FP_BUTTON);
+ if(pressed!=candidate){candidate=pressed;changed=now;}
+ if(candidate==stable||now-changed<30)return 0;
+ stable=candidate;*out=(aster_power_key_t){.code=FP_BUTTON,.pressed=stable,.timestamp_ms=now};return 1;
+}
+static aster_power_key_action_t power_key_map(void *context,uint32_t code,bool pressed,uint32_t held_ms)
+{
+ (void)context;if(code!=FP_BUTTON||pressed)return ASTER_KEY_ACTION_NONE;
+ return held_ms>=800?ASTER_KEY_ACTION_HOME:ASTER_KEY_ACTION_SCREEN;
+}
+void fakepod_power_register(void)
+{
+ static aster_power_ops_t ops;
+ const aster_power_ops_t overrides={.size=sizeof(overrides),.version=ASTER_POWER_API_VERSION,
+  .name="fakepod-s31-axp2101",.caps=power_caps,.battery=power_battery,.keys=power_keys,.map_key=power_key_map};
+ if(!aster_power_derive(&ops,&aster_power_device_base,&overrides)){
+  int r=aster_power_bind(&ops,NULL);ESP_LOGI("fakepod","Power adapter: %d",r);
+ }
 }

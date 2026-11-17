@@ -49,7 +49,9 @@
       "package_dir": "/SD:"
     },
     "status": "experimental",
-    "name": "\u5fae\u96ea ESP32-S3-Touch-LCD-3.5B"
+    "name": "微雪 ESP32-S3-Touch-LCD-3.5B",
+    "board_id": "aster.esp32s3.waveshare35b",
+    "soc": "esp32s3"
   },
   "build": {
     "system": "zephyr",

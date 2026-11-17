@@ -27,7 +27,7 @@
 <!-- hardware-models:start -->
 - `lckfb-s3`：立创开发板 ESP32-S3 实战派。
 - `waveshare-35b`：微雪 ESP32-S3-Touch-LCD-3.5B，实验性板级支持。
-- `osptek-p4`：鱼鹰 P4C5，ESP-IDF。
+- `osptek-p4`：鱼鹰光电 P4C5 开发板（ST7102，480×480），ESP-IDF。
 - `fakepod-s31`：FAKE POD NANO PRO，ESP-IDF，Hi-Fi 功能开发中。
 <!-- hardware-models:end -->
 
@@ -42,7 +42,7 @@ S3 硬件使用 `--target xtensa`，P4/S31 使用 `--target riscv`。硬件型�
 - `platform/`：统一 HAL 和各硬件端口，声明不依赖操作系统头文件。
 - `common/`：不依赖操作系统的包解析、协议编解码及基础工具。
 - `systems/zephyr/`：完整设备服务、桌面与 WAMR 适配，明确隔离 Zephyr 依赖。
-- `systems/espidf/`：P4 的 IDF/FreeRTOS 运行时、外设和系统服务适配；部分待提取服务仍复用 Zephyr 目录下的源码。
+- `systems/espidf/`：ESP-IDF/FreeRTOS 运行时、外设和系统服务适配；部分待提取服务仍复用 Zephyr 目录下的源码。
 
 Zephyr 的项目 menuconfig 独立运行，配置先于设备树与 Kconfig 处理阶段读取。用户不必再传 board、target 或朝向 overlay；这些板卡共用 `tools/firmware.py` 的 build/flash 入口。P4 当前使用下述独立 IDF 入口。
 
@@ -87,3 +87,22 @@ SD 资源提供源字体全覆盖的 12/14/16/18/20/24/28/32/40/48px 字库；�
 发布前运行 `python tools/check_docs.py`。契约导出前同样执行该检查。
 
 安装与升级见 [安装与恢复](package-installation.md)。回调期限见 [运行时恢复](runtime-recovery.md)。
+
+
+### 芯片、开发板与编译目标
+
+芯片 `esp32p4`、`esp32s3`、`esp32s31` 只表示 SoC，不能作为开发板唯一标识。
+板级公开描述保留稳定 `id`，另提供实际运行时的 `board_id`、明确的板卡 `name`、`soc`、显示和内存等参数。
+`osptek-p4` 专指鱼鹰光电 P4C5 + ST7102 480×480 组合，不是所有 ESP32-P4 板。
+其现有运行时/公网配置标识 `osptek-p4-st7102` 保持兼容；`lckfb-s3` 专指立创 ESP32-S3 实战派。
+
+IDF 的每个板级工程通过自身 Kconfig 声明身份与屏幕参数。共享 UI 不再根据“是不是某颗芯片”推断开发板或分辨率。
+背光 GPIO/PWM 实现由该板注入 IO 回调，音频板级驱动和外部 C5 的 SDMMC 共享补丁按实际板型选择。
+SDK 在 `hardware/` 保留固件导出的开发板描述，在 `targets/` 保存 AOT 编译架构；同芯片的新板必须新建自己的硬件描述及板级适配，不覆盖原板。
+
+
+### 可选电源适配
+
+电池、屏幕开关、CPU 休眠/唤醒、重启/关机与实体按键使用 `common/port/aster_power.h`。
+硬件操作表及系统生命周期表可继承默认实现并覆盖个别方法；缺少后端的能力明确返回不支持。
+实现范围、调用顺序和当前验证记录见 [电源与按键适配](power-adaptation.zh-CN.md)。
