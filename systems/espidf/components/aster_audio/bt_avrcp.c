@@ -15,11 +15,14 @@
 
 static const char *TAG="bt_avrcp";
 static atomic_bool ct_up,tg_up,ct_ready,tg_ready,ct_down,tg_down,stopping;
-static atomic_bool volume_notify,key_fault;
+static atomic_bool volume_notify;
 static atomic_int remote_volume,pending_key,key_ack,playback,control_error;
-static atomic_uint wire_volume,acks;
+static atomic_uint wire_volume,acks,key_labels,retired_pairs;
+/* Keep clear of labels 0–3 and 6 used by metadata and notifications. */
+static const uint8_t key_pairs[]={0x54,0x87,0xa9,0xcb,0xed};
+enum { KEY_PAIR_COUNT=sizeof(key_pairs), ALL_KEY_PAIRS=(1u<<KEY_PAIR_COUNT)-1 };
 static bool ct_initialized,tg_initialized;
-static int last_percent,active_key,key_stage;
+static int last_percent,active_key,key_stage,key_pair,next_pair;
 static int64_t key_deadline;
 static char title[192],artist[192],album[192];
 static portMUX_TYPE metadata_lock=portMUX_INITIALIZER_UNLOCKED;
@@ -48,7 +51,8 @@ static void ct_callback(esp_avrc_ct_cb_event_t event,esp_avrc_ct_cb_param_t *p){
  if(atomic_load(&stopping))return;
  if(event==ESP_AVRC_CT_CONNECTION_STATE_EVT){
   atomic_store(&ct_up,p->conn_stat.connected);clear_metadata();
-  atomic_store(&key_fault,false);
+  atomic_store(&retired_pairs,0);
+  atomic_store(&key_labels,0);
   atomic_store(&playback,ESP_AVRC_PLAYBACK_ERROR);
   if(p->conn_stat.connected){
    result(esp_avrc_ct_send_get_rn_capabilities_cmd(1));
@@ -82,11 +86,13 @@ static void ct_callback(esp_avrc_ct_cb_event_t event,esp_avrc_ct_cb_param_t *p){
  } else if(event==ESP_AVRC_CT_PLAY_STATUS_RSP_EVT){
   atomic_store(&playback,p->play_status_rsp.play_status);
  } else if(event==ESP_AVRC_CT_PASSTHROUGH_RSP_EVT){
-  /* Labels 4/5 are reserved for this single in-flight press/release pair. */
-  if((p->psth_rsp.tl==4 || p->psth_rsp.tl==5) &&
+  unsigned labels=atomic_load(&key_labels);
+  bool release=p->psth_rsp.key_state==ESP_AVRC_PT_CMD_STATE_RELEASED;
+  unsigned expected_label=release?labels>>4:labels&15;
+  if(labels && p->psth_rsp.tl==expected_label &&
      atomic_load(&pending_key)==p->psth_rsp.key_code+1){
    if(p->psth_rsp.rsp_code!=ESP_AVRC_RSP_ACCEPT)atomic_store(&control_error,ESP_FAIL);
-   if(p->psth_rsp.tl==4){int expected=0;atomic_compare_exchange_strong(&key_ack,&expected,1);}
+   if(!release){int expected=0;atomic_compare_exchange_strong(&key_ack,&expected,1);}
    else atomic_store(&key_ack,2);
    atomic_fetch_add(&acks,1);
   }
@@ -114,10 +120,11 @@ esp_err_t aster_bt_avrcp_start(void){
  atomic_store(&stopping,false);atomic_store(&ct_up,false);atomic_store(&tg_up,false);
  atomic_store(&ct_ready,false);atomic_store(&tg_ready,false);atomic_store(&ct_down,false);atomic_store(&tg_down,false);
  atomic_store(&volume_notify,false);atomic_store(&remote_volume,-1);atomic_store(&pending_key,0);
- atomic_store(&key_ack,0);atomic_store(&key_fault,false);atomic_store(&acks,0);atomic_store(&control_error,0);
+ atomic_store(&key_ack,0);atomic_store(&key_labels,0);atomic_store(&retired_pairs,0);
+ atomic_store(&acks,0);atomic_store(&control_error,0);
  atomic_store(&playback,ESP_AVRC_PLAYBACK_ERROR);clear_metadata();
  last_percent=aster_plat_audio_get_volume();atomic_store(&wire_volume,(last_percent*127+50)/100);
- active_key=key_stage=0;
+ active_key=key_stage=key_pair=next_pair=0;
  esp_err_t e=esp_avrc_ct_register_callback(ct_callback);if(e)return e;
  e=esp_avrc_tg_register_callback(tg_callback);if(e)return e;
  e=esp_avrc_ct_init();if(e)return e;ct_initialized=true;
@@ -136,6 +143,21 @@ esp_err_t aster_bt_avrcp_stop(void){
  atomic_store(&ct_up,false);atomic_store(&tg_up,false);atomic_store(&pending_key,0);
  return error;
 }
+static void finish_key(void)
+{
+ atomic_store(&key_labels,0);
+ key_stage=0;
+ atomic_store(&pending_key,0);
+}
+
+static void key_timeout(const char *phase)
+{
+ atomic_fetch_or(&retired_pairs,1u<<key_pair);
+ atomic_store(&control_error,ESP_ERR_TIMEOUT);
+ ESP_LOGW(TAG,"remote key 0x%02x %s timed out (labels 0x%02x)",
+          active_key,phase,(unsigned)key_pairs[key_pair]);
+}
+
 void aster_bt_avrcp_poll(void){
  int remote=atomic_exchange(&remote_volume,-1);
  if(remote>=0 && atomic_load(&tg_up)){
@@ -153,22 +175,28 @@ void aster_bt_avrcp_poll(void){
   }
  }
  int key=atomic_load(&pending_key);
- if(!atomic_load(&ct_up)){key_stage=0;atomic_store(&pending_key,0);return;}
+ if(!atomic_load(&ct_up)){finish_key();return;}
  if(!key)return;
  int64_t now=esp_timer_get_time();
  if(!key_stage){
+  unsigned retired=atomic_load(&retired_pairs);
+  if(retired==ALL_KEY_PAIRS){finish_key();return;}
+  while(retired&(1u<<next_pair))next_pair=(next_pair+1)%KEY_PAIR_COUNT;
+  key_pair=next_pair;next_pair=(next_pair+1)%KEY_PAIR_COUNT;
   active_key=key-1;atomic_store(&key_ack,0);
-  esp_err_t e=esp_avrc_ct_send_passthrough_cmd(4,active_key,ESP_AVRC_PT_CMD_STATE_PRESSED);
-  if(e){result(e);atomic_store(&pending_key,0);return;}
+  atomic_store(&key_labels,key_pairs[key_pair]);
+  esp_err_t e=esp_avrc_ct_send_passthrough_cmd(key_pairs[key_pair]&15,active_key,ESP_AVRC_PT_CMD_STATE_PRESSED);
+  if(e){result(e);finish_key();return;}
   key_stage=1;key_deadline=now+1000000;
  } else if(key_stage==1 && (atomic_load(&key_ack)==1 || now>=key_deadline)){
   /* Always release, even when the press acknowledgement was lost. */
-  if(atomic_load(&key_ack)!=1){atomic_store(&control_error,ESP_ERR_TIMEOUT);atomic_store(&key_fault,true);}
-  result(esp_avrc_ct_send_passthrough_cmd(5,active_key,ESP_AVRC_PT_CMD_STATE_RELEASED));
+  if(atomic_load(&key_ack)!=1)key_timeout("press");
+  esp_err_t e=esp_avrc_ct_send_passthrough_cmd(key_pairs[key_pair]>>4,active_key,ESP_AVRC_PT_CMD_STATE_RELEASED);
+  if(e){atomic_fetch_or(&retired_pairs,1u<<key_pair);result(e);finish_key();return;}
   key_stage=2;key_deadline=now+1000000;
  } else if(key_stage==2 && (atomic_load(&key_ack)==2 || now>=key_deadline)){
-  if(atomic_load(&key_ack)!=2){atomic_store(&control_error,ESP_ERR_TIMEOUT);atomic_store(&key_fault,true);}
-  key_stage=0;atomic_store(&pending_key,0);
+  if(atomic_load(&key_ack)!=2)key_timeout("release");
+  finish_key();
  }
 }
 int aster_bt_avrcp_command(const char *name){
@@ -176,8 +204,7 @@ int aster_bt_avrcp_command(const char *name){
   !strcmp(name,"next")?ESP_AVRC_PT_CMD_FORWARD:!strcmp(name,"previous")?ESP_AVRC_PT_CMD_BACKWARD:-1;
  if(key<0)return -EINVAL;
  if(atomic_load(&stopping)||!atomic_load(&ct_up))return -ENOTCONN;
- /* A timed-out key requires a reconnect before labels may be reused. */
- if(atomic_load(&key_fault))return -EIO;
+ if(atomic_load(&retired_pairs)==ALL_KEY_PAIRS)return -ETIMEDOUT;
  int expected=0;
  return atomic_compare_exchange_strong(&pending_key,&expected,key+1)?0:-EBUSY;
 }

@@ -2,6 +2,7 @@
 #include "aster_power.h"
 #include <errno.h>
 #include <string.h>
+#include <stdatomic.h>
 static const aster_power_ops_t *driver;
 static const aster_power_lifecycle_t *lifecycle;
 static void *driver_context,*lifecycle_context;
@@ -27,6 +28,7 @@ int aster_power_lifecycle_derive(aster_power_lifecycle_t *out,const aster_power_
  aster_power_lifecycle_t merged=*base;merged.name=overrides->name;
  if(overrides->prepare)merged.prepare=overrides->prepare;
  if(overrides->finish)merged.finish=overrides->finish;
+ if(overrides->recovery_error)merged.recovery_error=overrides->recovery_error;
  *out=merged;return 0;
 }
 int aster_power_bind(const aster_power_ops_t *ops,void *context)
@@ -97,6 +99,7 @@ int aster_power_transition(const aster_power_request_t *request,uint8_t brightne
    else if(frozen.mode==ASTER_POWER_SHUTDOWN)r=driver->shutdown(driver_context);
    else r=driver->suspend(driver_context,&frozen);
    lifecycle->finish(lifecycle_context,&frozen,r);
+   if(lifecycle->recovery_error){int recovery=lifecycle->recovery_error(lifecycle_context);if(recovery)r=recovery;}
   }
  }
  transitioning=false;return r;
@@ -120,4 +123,62 @@ bool aster_power_idle_activity(aster_power_idle_t *s,uint64_t now,bool contacts_
  s->last_activity_ms=now;
  if(s->screen_off){if(aster_power_screen_on(s->brightness))return true;s->screen_off=false;s->wake_gesture=true;}
  bool consumed=s->wake_gesture;if(!contacts_down)s->wake_gesture=false;return consumed;
+}
+
+#define ADMISSION_CLOSED (1u << 31)
+static atomic_uint activity;
+int aster_power_activity_begin(void)
+{
+ unsigned value=atomic_load(&activity);
+ for(;;){
+  if(value&ADMISSION_CLOSED)return -EBUSY;
+  if(value==ADMISSION_CLOSED-1)return -EOVERFLOW;
+  if(atomic_compare_exchange_weak(&activity,&value,value+1))return 0;
+ }
+}
+void aster_power_activity_end(void)
+{
+ unsigned value=atomic_load(&activity);
+ while((value&~ADMISSION_CLOSED)&&!atomic_compare_exchange_weak(&activity,&value,value-1)){}
+}
+bool aster_power_activity_closing(void){return (atomic_load(&activity)&ADMISSION_CLOSED)!=0;}
+unsigned aster_power_activity_count(void){return atomic_load(&activity)&~ADMISSION_CLOSED;}
+int aster_power_activity_close(void)
+{return (atomic_fetch_or(&activity,ADMISSION_CLOSED)&ADMISSION_CLOSED)?-EBUSY:0;}
+void aster_power_activity_reopen(void){atomic_fetch_and(&activity,~ADMISSION_CLOSED);}
+static const aster_power_dispatch_t *dispatch;
+static void *dispatch_context;
+static atomic_uint mailbox;
+static atomic_int last_result;
+static aster_power_request_t queued_request;
+int aster_power_bind_dispatch(const aster_power_dispatch_t *ops,void *context)
+{
+ if(sealed)return -EBUSY;
+ if(!ops||ops->size!=sizeof(*ops)||ops->version!=1||!ops->name||!ops->stop_app||!ops->app_busy)return -EINVAL;
+ dispatch=ops;dispatch_context=context;return 0;
+}
+int aster_power_schedule(const aster_power_request_t *request)
+{
+ if(!request||request->size!=sizeof(*request)||request->version!=ASTER_POWER_API_VERSION||
+    !request->mode||(request->mode&(request->mode-1)))return -EINVAL;
+ if(!dispatch||request->mode==ASTER_POWER_SCREEN_OFF)return -ENOTSUP;
+ aster_power_caps_t caps;int r=aster_power_caps(&caps);if(r)return r;
+ if(!(caps.modes&request->mode))return -ENOTSUP;
+ uint32_t allowed=request->mode==ASTER_POWER_LIGHT_SLEEP?caps.light_wake:request->mode==ASTER_POWER_DEEP_SLEEP?caps.deep_wake:0;
+ if(request->wake_sources&~allowed)return -ENOTSUP;
+ if((request->mode&(ASTER_POWER_LIGHT_SLEEP|ASTER_POWER_DEEP_SLEEP))&&!request->wake_sources)return -EINVAL;
+ if(((request->wake_sources&ASTER_WAKE_TIMER)!=0)!=(request->timer_ms!=0))return -EINVAL;
+ unsigned empty=0;if(!atomic_compare_exchange_strong(&mailbox,&empty,1))return -EBUSY;
+ queued_request=*request;atomic_store(&last_result,-EINPROGRESS);
+ dispatch->stop_app(dispatch_context);
+ atomic_store_explicit(&mailbox,2,memory_order_release);return 0;
+}
+bool aster_power_pending(void){return atomic_load(&mailbox)!=0;}
+int aster_power_last_result(void){return atomic_load(&last_result);}
+void aster_power_poll(void)
+{
+ if(atomic_load_explicit(&mailbox,memory_order_acquire)!=2||!dispatch||dispatch->app_busy(dispatch_context))return;
+ unsigned ready=2;if(!atomic_compare_exchange_strong(&mailbox,&ready,3))return;
+ int result=aster_power_transition(&queued_request,230);
+ atomic_store(&last_result,result);atomic_store(&mailbox,0);
 }

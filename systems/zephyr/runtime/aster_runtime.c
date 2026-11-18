@@ -5,6 +5,7 @@
  * ASTER runtime core: WAMR integration + app event loop thread.
  */
 #include "aster_runtime.h"
+#include "aster_power.h"
 #include "aster_watchdog.h"
 #include "aster_native.h"
 #include "aster_mem.h"
@@ -904,6 +905,7 @@ static void app_event_loop(aster_app_ctx_t *ctx)
 	uint32_t frame_period = ctx->framerate ? (1000 / ctx->framerate) : 33;
 
 	while (!ctx->quit) {
+        if(aster_power_pending()){ctx->quit=true;break;}
 		uint64_t loop_start = (uint64_t)k_uptime_get();
 
 		/* lifecycle callbacks (pause/resume) run here, not on shell thread */
@@ -1119,6 +1121,7 @@ static void worker_fn(void *p1, void *p2, void *p3)
 	ARG_UNUSED(p1); ARG_UNUSED(p2); ARG_UNUSED(p3);
 
 	for (;;) {
+        aster_power_poll();
         apply_display_mode();
 #if IS_ENABLED(CONFIG_ASTER_LAUNCHER_FLUX)
         uint32_t idle_wait=aster_launcher_idle_wait_ms();
@@ -1262,6 +1265,7 @@ static void worker_fn(void *p1, void *p2, void *p3)
 
 static int app_start_common(const char *id, bool wait_ready)
 {
+    if(aster_power_pending())return ASTER_EBUSY;
 	if (!id || !id[0]) {
 		return ASTER_EINVAL;
 	}
@@ -1565,3 +1569,5 @@ void aster_runtime_terminate(void)
 {
 	aster_runtime_exit(0);
 }
+
+bool aster_runtime_power_busy(void){return current!=NULL||worker_pending!=NULL;}

@@ -8,6 +8,7 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_co5300.h"
 #include "esp_heap_caps.h"
+#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -16,6 +17,7 @@ static esp_lcd_panel_io_handle_t panel_io;
 static uint8_t *snapshot;
 static SemaphoreHandle_t completed;
 static uint16_t *bounce;
+static bool panel_blank;
 static bool transfer_done(esp_lcd_panel_io_handle_t io,esp_lcd_panel_io_event_data_t *event,void *context){
  (void)io;(void)event;BaseType_t wake=pdFALSE;xSemaphoreGiveFromISR((SemaphoreHandle_t)context,&wake);return wake==pdTRUE;
 }
@@ -37,22 +39,18 @@ esp_err_t fakepod_lcd_init(void){
  e=esp_lcd_panel_set_gap(panel,FP_LCD_X_OFFSET,0);if(e)return e;
  return esp_lcd_panel_disp_on_off(panel,true);
 }
-int fakepod_lcd_present(const uint8_t *pixels,uint32_t x,uint32_t y,uint32_t w,uint32_t h,uint32_t pitch){
- if(!panel||!pixels||!w||!h||x>=FP_LCD_WIDTH||y>=FP_LCD_HEIGHT||w>FP_LCD_WIDTH-x||h>FP_LCD_HEIGHT-y||pitch<w)return -1;
- /* CO5300 partial windows cover complete 2x2 pixel cells. Merge first,
-  * then expand the transfer from the retained image, including unchanged
-  * neighbours. This applies equally to LVGL and APP single-pixel updates. */
- for(uint32_t yy=0;yy<h;yy++)for(uint32_t xx=0;xx<w;xx++){
-  const uint8_t *p=pixels+((size_t)yy*pitch+xx)*2;
-  size_t offset=((size_t)(y+yy)*FP_LCD_WIDTH+x+xx)*2;
-  snapshot[offset]=p[1];snapshot[offset+1]=p[0];
- }
- uint32_t right=(x+w+1)&~1u,bottom=(y+h+1)&~1u;
- x&=~1u;y&=~1u;w=right-x;h=bottom-y;
+static int transfer_snapshot(uint32_t x,uint32_t y,uint32_t w,uint32_t h)
+{
  for(uint32_t row=0;row<h;row+=16){
   uint32_t rows=h-row;if(rows>16)rows=16;
-  for(uint32_t yy=0;yy<rows;yy++)
-   memcpy((uint8_t *)bounce+(size_t)yy*w*2,snapshot+((size_t)(y+row+yy)*FP_LCD_WIDTH+x)*2,w*2);
+  for(uint32_t yy=0;yy<rows;yy++){
+   const uint8_t *src=snapshot+((size_t)(y+row+yy)*FP_LCD_WIDTH+x)*2;
+   uint8_t *dst=(uint8_t *)bounce+(size_t)yy*w*2;
+   for(uint32_t col=0;col<w*2;col+=2){
+    dst[col]=src[col+1];
+    dst[col+1]=src[col];
+   }
+  }
   xSemaphoreTake(completed,0);
   if(esp_lcd_panel_draw_bitmap(panel,x,y+row,x+w,y+row+rows,bounce)!=ESP_OK)return -1;
   xSemaphoreTake(completed,portMAX_DELAY);
@@ -60,10 +58,49 @@ int fakepod_lcd_present(const uint8_t *pixels,uint32_t x,uint32_t y,uint32_t w,u
  return 0;
 }
 
+int fakepod_lcd_present(const uint8_t *pixels,uint32_t x,uint32_t y,uint32_t w,uint32_t h,uint32_t pitch){
+ if(!panel||!pixels||!w||!h||x>=FP_LCD_WIDTH||y>=FP_LCD_HEIGHT||w>FP_LCD_WIDTH-x||h>FP_LCD_HEIGHT-y||pitch<w)return -1;
+ /* Capture shares the retained image in native RGB565 order. Convert
+  * only in the SPI buffer, including when replaying the image on wake. */
+ for(uint32_t yy=0;yy<h;yy++){
+  const uint8_t *src=pixels+(size_t)yy*pitch*2;
+  uint8_t *dst=snapshot+((size_t)(y+yy)*FP_LCD_WIDTH+x)*2;
+  memcpy(dst,src,w*2);
+ }
+ if(panel_blank)return 0;
+ /* The CO5300 only accepts complete 2x2 pixel cells. */
+ uint32_t right=(x+w+1)&~1u,bottom=(y+h+1)&~1u;
+ x&=~1u;y&=~1u;
+ return transfer_snapshot(x,y,right-x,bottom-y);
+}
 
 const uint8_t *fakepod_lcd_capture(void){return snapshot;}
-int fakepod_lcd_brightness(bool on,uint8_t level){
- if(!panel_io)return -1;
- uint8_t value=on?level:0;
- return esp_lcd_panel_io_tx_param(panel_io,0x02005100,&value,1)==ESP_OK?0:-1;
+static esp_err_t set_brightness(uint8_t value)
+{
+ return esp_lcd_panel_io_tx_param(panel_io,0x02005100,&value,1);
+}
+
+int fakepod_lcd_brightness(bool on,uint8_t level)
+{
+ if(!panel_io||!panel)return -1;
+ if(!on){
+  if(panel_blank)return 0;
+  if(set_brightness(0)!=ESP_OK)return -1;
+  panel_blank=true;
+  esp_err_t result=esp_lcd_panel_disp_on_off(panel,false);
+  if(result==ESP_OK)result=esp_lcd_panel_disp_sleep(panel,true);
+  ESP_LOGI("fakepod_lcd","panel blank, sleep: %s",esp_err_to_name(result));
+  return 0;
+ }
+ if(panel_blank){
+  if(esp_lcd_panel_disp_sleep(panel,false)!=ESP_OK||
+     set_brightness(0)!=ESP_OK||
+     transfer_snapshot(0,0,FP_LCD_WIDTH,FP_LCD_HEIGHT)!=0||
+     esp_lcd_panel_disp_on_off(panel,true)!=ESP_OK||
+     set_brightness(level)!=ESP_OK)return -1;
+  panel_blank=false;
+  ESP_LOGI("fakepod_lcd","panel awake, frame restored");
+  return 0;
+ }
+ return set_brightness(level)==ESP_OK?0:-1;
 }

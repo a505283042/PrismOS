@@ -18,6 +18,14 @@ config ASTER_BOARD_CODEC_CS43131
     bool
     default y
 
+config ASTER_FAKEPOD_EXPERIMENTAL_LIGHT_SLEEP
+    bool "Expose unvalidated FAKE POD NANO PRO light sleep"
+    default n
+    help
+        Keep disabled until timer and physical wake-up pass on this board.
+        The current ESP32-S31 bring-up does not return from the sleep call
+        reliably. Screen-off remains available independently of CPU sleep.
+
 config ASTER_APP_WATCHDOG_MS
     int "Maximum duration of a guest lifecycle/event callback (ms)"
     range 100 30000

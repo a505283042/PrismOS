@@ -1,7 +1,7 @@
 # Zephyr service implementations: kernel/filesystem/UI/runtime integration.
 include(${ASTER_ROOT}/common/sources.cmake)
 target_include_directories(app PRIVATE ${ASTER_COMMON_INCLUDE_DIRS})
-target_sources(app PRIVATE ${ASTER_COMMON_DEVICE_SOURCES} ${ASTER_COMMON_OS_SOURCES} port/device.c port/os.c)
+target_sources(app PRIVATE ${ASTER_COMMON_DEVICE_SOURCES} ${ASTER_COMMON_OS_SOURCES} port/device.c port/os.c port/power.c)
 target_sources(app PRIVATE ${ASTER_COMMON_SERVICE_SOURCES} ${ASTER_ROOT}/systems/shared/port/services.c)
 target_sources(app PRIVATE ${ASTER_COMMON_PORT_CHECK})
 target_sources(app PRIVATE ${ASTER_COMMON_ROOT}/audio/aster_player_service.c)

@@ -107,6 +107,7 @@ int  aster_app_stop(const char *id);
 int  aster_app_pause(const char *id);
 int  aster_app_resume(const char *id);
 aster_app_ctx_t *aster_app_current(void);
+bool aster_runtime_power_busy(void);
 
 /* ABI 1.2 handoff (called from appmgr native on the worker thread): marks
  * the current app to quit and arranges `id` to launch after teardown. */

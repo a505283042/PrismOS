@@ -1,3 +1,4 @@
+#include "aster_power.h"
 #include <zephyr/sys/util.h>
 /* SPDX-License-Identifier: MIT */
 #include "aster_app_mgr.h"
@@ -346,7 +347,7 @@ const aster_app_rec_t *aster_app_mgr_find(const char *id)
 	return r;
 }
 
-int aster_app_mgr_install(const char *src_path)
+static int power_guarded_install(const char *src_path)
 {
 	/* Keep version selection and the cached registry metadata coherent with
 	 * launch. A failed commit may still leave a complete, readable new record
@@ -452,7 +453,7 @@ static void serial_progress(void *context,aster_install_phase phase,uint64_t don
     (void)context;static const aster_deploy_phase phases[]={ASTER_DEPLOY_CHECK,ASTER_DEPLOY_COPY,ASTER_DEPLOY_SYNC,ASTER_DEPLOY_COMMIT,ASTER_DEPLOY_COMMIT};
     if((unsigned)phase<sizeof(phases)/sizeof(phases[0]))aster_deploy_update(phases[phase],done,total,file);
 }
-int aster_app_mgr_install_serial(const char *src_path)
+static int power_guarded_install_serial(const char *src_path)
 {
     aster_deploy_update(ASTER_DEPLOY_CHECK,0,0,src_path);
     aster_app_mgr_files_lock();
@@ -462,7 +463,7 @@ int aster_app_mgr_install_serial(const char *src_path)
     }
     aster_app_mgr_files_unlock();aster_deploy_finish(err);return err;
 }
-int aster_app_mgr_uninstall(const char *id)
+static int power_guarded_uninstall(const char *id)
 {
 	aster_app_mgr_files_lock();
 	int err = app_uninstall_locked(id);
@@ -609,3 +610,8 @@ bool aster_app_mgr_finish_install_progress(const char *owner,bool execute,aster_
     if(notify&&!r)notify(context,ASTER_INSTALL_DONE,0,0,"");
     aster_app_mgr_files_unlock();return true;
 }
+
+/* A lease spans the complete transaction, including publication and rescan. */
+int aster_app_mgr_install(const char *path){if(aster_power_activity_begin())return ASTER_EBUSY;int r=power_guarded_install(path);aster_power_activity_end();return r;}
+int aster_app_mgr_install_serial(const char *path){if(aster_power_activity_begin())return ASTER_EBUSY;int r=power_guarded_install_serial(path);aster_power_activity_end();return r;}
+int aster_app_mgr_uninstall(const char *id){if(aster_power_activity_begin())return ASTER_EBUSY;int r=power_guarded_uninstall(id);aster_power_activity_end();return r;}

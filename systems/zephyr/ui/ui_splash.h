@@ -14,6 +14,9 @@ void aster_splash_boot(void);
  * when off or before the next frame slot. UI/worker pump only. */
 void aster_splash_tick(void);
 
+/* Keep the first boot image visible long enough to recognize it. */
+bool aster_splash_minimum_pending(void);
+
 /* Free the band. Idempotent; called the moment the first real frame is up. */
 void aster_splash_off(void);
 

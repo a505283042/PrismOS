@@ -174,6 +174,12 @@ bool aster_setup_ui_tick(void) {
     }
     if (!aster_ui_lvgl_screen())
         return true;
+    /* The initial SD probe is a background decision. Keep the current
+     * boot image until it either hands off to Launcher or needs setup UI.
+     * DONE can briefly remain active while the healthy boot worker exits. */
+    if (status.state.phase == ASTER_SETUP_CHECK ||
+        (status.state.phase == ASTER_SETUP_DONE && !root && !status.hotspot))
+        return true;
     int next = status.state.phase == ASTER_SETUP_VERIFY ? ASTER_SETUP_DOWNLOAD : status.state.phase;
     if (next != page)
         rebuild(next);

@@ -24,6 +24,7 @@
 #include "aster_network.h"
 #include "aster_idf_wifi.h"
 #include "aster_idf_apps.h"
+#include "aster_power.h"
 #include "transfer.h"
 #include <string.h>
 #include "esp_log.h"
@@ -413,6 +414,7 @@ static int read_touch_frame(aster_idf_touch_point_t points[ASTER_IDF_MAX_TOUCH])
 void osptek_storage_start(void);
 void app_main(void)
 {
+    aster_idf_power_register();aster_power_seal();
     aster_device_seal();
     aster_os_seal();
     aster_services_seal();

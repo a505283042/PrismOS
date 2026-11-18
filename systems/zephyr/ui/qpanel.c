@@ -3,6 +3,7 @@
 #include "aster_port_util.h"
 #include "aster_os.h"
 #include "aster_device.h"
+#include "aster_player_service.h"
 /* SPDX-License-Identifier: MIT
  * Quick-settings sheet. See qpanel.h for the contract: what it may ask of
  * the screen under it, why it is torn down by the same call that rebuilds
@@ -597,6 +598,206 @@ static void on_scrim(lv_event_t *e)
 }
 
 /* ---------- build ---------- */
+static lv_obj_t *bt_root, *bt_status, *bt_rows[ASTER_PLAYER_BT_DEVICES_MAX];
+static lv_obj_t *bt_names[ASTER_PLAYER_BT_DEVICES_MAX];
+static lv_obj_t *bt_toggle, *bt_search;
+static aster_player_bt_list_t bt_devices;
+static uint32_t bt_pending, bt_deadline, bt_last_poll;
+static int bt_error;
+static bool bt_restore_visibility, bt_enabled, bt_peer_connected;
+static void (*bt_close_owner)(void);
+
+static uint32_t bt_capabilities(void)
+{
+ aster_player_info_t info;
+ return aster_player_service_info(&info)==0?info.capabilities:0;
+}
+
+bool aster_bluetooth_settings_available(void)
+{
+ return (bt_capabilities()&(ASTER_PLAYER_CAP_BT_SINK|ASTER_PLAYER_CAP_BT_SOURCE))!=0;
+}
+
+bool aster_bluetooth_settings_is_open(void){return bt_root!=NULL;}
+
+static int bt_command(uint32_t command,const char *address)
+{
+ aster_player_request_t request={.size=sizeof(request),.version=1,.command=command};
+ if(address)snprintf(request.path,sizeof(request.path),"%s",address);
+ return aster_player_service_control(&request);
+}
+
+static void bt_start_after_stop(uint32_t command)
+{
+ bt_pending=command;
+ bt_deadline=aster_os_uptime32()+10000;
+}
+
+static void bt_tick(void)
+{
+ if(!bt_root&&!bt_pending&&!bt_restore_visibility)return;
+ uint32_t now=aster_os_uptime32();
+ if(now-bt_last_poll<250)return;
+ bt_last_poll=now;
+ aster_player_info_t info={0};
+ aster_player_service_info(&info);
+ aster_player_bt_list_t list={0};
+ aster_player_service_bt_list(&list);
+ if(!bt_root&&bt_restore_visibility&&!bt_pending&&
+    (list.state==ASTER_PLAYER_BT_IDLE||list.state==ASTER_PLAYER_BT_ERROR)){
+  bt_restore_visibility=false;
+  bt_command(ASTER_PLAYER_BT_OFF,NULL);
+  bt_start_after_stop(ASTER_PLAYER_BT_ON);
+  return;
+ }
+ if(bt_pending){
+  if((int32_t)(now-bt_deadline)>=0){bt_pending=0;bt_error=ASTER_ETIMEDOUT;}
+  else if(info.state!=ASTER_PLAYER_STOPPING && list.state!=ASTER_PLAYER_BT_STOPPING){
+   int error=bt_command(bt_pending,NULL);
+   if(error!=ASTER_EBUSY){bt_pending=0;bt_error=error;}
+  }
+ }
+ bt_enabled=bt_pending||info.device[0]||list.state==ASTER_PLAYER_BT_STOPPING;
+ if(!bt_root)return;
+ bt_peer_connected=info.mode==ASTER_PLAYER_BLUETOOTH&&(info.flags&ASTER_PLAYER_F_CONNECTED);
+ char waiting[96];
+ snprintf(waiting,sizeof(waiting),"本机可被发现 · %s",info.device);
+ const char *state=bt_error?"操作失败，请重试":
+  bt_pending||info.state==ASTER_PLAYER_STOPPING||list.state==ASTER_PLAYER_BT_STOPPING?"正在更新蓝牙状态":
+  !bt_enabled?"蓝牙已关闭":
+  list.state==ASTER_PLAYER_BT_SCANNING?"正在搜索附近设备":
+  list.state==ASTER_PLAYER_BT_CONNECTING?"正在连接蓝牙设备":
+  list.state==ASTER_PLAYER_BT_CONNECTED?"设备已连接 · 点击设备断开":
+  list.state==ASTER_PLAYER_BT_ERROR||(info.mode==ASTER_PLAYER_BLUETOOTH&&info.state==ASTER_PLAYER_ERROR)?"蓝牙连接失败":
+  bt_peer_connected?"设备已连接 · 点击设备断开":
+  bt_restore_visibility?"选择要连接的设备":waiting;
+ const char *toggle=bt_enabled?"关闭蓝牙":"开启蓝牙";
+ if(strcmp(lv_label_get_text(bt_toggle),toggle))set_label(bt_toggle,toggle);
+ if(bt_search){
+  if(bt_enabled&&!bt_pending)lv_obj_remove_state(bt_search,LV_STATE_DISABLED);
+  else lv_obj_add_state(bt_search,LV_STATE_DISABLED);
+ }
+ if(strcmp(lv_label_get_text(bt_status),state))set_label(bt_status,state);
+ for(unsigned i=0;i<ASTER_PLAYER_BT_DEVICES_MAX;i++){
+  if(i==0&&bt_peer_connected){
+   set_label(bt_names[i],"已连接的手机");
+   lv_obj_remove_flag(bt_rows[i],LV_OBJ_FLAG_HIDDEN);
+   continue;
+  }
+  if(i>=list.count){lv_obj_add_flag(bt_rows[i],LV_OBJ_FLAG_HIDDEN);continue;}
+  char name[112];
+  snprintf(name,sizeof(name),"%s%s",list.devices[i].flags&ASTER_PLAYER_F_CONNECTED?"已连接 · ":"",
+           list.devices[i].name[0]?list.devices[i].name:list.devices[i].address);
+  if(strcmp(lv_label_get_text(bt_names[i]),name))set_label(bt_names[i],name);
+  lv_obj_remove_flag(bt_rows[i],LV_OBJ_FLAG_HIDDEN);
+ }
+ bt_devices=list;
+}
+
+static void bt_select(lv_event_t *event)
+{
+ unsigned choice=(unsigned)(uintptr_t)lv_obj_get_user_data(lv_event_get_current_target_obj(event));
+ bt_error=0;
+ if(choice>=100){
+  unsigned index=choice-100;
+  if(index==0&&bt_peer_connected){bt_error=bt_command(ASTER_PLAYER_BT_DISCONNECT,NULL);return;}
+  if(!bt_pending && index<bt_devices.count){
+   bool connected=bt_devices.devices[index].flags&ASTER_PLAYER_F_CONNECTED;
+   bt_error=bt_command(connected?ASTER_PLAYER_BT_DISCONNECT:ASTER_PLAYER_BT_CONNECT,
+                       connected?NULL:bt_devices.devices[index].address);
+  }
+  return;
+ }
+ if(choice==ASTER_PLAYER_BT_ON){
+  if(bt_enabled){
+   bt_pending=0;bt_restore_visibility=false;
+   bt_error=bt_command(ASTER_PLAYER_BT_OFF,NULL);
+  }else{
+   uint32_t caps=bt_capabilities();
+   bt_error=bt_command(caps&ASTER_PLAYER_CAP_BT_SINK?ASTER_PLAYER_BT_ON:ASTER_PLAYER_SOURCE_ON,NULL);
+  }
+  return;
+ }
+ if(bt_pending)return;
+ aster_player_info_t info={0};aster_player_service_info(&info);
+ if(choice==ASTER_PLAYER_SOURCE_ON){
+  if(bt_devices.state==ASTER_PLAYER_BT_SCANNING||bt_devices.state==ASTER_PLAYER_BT_CONNECTING||
+     bt_devices.state==ASTER_PLAYER_BT_CONNECTED)return;
+  if(!bt_command(ASTER_PLAYER_BT_SCAN,NULL))return;
+  bt_restore_visibility=(bt_capabilities()&ASTER_PLAYER_CAP_BT_SINK)!=0;
+ }
+ bt_command(ASTER_PLAYER_BT_OFF,NULL);
+ if(info.mode==ASTER_PLAYER_LOCAL)bt_command(ASTER_PLAYER_STOP,NULL);
+ bt_start_after_stop(choice);
+}
+
+static void bt_delete(lv_event_t *event)
+{
+ (void)event;
+ bt_root=NULL;
+}
+
+static void bt_close(lv_event_t *event)
+{
+ (void)event;
+ if(bt_close_owner)bt_close_owner();
+ else lv_obj_delete(bt_root);
+}
+
+void aster_bluetooth_settings_open(lv_obj_t *parent,void (*close_owner)(void))
+{
+ uint32_t caps=bt_capabilities();
+ if(!parent||bt_root||!(caps&(ASTER_PLAYER_CAP_BT_SINK|ASTER_PLAYER_CAP_BT_SOURCE)))return;
+ load_palette();memset(&bt_devices,0,sizeof(bt_devices));bt_error=0;bt_close_owner=close_owner;
+ int w=aster_ui_lvgl_layout_width(), h=aster_ui_lvgl_layout_height();
+ bt_root=lv_obj_create(parent);
+ lv_obj_remove_style_all(bt_root);
+ lv_obj_add_flag(bt_root,LV_OBJ_FLAG_FLOATING);
+ lv_obj_set_pos(bt_root,0,0);
+ lv_obj_set_size(bt_root,w,h);
+ lv_obj_set_style_bg_color(bt_root,hexc(s_pal.bg),0);
+ lv_obj_set_style_bg_opa(bt_root,LV_OPA_COVER,0);
+ lv_obj_add_event_cb(bt_root,bt_delete,LV_EVENT_DELETE,NULL);
+ no_scroll(bt_root);
+ lv_obj_t *title=mk_label(bt_root,"蓝牙",s_pal.fg,0);lv_obj_set_pos(title,16,20);
+ mk_button(bt_root,w-78,10,66,40,"返回",bt_close,NULL);
+ bt_status=mk_label(bt_root,"",s_pal.dim,0);
+ lv_obj_set_pos(bt_status,16,65);lv_obj_set_width(bt_status,w-32);
+ lv_label_set_long_mode(bt_status,LV_LABEL_LONG_MODE_DOTS);
+ int cell=(w-36)/2;
+ lv_obj_t *toggle=mk_button(bt_root,12,100,cell,46,"开启蓝牙",bt_select,&bt_toggle);
+ lv_obj_set_style_bg_color(toggle,hexc(s_pal.surface),0);
+ lv_obj_set_user_data(toggle,(void *)(uintptr_t)ASTER_PLAYER_BT_ON);
+ bt_search=NULL;
+ if(caps&ASTER_PLAYER_CAP_BT_SOURCE){
+  bt_search=mk_button(bt_root,24+cell,100,cell,46,"搜索设备",bt_select,NULL);
+  lv_obj_set_style_bg_color(bt_search,hexc(s_pal.surface),0);
+  lv_obj_set_user_data(bt_search,(void *)(uintptr_t)ASTER_PLAYER_SOURCE_ON);
+ }
+ lv_obj_t *list=lv_obj_create(bt_root);
+ lv_obj_remove_style_all(list);lv_obj_set_pos(list,12,162);lv_obj_set_size(list,w-24,h-174);
+ lv_obj_set_flex_flow(list,LV_FLEX_FLOW_COLUMN);
+ lv_obj_set_style_pad_row(list,6,0);
+ lv_obj_add_flag(list,LV_OBJ_FLAG_SCROLLABLE);lv_obj_set_scroll_dir(list,LV_DIR_VER);
+ for(unsigned i=0;i<ASTER_PLAYER_BT_DEVICES_MAX;i++){
+  bt_rows[i]=mk_button(list,0,0,w-28,46,"",bt_select,&bt_names[i]);
+  lv_obj_set_style_bg_color(bt_rows[i],hexc(s_pal.surface),0);
+  lv_obj_set_user_data(bt_rows[i],(void *)(uintptr_t)(100+i));
+  lv_obj_set_width(bt_names[i],w-46);
+  lv_label_set_long_mode(bt_names[i],LV_LABEL_LONG_MODE_DOTS);
+ }
+ bt_last_poll=aster_os_uptime32()-250;
+ bt_tick();
+}
+
+static void on_bluetooth(lv_event_t *event)
+{
+ (void)event;
+ lv_obj_set_pos(s_sheet,0,0);
+ lv_obj_set_size(s_sheet,aster_ui_lvgl_layout_width(),aster_ui_lvgl_layout_height());
+ aster_bluetooth_settings_open(s_sheet,aster_qpanel_dismiss);
+}
+
 static void build(void)
 {
 	lv_obj_t *scr = aster_ui_lvgl_screen();
@@ -605,6 +806,7 @@ static void build(void)
 	int dh = (int)aster_ui_lvgl_layout_height();
 	bool has_vol = IS_ENABLED(CONFIG_ASTER_AUDIO);
 	bool has_wifi = IS_ENABLED(CONFIG_ASTER_WIFI);
+	bool has_bt = aster_bluetooth_settings_available();
 	bool has_theme = s_ops && s_ops->count && s_ops->index &&
 			 s_ops->name && s_ops->apply && s_ops->count() > 1;
 	int h = QP_TITLE_H + QP_ROW_H /* SD */ + QP_RULE;
@@ -615,6 +817,7 @@ static void build(void)
 	if (has_wifi) {
 		h += QP_WIFI_H;
 	}
+	if (has_bt) h += QP_ROW_H;
 	if (has_theme) {
 		h += QP_ROW_H;
 	}
@@ -692,6 +895,13 @@ static void build(void)
 				       &s_wifi_btn_lbl);
 	}
 #endif /* CONFIG_ASTER_WIFI */
+
+	if (has_bt) {
+		row=mk_row(s_sheet,QP_ROW_H);
+		l=mk_label(row,"蓝牙",s_pal.fg,0);
+		lv_obj_set_pos(l,QP_TXT_X,QP_ROW_Y);
+		mk_button(row,dw-QP_PAD_X-QP_BTN_W,7,QP_BTN_W,QP_BTN_H,"设置",on_bluetooth,NULL);
+	}
 
 #if IS_ENABLED(CONFIG_ASTER_AUDIO)
 	if (has_vol) {
@@ -948,6 +1158,8 @@ void aster_qpanel_force_close(void)
 void aster_qpanel_tick(void)
 {
  aster_launcher_power_tick();
+ bt_tick();
+ if(aster_bluetooth_settings_is_open())return;
 	/* Self-throttled to 1 Hz rather than left to the caller's gate. There
 	 * are two callers now and they run at completely different rates: the
 	 * launcher's home refresh is already once a second, while the app loop

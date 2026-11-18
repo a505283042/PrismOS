@@ -6,7 +6,8 @@ from test_waveshare import ROOT, run_c
 class Avrcp(unittest.TestCase):
     def test_key_lifecycle_timeout_and_volume_echo(self):
         source = (ROOT / 'systems/espidf/components/aster_audio/bt_avrcp.c').read_text()
-        implementation = source[source.index('void aster_bt_avrcp_poll('):source.index('void aster_bt_avrcp_status(')]
+        pairs = source[source.index('static const uint8_t key_pairs'):source.index('static bool ct_initialized')]
+        implementation = source[source.index('static void finish_key('):source.index('void aster_bt_avrcp_status(')]
         run_c(r'''
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -19,10 +20,11 @@ enum {ESP_OK=0,ESP_ERR_TIMEOUT=100,ESP_AVRC_RN_VOLUME_CHANGE=13,
  ESP_AVRC_RN_RSP_CHANGED=1,ESP_AVRC_PT_CMD_STATE_PRESSED=0,ESP_AVRC_PT_CMD_STATE_RELEASED=1,
  ESP_AVRC_PT_CMD_PLAY=0x44,ESP_AVRC_PT_CMD_PAUSE=0x46,ESP_AVRC_PT_CMD_FORWARD=0x4b,ESP_AVRC_PT_CMD_BACKWARD=0x4c};
 typedef union {uint8_t volume;} esp_avrc_rn_param_t;
-static atomic_bool tg_up,ct_up,volume_notify,stopping,key_fault;
+static atomic_bool tg_up,ct_up,volume_notify,stopping;
 static atomic_int remote_volume,pending_key,key_ack,control_error;
-static atomic_uint wire_volume;
-static int last_percent,active_key,key_stage,volume=40,sets,notifications,keys;
+static atomic_uint wire_volume,key_labels,retired_pairs;
+static int last_percent,active_key,key_stage,key_pair,next_pair,volume=40,sets,notifications,keys;
+#define ESP_LOGW(tag,format,key,phase,labels) ((void)(phase))
 static int64_t key_deadline,now;
 static int key_code[8],key_state[8],labels[8];
 static int aster_plat_audio_get_volume(void){return volume;}
@@ -35,7 +37,7 @@ static int esp_avrc_tg_send_rn_rsp(int id,int kind,esp_avrc_rn_param_t *p){
 static int esp_avrc_ct_send_passthrough_cmd(int label,int code,int state){
  assert(keys<8);labels[keys]=label;key_code[keys]=code;key_state[keys++]=state;return 0;
 }
-''' + implementation + r'''
+''' + pairs + implementation + r'''
 int main(void){
  remote_volume=-1;last_percent=40;
  assert(aster_bt_avrcp_command("play")==-ENOTCONN);
@@ -47,9 +49,12 @@ int main(void){
  key_ack=1;aster_bt_avrcp_poll();assert(keys==2 && labels[1]==5 && key_state[1]==1);
  key_ack=2;aster_bt_avrcp_poll();assert(!pending_key && !key_stage);
  assert(!aster_bt_avrcp_command("pause"));aster_bt_avrcp_poll();
- now=1000001;aster_bt_avrcp_poll();assert(keys==4 && key_state[3]==1 && key_fault);
+ now=1000001;aster_bt_avrcp_poll();assert(keys==4 && key_state[3]==1 && retired_pairs);
  now=2000002;aster_bt_avrcp_poll();assert(!pending_key && control_error==ESP_ERR_TIMEOUT);
- assert(aster_bt_avrcp_command("play")==-EIO);
+ assert(!aster_bt_avrcp_command("play"));
+ aster_bt_avrcp_poll();assert(keys==5 && labels[4]!=labels[2] && labels[4]!=labels[3]);
+ key_ack=1;aster_bt_avrcp_poll();assert(keys==6 && key_state[5]==1);
+ key_ack=2;aster_bt_avrcp_poll();assert(!pending_key && !key_stage);
  /* Remote updates apply once without echoing a local CHANGED notification. */
  remote_volume=64;volume_notify=true;aster_bt_avrcp_poll();
  assert(volume==50 && sets==1 && wire_volume==64 && notifications==0 && volume_notify);

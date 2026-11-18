@@ -80,3 +80,5 @@ target_compile_definitions(app PRIVATE
 # (same gotcha the imgdec module documents).
 set_property(SOURCE ${ASTER_LVGL_SOURCES} TARGET_DIRECTORY app PROPERTY
 	COMPILE_OPTIONS "-Wno-unused-parameter;-Wno-unused-variable;-Wno-unused-function;-Wno-sign-compare;-Wno-missing-field-initializers;-Wno-type-limits")
+
+target_sources(app PRIVATE ${ASTER_COMMON_POWER_UI})

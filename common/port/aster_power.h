@@ -6,7 +6,7 @@
 /* Firmware service contract, not the guest ABI. All calls belong to one
  * system/UI owner. Drivers must serialize shared buses internally. Native
  * negative errno throughout. Bind only at boot; tables/context are permanent. */
-#define ASTER_POWER_API_VERSION 1u
+#define ASTER_POWER_API_VERSION 2u
 #define ASTER_POWER_SCREEN_OFF (1u << 0)
 #define ASTER_POWER_LIGHT_SLEEP (1u << 1)
 #define ASTER_POWER_DEEP_SLEEP (1u << 2)
@@ -39,7 +39,7 @@ typedef enum {
  ASTER_KEY_ACTION_NONE, ASTER_KEY_ACTION_WAKE, ASTER_KEY_ACTION_SCREEN,
  ASTER_KEY_ACTION_HOME, ASTER_KEY_ACTION_BACK, ASTER_KEY_ACTION_PLAY_PAUSE,
  ASTER_KEY_ACTION_VOLUME_UP, ASTER_KEY_ACTION_VOLUME_DOWN,
- ASTER_KEY_ACTION_POWER_MENU
+ ASTER_KEY_ACTION_POWER_MENU, ASTER_KEY_ACTION_SHUTDOWN
 } aster_power_key_action_t;
 typedef struct {
  uint32_t code,pressed;uint64_t timestamp_ms;
@@ -55,17 +55,19 @@ typedef struct {
  int (*restart)(void *context);
  int (*shutdown)(void *context);
  int (*keys)(void *context,aster_power_key_t *events,uint32_t capacity);
- /* Physical code + hold time -> semantic action. Overridable by each board. */
+ /* Called while held (pressed=true) and at release. A hold action is
+  * dispatched at most once per press. Overridable by each board. */
  aster_power_key_action_t (*map_key)(void *context,uint32_t code,bool pressed,uint32_t held_ms);
 } aster_power_ops_t;
 /* Lifecycle is a separate override table: OS/app/SD teardown must not be
- * embedded in PMIC drivers. prepare must either obtain exclusive quiescence,
- * or fail without changing state. finish releases it on wake/failure.
+ * embedded in PMIC drivers. prepare must obtain exclusive quiescence, or release all gates on failure.
+ * Stopped services need not automatically restart after a preparation failure. finish releases it on wake/failure.
  * Screen-off needs neither hook; destructive/CPU-sleep actions require both. */
 typedef struct {
  uint32_t size,version;const char *name;
  int (*prepare)(void *context,const aster_power_request_t *request);
  void (*finish)(void *context,const aster_power_request_t *request,int result);
+ int (*recovery_error)(void *context);
 } aster_power_lifecycle_t;
 int aster_power_derive(aster_power_ops_t *out,const aster_power_ops_t *base,const aster_power_ops_t *overrides);
 int aster_power_lifecycle_derive(aster_power_lifecycle_t *out,const aster_power_lifecycle_t *base,const aster_power_lifecycle_t *overrides);
@@ -82,6 +84,26 @@ int aster_power_keys(aster_power_key_t *events,uint32_t capacity);
 aster_power_key_action_t aster_power_map_key(uint32_t code,bool pressed,uint32_t held_ms);
 int aster_power_transition(const aster_power_request_t *request,uint8_t brightness);
 int aster_power_screen_on(uint8_t brightness);
+/* Admission leases protect whole asynchronous storage/audio transactions.
+ * Closing admission blocks new work; existing holders may finish. */
+int aster_power_activity_begin(void);
+void aster_power_activity_end(void);
+bool aster_power_activity_closing(void);
+unsigned aster_power_activity_count(void);
+int aster_power_activity_close(void);
+void aster_power_activity_reopen(void);
+typedef struct {
+ uint32_t size,version;const char *name;
+ void (*stop_app)(void *context);
+ bool (*app_busy)(void *context);
+} aster_power_dispatch_t;
+int aster_power_bind_dispatch(const aster_power_dispatch_t *ops,void *context);
+/* Thread-safe one-entry mailbox. poll runs on the UI/VM owner after cleanup. */
+int aster_power_schedule(const aster_power_request_t *request);
+bool aster_power_pending(void);
+void aster_power_poll(void);
+int aster_power_last_result(void);
+
 /* UI-owner idle policy. Zero timeout disables automatic screen-off. Activity
  * wakes the screen, consumes the entire waking gesture until all contacts
  * release, then starts the timeout again. No allocation or timer task. */

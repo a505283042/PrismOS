@@ -1,4 +1,5 @@
 #include "aster_network.h"
+#include "aster_power.h"
 /* SPDX-License-Identifier: MIT
  * OS-neutral orchestration over the existing platform, filesystem, HTTP and
  * task adapters. No panel, radio pin or CPU-specific decisions live here.
@@ -684,7 +685,7 @@ static int download(context *c) {
     fs_unlink(PARTS "/store.ast");
     return 0;
 }
-static void worker(void *a, void *b, void *d) {
+static void worker_impl(void *a, void *b, void *d) {
     (void)a;
     (void)b;
     (void)d;
@@ -827,6 +828,14 @@ static void worker(void *a, void *b, void *d) {
             (void)aster_plat_wifi_storage_ready();
         }
     }
+}
+static void worker(void *a,void *b,void *d)
+{
+ if(aster_power_activity_begin()){
+  k_mutex_lock(&lock,K_FOREVER);snapshot.state.error=-EBUSY;k_mutex_unlock(&lock);
+  phase(ASTER_SETUP_ERROR);return;
+ }
+ worker_impl(a,b,d);aster_power_activity_end();
 }
 bool aster_setup_poll(aster_setup_snapshot *out) {
     if (started && !stack && snapshot.state.phase == ASTER_SETUP_ERROR && consume(&retry_command))

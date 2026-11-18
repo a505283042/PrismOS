@@ -1,3 +1,4 @@
+#include "aster_power.h"
 #include <zephyr/sys/util.h>
 /* SPDX-License-Identifier: MIT
  * `aster` shell: system info, app install/list/start/stop/..., log.
@@ -1085,7 +1086,24 @@ static int cmd_port(const struct shell *sh,size_t argc,char **argv)
                 aster_device_ops()->name,aster_os_ops()->name,result.passed,result.stage,error);
     return error;
 }
+static int cmd_power(const struct shell *sh,size_t argc,char **argv)
+{
+ if(argc!=2)return -EINVAL;
+ if(!strcmp(argv[1],"status")){
+  aster_power_caps_t caps={0};int r=aster_power_caps(&caps);
+  shell_print(sh,"POWER modes=%u pending=%d result=%d active=%u closing=%d",caps.modes,aster_power_pending(),aster_power_last_result(),aster_power_activity_count(),aster_power_activity_closing());return r;
+ }
+ aster_power_request_t request={.size=sizeof(request),.version=ASTER_POWER_API_VERSION};
+ if(!strcmp(argv[1],"restart"))request.mode=ASTER_POWER_RESTART;
+ else if(!strcmp(argv[1],"off"))request.mode=ASTER_POWER_SHUTDOWN;
+ else if(!strcmp(argv[1],"sleep")){
+  aster_power_caps_t caps;int r=aster_power_caps(&caps);if(r)return r;
+  request.mode=ASTER_POWER_LIGHT_SLEEP;request.wake_sources=caps.light_wake&(ASTER_WAKE_KEY|ASTER_WAKE_TOUCH);
+ }else return -EINVAL;
+ return aster_power_schedule(&request);
+}
 SHELL_STATIC_SUBCMD_SET_CREATE(aster_cmds,
+    SHELL_CMD_ARG(power,NULL,"status|restart|off|sleep",cmd_power,2,0),
     SHELL_CMD_ARG(port,NULL,"selftest: platform adapter contract",cmd_port,2,0),
 #if defined(CONFIG_ASTER_FIRST_BOOT)
     SHELL_CMD(sd,&sub_sd,"explicit SD maintenance",NULL),

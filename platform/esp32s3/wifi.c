@@ -1,3 +1,4 @@
+#include "aster_power.h"
 /* SPDX-License-Identifier: MIT
  * ESP32-S3 station Wi-Fi for `hw wifi` (scan / join / status).
  */
@@ -791,7 +792,7 @@ static void hotspot_load(void)
 	k_mutex_unlock(&job_mu);
 }
 
-static int queue_wifi_job(uint32_t op, const char *ssid, const char *psk)
+static int queue_wifi_job_impl(uint32_t op, const char *ssid, const char *psk)
 {
 	int err = 0;
 
@@ -855,6 +856,12 @@ static int queue_wifi_job(uint32_t op, const char *ssid, const char *psk)
 	return err;
 }
 
+static int queue_wifi_job(uint32_t op,const char *ssid,const char *psk)
+{
+ int r=aster_power_activity_begin();if(r)return r;
+ r=queue_wifi_job_impl(op,ssid,psk);if(r)aster_power_activity_end();return r;
+}
+
 static void wifi_job_fn(struct k_work *work)
 {
 	aster_wifi_ap_t found[ASTER_WIFI_AP_MAX];
@@ -911,6 +918,7 @@ static void wifi_job_fn(struct k_work *work)
 	job_op = ASTER_PLAT_WIFI_OP_NONE;
 	job_busy = false;
 	k_mutex_unlock(&job_mu);
+    aster_power_activity_end();
 	if (err) {
 		LOG_WRN("async operation %u failed: %d", (unsigned)op, err);
 	} else {

@@ -102,7 +102,7 @@ int main(void){
     def test_contract_and_pcm(self):
         header = (ROOT / 'common/audio/aster_audio_output.h').read_text(encoding='utf-8')
         source = (ROOT / 'common/audio/aster_audio_output.c').read_text(encoding='utf-8')
-        source = source.replace('#include "aster_audio_output.h"', '')
+        source = source.replace('#include "aster_audio_output.h"', '').replace('#include "aster_power.h"', '#include "'+str(ROOT/'common/port/aster_power.c')+'"')
         run_c(header + source + r'''
 #include <assert.h>
 static int close_error, write_result=1, open_calls;

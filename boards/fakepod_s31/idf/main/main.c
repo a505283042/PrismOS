@@ -36,7 +36,7 @@ void app_main(void){
   .imu_read=fakepod_imu_available()?fakepod_imu_read:NULL,
   .touch=touch==ESP_OK?fakepod_touch_read:NULL,.max_touch_points=1,.system_info=&identity,.backlight=fakepod_lcd_brightness};
  aster_idf_set_io(&io);aster_idf_set_capture(fakepod_lcd_capture);
- fakepod_power_register();aster_power_seal();
+ fakepod_power_register();aster_idf_power_register();aster_power_seal();
  aster_device_seal();aster_os_seal();aster_services_seal();aster_network_seal();
  fakepod_storage_start();
  int audio=aster_idf_audio_start();if(audio)ESP_LOGW(TAG,"Audio: %d",audio);

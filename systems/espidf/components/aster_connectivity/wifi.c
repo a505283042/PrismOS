@@ -27,11 +27,11 @@ static void event(void *arg,esp_event_base_t base,int32_t id,void *data)
 }
 static int command(int argc,char **argv)
 {
-    if(argc>=2 && (!strcmp(argv[1],"app") || !strcmp(argv[1],"ui") || !strcmp(argv[1],"sd") || !strcmp(argv[1],"port")) && app_command) {
+    if(argc>=2 && (!strcmp(argv[1],"app") || !strcmp(argv[1],"ui") || !strcmp(argv[1],"sd") || !strcmp(argv[1],"port") || !strcmp(argv[1],"power")) && app_command) {
         int result=app_command(argc,argv);printf("APP command result=%d\n",result);return result?1:0;
     }
     if (argc<3 || strcmp(argv[1],"wifi")) {
-        puts("aster wifi scan|status|disconnect|connect SSID [PASSWORD]; aster app list|run|stop|install|uninstall");return 1;
+        puts("aster wifi scan|status|disconnect|connect SSID [PASSWORD]; aster app list|run|stop|install|uninstall; aster power status|restart|off|sleep [SECONDS]");return 1;
     }
     int result=ASTER_EINVAL;
     if (!strcmp(argv[2],"scan") && argc==3) result=aster_idf_wifi_submit(ASTER_WIFI_OP_SCAN,NULL,NULL);

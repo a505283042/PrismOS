@@ -36,16 +36,16 @@ static void finish(void *ctx,const aster_power_request_t *r,int result){
 int main(void){
  aster_power_caps_t c;assert(aster_power_caps(&c)==-ENOTSUP&&c.modes==0);
  aster_power_battery_t b;assert(aster_power_battery(&b)==-ENOTSUP&&b.flags==0);
- aster_power_ops_t base={sizeof(base),1,"base",.caps=caps,.screen=screen,.suspend=suspend_driver};
- aster_power_ops_t over={sizeof(over),1,"board",.battery=battery},derived;
+ aster_power_ops_t base={sizeof(base),ASTER_POWER_API_VERSION,"base",.caps=caps,.screen=screen,.suspend=suspend_driver};
+ aster_power_ops_t over={sizeof(over),ASTER_POWER_API_VERSION,"board",.battery=battery},derived;
  assert(!aster_power_derive(&derived,&base,&over));assert(derived.screen==screen&&derived.battery==battery);
  assert(!aster_power_derive(&derived,&derived,&over));assert(!aster_power_bind(&derived,(void *)1));
  assert(!aster_power_caps(&c)&&c.modes==ASTER_POWER_SCREEN_OFF&&c.battery&&!c.keys);
  assert(!aster_power_battery(&b)&&b.percent==73);
  battery_error=1;assert(aster_power_battery(&b)==-EPROTO&&b.flags==0);battery_error=0;
- aster_power_request_t r={sizeof(r),1,ASTER_POWER_LIGHT_SLEEP,ASTER_WAKE_KEY,0};
+ aster_power_request_t r={sizeof(r),ASTER_POWER_API_VERSION,ASTER_POWER_LIGHT_SLEEP,ASTER_WAKE_KEY,0};
  assert(aster_power_transition(&r,80)==-ENOTSUP&&!suspended);
- aster_power_lifecycle_t life={sizeof(life),1,"os",prepare,finish},life_over={.size=sizeof(life),.version=1,.name="custom"},life_derived;
+ aster_power_lifecycle_t life={.size=sizeof(life),.version=ASTER_POWER_API_VERSION,.name="os",.prepare=prepare,.finish=finish},life_over={.size=sizeof(life),.version=ASTER_POWER_API_VERSION,.name="custom"},life_derived;
  assert(!aster_power_lifecycle_derive(&life_derived,&life,&life_over));assert(life_derived.prepare==prepare);
  assert(!aster_power_bind_lifecycle(&life_derived,(void *)2));
  r.wake_sources=ASTER_WAKE_TOUCH;assert(aster_power_transition(&r,80)==-ENOTSUP&&!prepared);

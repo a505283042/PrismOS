@@ -431,12 +431,16 @@ int main(void) {
 
     def test_registry_refresh_remains_locked_after_success_or_uncertain_commit(self):
         source = (ROOT / 'systems/zephyr/services/aster_app_mgr.c').read_text()
-        code = source[source.index('int aster_app_mgr_install('):source.index('static int rmrf(')]
+        code = source[source.index('static int power_guarded_install('):source.index('static int rmrf(')]
+        start = source.index('int aster_app_mgr_install(const char *path)')
+        code += source[start:source.index('int aster_app_mgr_install_serial(', start)]
+        code = '#include "'+str(ROOT/'common/port/aster_power.c')+'"\n'+code
         run_c(r"""
 #include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
 #define ASTER_EIO -7
+#define ASTER_EBUSY -8
 #define LOG_ERR(...) snprintf(logbuf,sizeof(logbuf),__VA_ARGS__)
 static char logbuf[128];
 static int depth,result,scanned,scan_error;static bool live;
@@ -447,6 +451,7 @@ static int aster_pkg_install_file(const char *path) {(void)path;assert(depth);re
 static int aster_app_mgr_scan(void) {assert(depth);scanned++;return scan_error;}
 """ + code + r"""
 int main(void) {
+ assert(!aster_power_activity_close());assert(aster_app_mgr_install("test.ast")==ASTER_EBUSY && !scanned);aster_power_activity_reopen();
  assert(!aster_app_mgr_install("test.ast") && scanned==1 && !depth);
  result=-7;assert(aster_app_mgr_install("test.ast")==-7 && scanned==2 && !depth);
  live=true;result=-5;assert(aster_app_mgr_install("test.ast")==-5 && scanned==2 && !depth);

@@ -7,6 +7,7 @@
 #include "aster_pkg.h"
 #include "aster_setup.h"
 #include "aster_device.h"
+#include "aster_power.h"
 #include "aster_os.h"
 #include "aster_deploy.h"
 #include "aster_port_check.h"
@@ -19,6 +20,7 @@
 #include "freertos/semphr.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 static QueueHandle_t queue;
 static SemaphoreHandle_t state_lock;
 static bool busy;
@@ -31,6 +33,7 @@ static void worker(void *unused)
     int ui=aster_idf_ui_init(aster_idf_apps_launch);
     if(ui)ESP_LOGW("aster_apps","Desktop unavailable: %d",ui);
     for(;;) {
+        aster_power_poll();
         if(xQueueReceive(queue,&job,pdMS_TO_TICKS(aster_launcher_idle_wait_ms()))!=pdTRUE){aster_idf_ui_idle();continue;}
         aster_idf_ui_before_app();
         int result=ASTER_ENOENT;
@@ -77,11 +80,11 @@ static void worker(void *unused)
         aster_idf_ui_install_end();
         aster_idf_ui_after_app();
         char next[64];
-        if(installed && !result && !aster_idf_stop_is_requested()) {
+        if(installed && !aster_power_pending() && !result && !aster_idf_stop_is_requested()) {
             aster_idf_clear_stop();
             if(xQueueSend(queue,&job,0)==pdTRUE)continue;
         }
-        if(!result && !aster_idf_stop_is_requested() && aster_idf_take_handoff(next)) {
+        if(!aster_power_pending() && !result && !aster_idf_stop_is_requested() && aster_idf_take_handoff(next)) {
             /* Retain the single-worker reservation until the successor starts. */
             memset(&job,0,sizeof(job));snprintf(job.id,sizeof(job.id),"%s",next);
             aster_idf_clear_stop();
@@ -95,7 +98,7 @@ static int launch(const char *id,bool diagnostic)
     if(!queue || !state_lock)return ASTER_ESTATE;
     if(!diagnostic && (!id || !*id || strlen(id)>=64))return ASTER_EINVAL;
     xSemaphoreTake(state_lock,portMAX_DELAY);
-    if(busy){xSemaphoreGive(state_lock);return ASTER_EBUSY;}
+    if(busy||aster_power_pending()){xSemaphoreGive(state_lock);return ASTER_EBUSY;}
     job_t job={.diagnostic=diagnostic};if(id)strcpy(job.id,id);
     aster_idf_clear_stop();busy=true;
     bool sent=xQueueSend(queue,&job,0)==pdTRUE;
@@ -138,6 +141,21 @@ int aster_idf_apps_start(void)
 }
 int aster_idf_apps_command(int argc,char **argv)
 {
+    if(argc>=3&&!strcmp(argv[1],"power")){
+        if(!strcmp(argv[2],"status")){
+            printf("POWER pending=%d result=%d active=%u closing=%d\n",aster_power_pending(),aster_power_last_result(),aster_power_activity_count(),aster_power_activity_closing());return 0;
+        }
+        aster_power_request_t request={.size=sizeof(request),.version=ASTER_POWER_API_VERSION};
+        if(!strcmp(argv[2],"restart")&&argc==3)request.mode=ASTER_POWER_RESTART;
+        else if(!strcmp(argv[2],"off")&&argc==3)request.mode=ASTER_POWER_SHUTDOWN;
+        else if(!strcmp(argv[2],"sleep")&&(argc==3||argc==4)){
+            aster_power_caps_t caps;if(aster_power_caps(&caps))return ASTER_ENOTSUP;
+            request.mode=ASTER_POWER_LIGHT_SLEEP;
+            if(argc==4){char *end;unsigned long seconds=strtoul(argv[3],&end,10);if(*end||seconds<1||seconds>3600)return ASTER_EINVAL;request.wake_sources=ASTER_WAKE_TIMER;request.timer_ms=seconds*1000;}
+            else request.wake_sources=caps.light_wake&(ASTER_WAKE_TOUCH|ASTER_WAKE_KEY);
+        }else return ASTER_EINVAL;
+        int result=aster_power_schedule(&request);printf("POWER queued mode=%u result=%d\n",(unsigned)request.mode,result);return result;
+    }
     if(argc==3 && !strcmp(argv[1],"port") && !strcmp(argv[2],"selftest")) {
         if(aster_idf_is_running())return ASTER_EBUSY;
         aster_port_check_t result;int error=aster_port_check(&result);
@@ -149,7 +167,7 @@ int aster_idf_apps_command(int argc,char **argv)
         if(argc==4 && !strcmp(argv[2],"format") && !strcmp(argv[3],"--confirm")) {
             if(!state_lock)return ASTER_ESTATE;
             xSemaphoreTake(state_lock,portMAX_DELAY);
-            int rc=busy?ASTER_EBUSY:aster_setup_request_format();
+            int rc=busy||aster_power_pending()?ASTER_EBUSY:aster_setup_request_format();
             if(!rc)busy=true; /* Reserve the UI/VM owner until the reset. */
             xSemaphoreGive(state_lock);
             if(!rc)puts("SD format queued: all card contents will be erased; device will reboot.");
@@ -186,4 +204,10 @@ int aster_idf_apps_command(int argc,char **argv)
     }
     if(!strcmp(argv[2],"uninstall"))return aster_app_mgr_uninstall(argv[3]);
     return ASTER_EINVAL;
+}
+
+bool aster_idf_apps_busy(void)
+{
+ if(!state_lock)return true;
+ xSemaphoreTake(state_lock,portMAX_DELAY);bool result=busy;xSemaphoreGive(state_lock);return result;
 }

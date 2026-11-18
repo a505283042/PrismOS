@@ -136,6 +136,10 @@ void aster_qpanel_close(bool restore);
 
 /* The two call sites above, spelled out. Both are no-ops when closed. */
 void aster_qpanel_force_close(void);
+bool aster_bluetooth_settings_available(void);
+bool aster_bluetooth_settings_is_open(void);
+struct _lv_obj_t;
+void aster_bluetooth_settings_open(struct _lv_obj_t *parent, void (*close_owner)(void));
 void aster_qpanel_dismiss(void);
 
 /* Refresh the live rows (Wi-Fi, SD) while the sheet is up. No-op when

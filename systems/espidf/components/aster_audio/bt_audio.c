@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 /* Optional IDF Classic A2DP receiver. No Bluetooth tasks or PCM buffer are
  * created at boot. Stack callbacks only copy data; one worker owns the DAC. */
+#include "aster_power.h"
 #include "sdkconfig.h"
 #if CONFIG_BT_ENABLED && CONFIG_BT_CLASSIC_ENABLED
 #include "aster_audio_output.h"
@@ -238,7 +239,7 @@ static void receiver(void *ctx){
  e=esp_bt_gap_set_security_param(ESP_BT_SP_IOCAP_MODE,&io,sizeof(io));if(e){r=bt_error(e);goto done;}
  e=esp_bt_gap_set_device_name(NAME);if(e){r=bt_error(e);goto done;}
  aster_audio_format_t format={sizeof(format),1,48000,2,ASTER_AUDIO_PCM_S16LE,ASTER_AUDIO_OUTPUT_EXCLUSIVE};
- if(!source){r=aster_audio_output_open(ASTER_AUDIO_OUTPUT_WIRED,&format);if(r)goto done;output=true;atomic_store(&accept_pcm,true);}
+ if(!source)atomic_store(&accept_pcm,true);
  e=esp_bt_gap_set_scan_mode(source?ESP_BT_NON_CONNECTABLE:ESP_BT_CONNECTABLE,source?ESP_BT_NON_DISCOVERABLE:ESP_BT_GENERAL_DISCOVERABLE);if(e){r=bt_error(e);goto done;}
  ESP_LOGI(TAG,"ready: %s (Classic A2DP %s / SBC)",NAME,source?"source":"sink");
  bool buffered=false;
@@ -249,12 +250,31 @@ static void receiver(void *ctx){
   unsigned hz=atomic_load(&rate),ch=atomic_load(&channels);
   if(atomic_load(&last_error)){r=atomic_load(&last_error);break;}
   if(!aster_audio_rate_bit(hz)){r=-ENOTSUP;break;}
-  if(hz!=format.rate){
-   r=aster_audio_output_close(ASTER_AUDIO_OUTPUT_WIRED);if(r)break;output=false;
-   format.rate=hz;r=aster_audio_output_open(ASTER_AUDIO_OUTPUT_WIRED,&format);if(r)break;output=true;buffered=false;
-  }
   if(!atomic_load(&playing)){
+   if(output){
+    r=aster_audio_output_close(ASTER_AUDIO_OUTPUT_WIRED);
+    if(r)break;
+    output=false;
+   }
    (void)xStreamBufferReceive(pcm_stream,block,2048,0);buffered=false;vTaskDelay(pdMS_TO_TICKS(5));continue;
+  }
+  if(!output||hz!=format.rate){
+   if(output){
+    r=aster_audio_output_close(ASTER_AUDIO_OUTPUT_WIRED);
+    if(r)break;
+    output=false;
+   }
+   aster_media_snapshot_t media;
+   if(!aster_media_snapshot(&media)&&(media.state==ASTER_MEDIA_OPENING||
+      media.state==ASTER_MEDIA_PLAYING||media.state==ASTER_MEDIA_PAUSED||media.state==ASTER_MEDIA_STOPPING)){
+    aster_media_stop();
+    vTaskDelay(pdMS_TO_TICKS(10));
+    continue;
+   }
+   format.rate=hz;
+   r=aster_audio_output_open(ASTER_AUDIO_OUTPUT_WIRED,&format);
+   if(r)break;
+   output=true;buffered=false;
   }
   size_t queued=xStreamBufferBytesAvailable(pcm_stream);
   if(!buffered && queued<8192){vTaskDelay(pdMS_TO_TICKS(2));continue;}
@@ -307,11 +327,11 @@ done:
  else {dirty=true;if(!r)r=-EIO;}
  atomic_store(&connected,false);atomic_store(&last_error,r);
  if(source)atomic_store(&discovery_state,r?ASTER_PLAYER_BT_ERROR:ASTER_PLAYER_BT_IDLE);
- ESP_LOGI(TAG,"stopped result=%d retained=%d",r,dirty);atomic_store(&running,false);vTaskDelete(NULL);
+ ESP_LOGI(TAG,"stopped result=%d retained=%d",r,dirty);atomic_store(&running,false);aster_power_activity_end();vTaskDelete(NULL);
 }
-static int start_audio(bool enable_avrcp,bool source){
+static int start_audio_impl(bool enable_avrcp,bool source){
  aster_media_snapshot_t media;
- if(!aster_media_snapshot(&media) && (media.state==ASTER_MEDIA_OPENING || media.state==ASTER_MEDIA_PLAYING || media.state==ASTER_MEDIA_PAUSED || media.state==ASTER_MEDIA_STOPPING)){puts("media session busy");return -EBUSY;}
+ if(source && !aster_media_snapshot(&media) && (media.state==ASTER_MEDIA_OPENING || media.state==ASTER_MEDIA_PLAYING || media.state==ASTER_MEDIA_PAUSED || media.state==ASTER_MEDIA_STOPPING)){puts("media session busy");return -EBUSY;}
  if(dirty){puts("Bluetooth cleanup failed; reboot required");return -EBUSY;}
  bool expected=false;if(!atomic_compare_exchange_strong(&running,&expected,true)){puts("Bluetooth busy");return -EBUSY;}
  atomic_store(&stop_requested,false);atomic_store(&last_error,0);atomic_store(&profile_ready,false);atomic_store(&profile_down,false);
@@ -324,6 +344,19 @@ static int start_audio(bool enable_avrcp,bool source){
  if(xTaskCreate(receiver,"bt_audio",8192,NULL,6,NULL)!=pdPASS){atomic_store(&running,false);return -ENOMEM;}
  puts("Bluetooth start queued");return 0;
 }
+static int start_audio(bool avrcp,bool source)
+{
+ int r=aster_power_activity_begin();if(r)return r;
+ r=start_audio_impl(avrcp,source);if(r)aster_power_activity_end();return r;
+}
+int aster_idf_bt_audio_shutdown(void)
+{
+ atomic_store(&stop_requested,true);
+ int64_t until=esp_timer_get_time()+7000000;
+ while(atomic_load(&running)&&esp_timer_get_time()<until){atomic_store(&stop_requested,true);vTaskDelay(pdMS_TO_TICKS(10));}
+ return atomic_load(&running)?-ETIMEDOUT:0;
+}
+bool aster_idf_bt_audio_busy(void){return atomic_load(&running);}
 static int command(int argc,char **argv){
  if(argc==3 && !strcmp(argv[1],"connect")){
   int r=aster_idf_bt_source_request(ASTER_PLAYER_BT_CONNECT,argv[2]);printf("connect result=%d\n",r);return r?1:0;
@@ -368,6 +401,7 @@ bool aster_idf_bt_audio_info(aster_player_info_t *info){
   if(!atomic_load(&last_error))return false;
   info->mode=ASTER_PLAYER_BLUETOOTH;info->state=ASTER_PLAYER_ERROR;info->error=atomic_load(&last_error);return true;
  }
+ if(!atomic_load(&connected)&&!atomic_load(&stop_requested))return false;
  info->mode=ASTER_PLAYER_BLUETOOTH;
  info->state=atomic_load(&stop_requested)?ASTER_PLAYER_STOPPING:atomic_load(&playing)?ASTER_PLAYER_PLAYING:
   atomic_load(&connected)?ASTER_PLAYER_PAUSED:ASTER_PLAYER_OPENING;
@@ -377,6 +411,7 @@ bool aster_idf_bt_audio_info(aster_player_info_t *info){
  if(atomic_load(&avrcp_enabled))aster_bt_avrcp_info(info);
  return true;
 }
+const char *aster_idf_bt_device_name(void){return atomic_load(&running)?NAME:"";}
 int aster_idf_bt_audio_control(uint32_t cmd){
  if(cmd==ASTER_PLAYER_BT_ON){if(atomic_load(&running))return atomic_load(&source_role)?-EBUSY:0;return start_audio(true,false);}
  if(cmd==ASTER_PLAYER_BT_OFF){atomic_store(&stop_requested,true);if(!atomic_load(&running))atomic_store(&last_error,0);return 0;}
@@ -388,6 +423,12 @@ int aster_idf_bt_source_request(uint32_t cmd,const char *address){
  if(cmd==ASTER_PLAYER_SOURCE_ON){
   if(atomic_load(&running))return atomic_load(&source_role)?0:-EBUSY;
   return start_audio(false,true);
+ }
+ if(cmd==ASTER_PLAYER_BT_DISCONNECT&&!atomic_load(&source_role)){
+  if(!atomic_load(&running)||!atomic_load(&connected))return -ENOTCONN;
+  esp_bd_addr_t remote;
+  portENTER_CRITICAL(&peer_lock);memcpy(remote,peer,sizeof(remote));portEXIT_CRITICAL(&peer_lock);
+  return bt_error(esp_a2d_sink_disconnect(remote));
  }
  if(!atomic_load(&running) || !atomic_load(&source_role) || !atomic_load(&profile_ready))return -ENOTCONN;
  if(cmd==ASTER_PLAYER_BT_SCAN){
@@ -411,14 +452,18 @@ int aster_idf_bt_source_request(uint32_t cmd,const char *address){
  atomic_store(&connect_requested,true);return 0;
 }
 int aster_idf_bt_source_list(aster_player_bt_list_t *out){
- portENTER_CRITICAL(&discovery_lock);
- out->count=discovery.count;out->generation=discovery.generation;memcpy(out->devices,discovery.devices,sizeof(out->devices));
- if(atomic_load(&source_role) && atomic_load(&connected))for(unsigned i=0;i<out->count;i++)if(!strcmp(out->devices[i].address,target_address))out->devices[i].flags=ASTER_PLAYER_F_CONNECTED;
- portEXIT_CRITICAL(&discovery_lock);
  bool source=atomic_load(&source_role);
+ bool active=source&&atomic_load(&running);
+ portENTER_CRITICAL(&discovery_lock);
+ if(active){
+  out->count=discovery.count;out->generation=discovery.generation;
+  memcpy(out->devices,discovery.devices,sizeof(out->devices));
+  if(atomic_load(&connected))for(unsigned i=0;i<out->count;i++)if(!strcmp(out->devices[i].address,target_address))out->devices[i].flags=ASTER_PLAYER_F_CONNECTED;
+ }
+ portEXIT_CRITICAL(&discovery_lock);
  out->state=source?atomic_load(&discovery_state):ASTER_PLAYER_BT_IDLE;
- if(source && atomic_load(&running) && atomic_load(&stop_requested))out->state=ASTER_PLAYER_BT_STOPPING;
- out->error=source?atomic_load(&last_error):0;out->output_rate=source && atomic_load(&codec_ready)?atomic_load(&rate):0;
+ if(active && atomic_load(&stop_requested))out->state=ASTER_PLAYER_BT_STOPPING;
+ out->error=source?atomic_load(&last_error):0;out->output_rate=active && atomic_load(&codec_ready)?atomic_load(&rate):0;
  out->queued_bytes=aster_bt_tx_queued();return 0;
 }
 
@@ -431,8 +476,11 @@ void aster_idf_bt_audio_register(void){
 #include <stdbool.h>
 #include <errno.h>
 bool aster_idf_bt_audio_info(aster_player_info_t *info){(void)info;return false;}
+const char *aster_idf_bt_device_name(void){return "";}
 int aster_idf_bt_audio_control(uint32_t cmd){(void)cmd;return -ENOTSUP;}
 int aster_idf_bt_source_request(uint32_t cmd,const char *address){(void)cmd;(void)address;return -ENOTSUP;}
 int aster_idf_bt_source_list(aster_player_bt_list_t *out){(void)out;return -ENOTSUP;}
 void aster_idf_bt_audio_register(void){}
+int aster_idf_bt_audio_shutdown(void){return 0;}
+bool aster_idf_bt_audio_busy(void){return false;}
 #endif

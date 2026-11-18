@@ -3,6 +3,7 @@
 #include "aster_audio_decoder.h"
 #include "aster_audio_output.h"
 #include "aster_os.h"
+#include "aster_power.h"
 #include <string.h>
 #include <errno.h>
 #include <stdatomic.h>
@@ -81,7 +82,7 @@ static void media_worker(void *ctx){
 }
 /* Caller holds the session lock; new work is published in one operation. */
 static int start_locked(const char *path,uint32_t endpoint,uint64_t initial_seek){
- if(active)return -EBUSY;
+ if(aster_power_activity_closing()||active)return -EBUSY;
  int r=0;
  if(worker.handle){r=aster_os_task_join(&worker,0);if(r)return -EBUSY;}
  status=(aster_media_snapshot_t){.size=sizeof(status),.version=1,.state=ASTER_MEDIA_OPENING,.endpoint=endpoint};

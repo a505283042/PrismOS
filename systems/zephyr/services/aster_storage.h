@@ -24,6 +24,8 @@
 
 int  aster_storage_init(void);      /* mount FAT, create dirs */
 bool aster_storage_mounted(void);
+void aster_storage_set_power_handlers(int (*suspend)(void),int (*resume)(void));
+int aster_storage_power(bool suspend);
 /* Board adapter for explicit SD formatting. Success resets the device.
  * Mount/retry and APP APIs never call this operation. */
 void aster_storage_set_format_handler(int (*handler)(void));

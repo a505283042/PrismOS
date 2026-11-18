@@ -57,5 +57,6 @@ void aster_launcher_app_touch_cancel(void);
 
 bool aster_launcher_power_touch(bool contacts_down);
 void aster_launcher_power_tick(void);
+void aster_launcher_power_resume(void);
 
 #endif /* ASTER_LAUNCHER_H */

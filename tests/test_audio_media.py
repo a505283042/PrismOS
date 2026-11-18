@@ -88,7 +88,7 @@ class AudioMedia(unittest.TestCase):
               '-I'+str(ROOT/'common/audio'),'-I'+str(ROOT/'common/port'),'-I'+str(ROOT/'contract/include'),
               '-I'+str(ROOT/'third_party/dr_libs'),str(p/'test.c')]
             command += [str(ROOT/'common/audio'/name) for name in ('aster_audio_decoder.c','aster_audio_output.c','aster_media.c')]
-            command += ['-pthread','-lm','-o',str(binary)]
+            command += [str(ROOT/'common/port/aster_power.c'),'-pthread','-lm','-o',str(binary)]
             compiled=subprocess.run(command,capture_output=True,text=True)
             self.assertEqual(compiled.returncode,0,compiled.stderr)
             subprocess.run([str(binary),str(wav)],check=True,timeout=10)

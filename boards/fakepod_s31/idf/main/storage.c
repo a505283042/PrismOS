@@ -11,6 +11,16 @@
 #include "esp_system.h"
 #include <errno.h>
 static sdmmc_card_t *mounted_card;
+void fakepod_storage_start(void);
+static int power_suspend(void)
+{
+ if(!mounted_card)return 0;
+ esp_err_t r=esp_vfs_fat_sdcard_unmount("/SD",mounted_card);
+ if(!r)mounted_card=NULL;
+ return r?-EIO:0;
+}
+static int power_resume(void)
+{fakepod_storage_start();return mounted_card?0:-EIO;}
 static int format_and_reboot(void)
 {
     if(!mounted_card)return -ENODEV;
@@ -44,6 +54,7 @@ void fakepod_storage_start(void)
     }
     sdmmc_card_print_info(stdout, card);
     mounted_card=card;
+    aster_storage_set_power_handlers(power_suspend,power_resume);
     aster_storage_set_format_handler(format_and_reboot);
     int initialized=aster_storage_init();
     if(initialized)ESP_LOGE("aster","Storage directories failed: %d",initialized);

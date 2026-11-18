@@ -16,6 +16,7 @@
 #include "aster_sysinfo.h"
 #include "aster_platform.h"
 #include "aster_device.h"
+void aster_zephyr_power_register(void);
 #include "aster_os.h"
 #include "aster_deploy.h"
 #include "aster_services.h"
@@ -35,6 +36,7 @@ int main(void)
 
 	aster_core_init();
     (void)aster_deploy_init();
+    aster_zephyr_power_register();
 	aster_device_seal();
 	aster_os_seal();
 	aster_services_seal();

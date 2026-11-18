@@ -7,7 +7,9 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stdio.h>
 bool aster_idf_bt_audio_info(aster_player_info_t *info);
+const char *aster_idf_bt_device_name(void);
 int aster_idf_bt_audio_control(uint32_t command);
 static int info(aster_player_info_t *out){
  out->capabilities=ASTER_PLAYER_CAP_WAV|ASTER_PLAYER_CAP_FLAC;
@@ -15,6 +17,7 @@ static int info(aster_player_info_t *out){
  out->capabilities|=ASTER_PLAYER_CAP_BT_SINK|ASTER_PLAYER_CAP_REMOTE|ASTER_PLAYER_CAP_BT_SOURCE;
 #endif
  if(aster_idf_bt_audio_info(out))return 0;
+ snprintf(out->device,sizeof(out->device),"%s",aster_idf_bt_device_name());
  aster_media_snapshot_t media;int r=aster_media_snapshot(&media);if(r)return r;
  out->mode=ASTER_PLAYER_LOCAL;out->state=media.state;out->error=media.error;
  out->rate=media.rate;out->bits=media.bits;out->channels=media.channels;

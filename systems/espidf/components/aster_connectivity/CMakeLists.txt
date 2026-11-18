@@ -4,7 +4,7 @@ if(IDF_TARGET STREQUAL "esp32p4")
     list(APPEND CONNECTIVITY_SOURCES "sdhost.c")
     list(APPEND CONNECTIVITY_DEPS esp_driver_sdmmc esp_wifi_remote esp_hosted)
 endif()
-idf_component_register(SRCS ${CONNECTIVITY_SOURCES} INCLUDE_DIRS "." "../../../../contract/include" REQUIRES ${CONNECTIVITY_DEPS})
+idf_component_register(SRCS ${CONNECTIVITY_SOURCES} INCLUDE_DIRS "." "../../../../contract/include" PRIV_INCLUDE_DIRS "../../../../common/port" REQUIRES ${CONNECTIVITY_DEPS})
 
 # Only the OSPTEK P4C5 board's external C5 shares the SDMMC host with the storage slot.
 if(CONFIG_ASTER_BOARD_OSPTEK_P4 AND NOT CMAKE_BUILD_EARLY_EXPANSION)

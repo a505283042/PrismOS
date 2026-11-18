@@ -18,7 +18,21 @@
 
 LOG_MODULE_REGISTER(aster_storage, LOG_LEVEL_INF);
 
-static bool mounted;
+static bool mounted,power_suspended;
+static int (*power_suspend)(void),(*power_resume)(void);
+void aster_storage_set_power_handlers(int (*suspend)(void),int (*resume)(void))
+{power_suspend=suspend;power_resume=resume;}
+int aster_storage_power(bool suspend)
+{
+ if(suspend){
+  if(!mounted)return 0;
+  if(!power_suspend)return -ENOTSUP;
+  int r=power_suspend();if(!r){mounted=false;power_suspended=true;}return r;
+ }
+ if(!power_suspended)return 0;
+ if(!power_resume)return -ENOTSUP;
+ int r=power_resume();if(!r){power_suspended=false;mounted=true;}return r;
+}
 static int (*format_handler)(void);
 void aster_storage_set_format_handler(int (*handler)(void)){format_handler=handler;}
 bool aster_storage_can_format(void){return format_handler!=NULL;}
@@ -120,6 +134,8 @@ int aster_fs_write_safe(struct fs_file_t *f, const void *src, size_t len)
 static FATFS fat_fs;
 static struct fs_mount_t sd_mount={.type=FS_FATFS,.mnt_point=ASTER_MOUNT_POINT,
  .fs_data=&fat_fs,.flags=FS_MOUNT_FLAG_NO_FORMAT};
+static int zephyr_storage_suspend(void){return fs_unmount(&sd_mount);}
+static int zephyr_storage_resume(void){return fs_mount(&sd_mount);}
 static int zephyr_format_and_reboot(void)
 {
 #if defined(CONFIG_FS_FATFS_MKFS) && defined(CONFIG_REBOOT)
@@ -236,6 +252,7 @@ int aster_storage_init(void)
 	}
 	mounted = true;
     aster_storage_set_format_handler(zephyr_format_and_reboot);
+    aster_storage_set_power_handlers(zephyr_storage_suspend,zephyr_storage_resume);
 
 	err = ensure_dirs();
 	if (err) {

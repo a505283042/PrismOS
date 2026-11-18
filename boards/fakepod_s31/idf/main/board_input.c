@@ -7,16 +7,40 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "aster_power.h"
+#include "aster_idf_apps.h"
+#include "esp_sleep.h"
 #include "aster_os.h"
 #include <errno.h>
+#include <stdio.h>
 static i2c_master_dev_handle_t touch,imu,pmu;
 static bool pmu_ready;
+static bool pmu_key_ready, pmu_key_down;
+enum {
+ FP_POWER_KEY = FP_PMU_IRQ,
+ AXP_KEY_RELEASE = 1u << 0,
+ AXP_KEY_PRESS = 1u << 1,
+ AXP_KEY_EDGES = AXP_KEY_RELEASE | AXP_KEY_PRESS
+};
 static bool imu_ready;
 static esp_err_t read_register(i2c_master_dev_handle_t d,uint8_t reg,void *data,size_t size){
  return i2c_master_transmit_receive(d,&reg,1,data,size,100);
 }
 static esp_err_t write_register(i2c_master_dev_handle_t d,uint8_t reg,uint8_t value){
  uint8_t bytes[]={reg,value};return i2c_master_transmit(d,bytes,sizeof(bytes),100);
+}
+static bool pmu_key_init(void)
+{
+ const gpio_config_t irq={.pin_bit_mask=1ULL<<FP_PMU_IRQ,.mode=GPIO_MODE_INPUT,.pull_up_en=true};
+ if(gpio_config(&irq)!=ESP_OK)return false;
+ uint8_t timing, enabled;
+ if(read_register(pmu,0x27,&timing,1)||read_register(pmu,0x41,&enabled,1))return false;
+ /* ONLEVEL=1 s, OFFLEVEL=10 s. Keep the PMIC emergency cutoff, with
+  * time for the firmware to show the status and safely shut down first. */
+ timing=(timing&~0x0f)|0x0e;
+ if(write_register(pmu,0x27,timing)||write_register(pmu,0x49,AXP_KEY_EDGES)||
+    write_register(pmu,0x41,enabled|AXP_KEY_EDGES))return false;
+ ESP_LOGI("fakepod","AXP2101 upper key ready, power-on 1 s, emergency cutoff 10 s");
+ return true;
 }
 static void imu_init(i2c_master_bus_handle_t bus){
  i2c_device_config_t cfg={.dev_addr_length=I2C_ADDR_BIT_LEN_7,.device_address=FP_IMU_ADDRESS,.scl_speed_hz=400000};
@@ -52,6 +76,7 @@ esp_err_t fakepod_input_init(void){
  if(i2c_master_bus_add_device(bus,&pmu_cfg,&pmu)==ESP_OK){
   uint8_t id=0;if(read_register(pmu,0x03,&id,1)==ESP_OK&&(id&0xcf)==0x4a)pmu_ready=true;
   ESP_LOGI("fakepod","AXP2101 ID=0x%02x ready=%d",id,pmu_ready);
+  if(pmu_ready)pmu_key_ready=pmu_key_init();
  }
  gpio_config_t key_cfg={.pin_bit_mask=1ULL<<FP_BUTTON,.mode=GPIO_MODE_INPUT,.pull_up_en=true};
  ESP_ERROR_CHECK(gpio_config(&key_cfg));
@@ -95,31 +120,99 @@ static int power_battery(void *context,aster_power_battery_t *out)
 }
 static int power_caps(void *context,aster_power_caps_t *out)
 {
- int r=aster_power_device_base.caps(context,out);if(r)return r;
+ int r=aster_idf_power_base.caps(context,out);if(r)return r;
  out->battery=pmu_ready;out->keys=true;
  out->modes|=ASTER_POWER_SCREEN_OFF;out->screen_wake|=ASTER_WAKE_KEY;
+#ifdef CONFIG_ASTER_FAKEPOD_EXPERIMENTAL_LIGHT_SLEEP
+ out->modes|=ASTER_POWER_LIGHT_SLEEP;
+ out->light_wake=ASTER_WAKE_KEY|ASTER_WAKE_TOUCH|ASTER_WAKE_TIMER;
+#endif
+ if(pmu_ready)out->modes|=ASTER_POWER_SHUTDOWN;
  return 0;
+}
+static int power_shutdown(void *context)
+{
+ (void)context;if(!pmu_ready)return -ENODEV;
+ uint8_t value;if(read_register(pmu,0x10,&value,1))return -EIO;
+ /* AXP2101 software-off only; regulator/charger calibration remains intact. */
+ if(write_register(pmu,0x10,value|1))return -EIO;
+ ESP_LOGI("fakepod","AXP2101 shutdown requested; storage remains unmounted");
+ for(;;)vTaskDelay(pdMS_TO_TICKS(1000));
+}
+static int power_suspend(void *context,const aster_power_request_t *request)
+{
+ (void)context;if(request->mode!=ASTER_POWER_LIGHT_SLEEP)return -ENOTSUP;
+#ifndef CONFIG_ASTER_FAKEPOD_EXPERIMENTAL_LIGHT_SLEEP
+ return -ENOTSUP;
+#else
+ uint64_t pins=0;
+ if(request->wake_sources&ASTER_WAKE_TOUCH)pins|=1ULL<<FP_TOUCH_IRQ;
+ if(request->wake_sources&ASTER_WAKE_KEY)pins|=1ULL<<FP_BUTTON;
+ gpio_config_t config={.pin_bit_mask=pins,.mode=GPIO_MODE_INPUT,.pull_up_en=true};
+ if(pins&&gpio_config(&config))return -EIO;
+ for(unsigned pin=0;pin<64;pin++)if(pins&(1ULL<<pin)){
+  if(!gpio_get_level(pin))return -EBUSY;
+ }
+ esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+ esp_err_t r=ESP_OK;
+ for(unsigned pin=0;pin<64;pin++)if(pins&(1ULL<<pin))if(gpio_wakeup_enable(pin,GPIO_INTR_LOW_LEVEL)!=ESP_OK){r=ESP_FAIL;break;}
+ if(!r&&pins)r=esp_sleep_enable_gpio_wakeup();
+ if(!r&&(request->wake_sources&ASTER_WAKE_TIMER))r=esp_sleep_enable_timer_wakeup(request->timer_ms*1000);
+ ESP_LOGI("fakepod","light sleep entering: setup=%s sources=%lu timer_ms=%llu",esp_err_to_name(r),(unsigned long)request->wake_sources,(unsigned long long)request->timer_ms);
+ fflush(stdout);
+ if(!r)r=esp_light_sleep_start();
+ esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+ for(unsigned pin=0;pin<64;pin++)if(pins&(1ULL<<pin))gpio_wakeup_disable(pin);
+ ESP_LOGI("fakepod","light sleep returned result=%s wake=%d",esp_err_to_name(r),esp_sleep_get_wakeup_cause());
+ return r?-EIO:0;
+#endif
 }
 static int power_keys(void *context,aster_power_key_t *out,uint32_t capacity)
 {
- (void)context;(void)capacity;
+ (void)context;
+ unsigned count=0;
  static bool candidate,stable;static uint64_t changed;
  uint64_t now=aster_os_uptime_ms();bool pressed=!gpio_get_level(FP_BUTTON);
  if(pressed!=candidate){candidate=pressed;changed=now;}
- if(candidate==stable||now-changed<30)return 0;
- stable=candidate;*out=(aster_power_key_t){.code=FP_BUTTON,.pressed=stable,.timestamp_ms=now};return 1;
+ if(capacity&&candidate!=stable&&now-changed>=30){
+  stable=candidate;
+  out[count++]=(aster_power_key_t){.code=FP_BUTTON,.pressed=stable,.timestamp_ms=now};
+ }
+ if(!pmu_key_ready||capacity-count<2||gpio_get_level(FP_PMU_IRQ))return count;
+ static uint64_t last_poll;
+ if(now-last_poll<15)return count;
+ last_poll=now;
+ uint8_t status;
+ if(read_register(pmu,0x49,&status,1))return count;
+ status&=AXP_KEY_EDGES;
+ if(!status||write_register(pmu,0x49,status))return count;
+ if(!pmu_key_down&&(status&AXP_KEY_PRESS)){
+  pmu_key_down=true;
+  out[count++]=(aster_power_key_t){.code=FP_POWER_KEY,.pressed=true,.timestamp_ms=now};
+ }
+ if(pmu_key_down&&(status&AXP_KEY_RELEASE)){
+  pmu_key_down=false;
+  out[count++]=(aster_power_key_t){.code=FP_POWER_KEY,.pressed=false,.timestamp_ms=now};
+ }
+ return count;
 }
 static aster_power_key_action_t power_key_map(void *context,uint32_t code,bool pressed,uint32_t held_ms)
 {
- (void)context;if(code!=FP_BUTTON||pressed)return ASTER_KEY_ACTION_NONE;
- return held_ms>=800?ASTER_KEY_ACTION_HOME:ASTER_KEY_ACTION_SCREEN;
+ (void)context;
+ if(code==FP_POWER_KEY){
+  if(held_ms>=3000)return ASTER_KEY_ACTION_SHUTDOWN;
+  if(!pressed)return ASTER_KEY_ACTION_SCREEN;
+ }
+ if(code==FP_BUTTON&&!pressed)
+  return held_ms>=800?ASTER_KEY_ACTION_HOME:ASTER_KEY_ACTION_NONE;
+ return ASTER_KEY_ACTION_NONE;
 }
 void fakepod_power_register(void)
 {
  static aster_power_ops_t ops;
  const aster_power_ops_t overrides={.size=sizeof(overrides),.version=ASTER_POWER_API_VERSION,
-  .name="fakepod-s31-axp2101",.caps=power_caps,.battery=power_battery,.keys=power_keys,.map_key=power_key_map};
- if(!aster_power_derive(&ops,&aster_power_device_base,&overrides)){
+  .name="fakepod-s31-axp2101",.caps=power_caps,.battery=power_battery,.keys=power_keys,.map_key=power_key_map,.shutdown=power_shutdown,.suspend=power_suspend};
+ if(!aster_power_derive(&ops,&aster_idf_power_base,&overrides)){
   int r=aster_power_bind(&ops,NULL);ESP_LOGI("fakepod","Power adapter: %d",r);
  }
 }

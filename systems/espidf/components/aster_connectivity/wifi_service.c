@@ -1,3 +1,4 @@
+#include "aster_power.h"
 /* SPDX-License-Identifier: MIT */
 #include "wifi_service.h"
 #include "esp_wifi.h"
@@ -63,7 +64,7 @@ int aster_idf_wifi_results(aster_wifi_ap_info_t *out,uint32_t capacity)
     if(n>=0){if((unsigned)n>capacity)n=capacity;if(n)memcpy(out,results,n*sizeof(*out));}
     xSemaphoreGive(guard);return n;
 }
-int aster_idf_wifi_submit(uint32_t op,const char *ssid,const char *password)
+static int submit_impl(uint32_t op,const char *ssid,const char *password)
 {
     if(op<ASTER_WIFI_OP_SCAN || op>ASTER_WIFI_OP_FORGET)return ASTER_EINVAL;
     request_t request={.operation=op};
@@ -90,7 +91,7 @@ void aster_idf_wifi_hotspot_snapshot(char ssid[33],bool *enabled,bool *configure
     xSemaphoreTake(guard,portMAX_DELAY);memcpy(ssid,hotspot.ssid,33);
     *enabled=hotspot_enabled;*configured=hotspot.ssid[0]!=0;xSemaphoreGive(guard);
 }
-int aster_idf_wifi_hotspot_submit(bool enable,const char *ssid,const char *password)
+static int hotspot_submit_impl(bool enable,const char *ssid,const char *password)
 {
     if(!guard)return ASTER_ESTATE;
     request_t request={.operation=enable?HOTSPOT_START:HOTSPOT_STOP};
@@ -260,6 +261,7 @@ static void worker(void *unused)
         xSemaphoreTake(guard,portMAX_DELAY);
         info.last_operation=request.operation;info.last_result=result;info.operation=0;
         xSemaphoreGive(guard);memset(&request,0,sizeof(request));
+        aster_power_activity_end();
     }
 }
 int aster_idf_wifi_service_start(esp_netif_t *netif)
@@ -276,4 +278,15 @@ failed:
     if(events)vEventGroupDelete(events);
     if(guard)vSemaphoreDelete(guard);
     queue=NULL;events=NULL;guard=NULL;return ASTER_ENOMEM;
+}
+
+int aster_idf_wifi_submit(uint32_t op,const char *ssid,const char *password)
+{
+ if(aster_power_activity_begin())return ASTER_EBUSY;
+ int r=submit_impl(op,ssid,password);if(r)aster_power_activity_end();return r;
+}
+int aster_idf_wifi_hotspot_submit(bool enable,const char *ssid,const char *password)
+{
+ if(aster_power_activity_begin())return ASTER_EBUSY;
+ int r=hotspot_submit_impl(enable,ssid,password);if(r)aster_power_activity_end();return r;
 }

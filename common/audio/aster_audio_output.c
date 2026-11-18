@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 #include "aster_audio_output.h"
+#include "aster_power.h"
 #include <errno.h>
 #include <limits.h>
 #include <string.h>
@@ -75,8 +76,9 @@ int aster_audio_output_open(uint32_t id,const aster_audio_format_t *f){
  aster_audio_output_caps_t caps;int r=aster_audio_output_caps(id,&caps);if(r)return r;
  if(!(caps.formats&ASTER_AUDIO_PCM_BIT(f->format))||!(caps.rates&aster_audio_rate_bit(f->rate))
    ||!(caps.channels&ASTER_AUDIO_CHANNEL_BIT(f->channels))||(f->flags&~caps.flags))return -ENOTSUP;
+ r=aster_power_activity_begin();if(r)return r;
  r=outputs[id].ops->open(outputs[id].context,f);
- if(!r){outputs[id].opened=true;outputs[id].format=*f;}return r;
+ if(!r){outputs[id].opened=true;outputs[id].format=*f;}else aster_power_activity_end();return r;
 }
 int aster_audio_output_write(uint32_t id,const void *pcm,uint32_t frames){
  if(!endpoint_valid(id)||!pcm||!frames||frames>INT_MAX)return -EINVAL;
@@ -95,7 +97,7 @@ int aster_audio_output_drain(uint32_t id){
 int aster_audio_output_close(uint32_t id){
  if(!endpoint_valid(id))return -EINVAL;
  struct binding *b=&outputs[id];if(!b->ops)return -ENOTSUP;if(!b->opened)return 0;
- int r=b->ops->close(b->context);if(!r){b->opened=false;memset(&b->format,0,sizeof(b->format));}return r;
+ int r=b->ops->close(b->context);if(!r){b->opened=false;memset(&b->format,0,sizeof(b->format));aster_power_activity_end();}return r;
 }
 int aster_audio_output_stats(uint32_t id,aster_audio_output_stats_t *out){
  if(!endpoint_valid(id)||!out)return -EINVAL;
