@@ -4,6 +4,8 @@
 #include "aster_power_session.h"
 #include "aster_power_ui.h"
 #include "aster_storage.h"
+#include "aster_app_mgr.h"
+#include "font_sd.h"
 #include "aster_os.h"
 #include "aster_device.h"
 #include "aster_media.h"
@@ -65,7 +67,16 @@ static int storage(void *ctx,bool suspend)
  printf("POWER storage=%s result=%d\n",suspend?"suspend":"resume",result);return result;
 }
 static void ui(void *ctx,const aster_power_request_t *request,unsigned stage,int result)
-{(void)ctx;printf("POWER stage=%u mode=%u result=%d active=%u\n",stage,(unsigned)request->mode,result,aster_power_activity_count());aster_power_ui_update(request,stage,result);}
+{
+ (void)ctx;
+ if(stage==4 && request->mode==ASTER_POWER_USB_STORAGE && aster_storage_mounted()){
+  aster_app_mgr_scan();
+  aster_font_sd_reload();
+ }
+ printf("POWER stage=%u mode=%u result=%d active=%u\n",stage,(unsigned)request->mode,
+        result,aster_power_activity_count());
+ aster_power_ui_update(request,stage,result);
+}
 static void stop(void *ctx){(void)ctx;aster_idf_request_stop();}
 static bool busy(void *ctx){(void)ctx;return aster_idf_apps_busy();}
 void aster_idf_power_register(void)

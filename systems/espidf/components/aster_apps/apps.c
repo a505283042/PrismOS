@@ -148,6 +148,7 @@ int aster_idf_apps_command(int argc,char **argv)
         aster_power_request_t request={.size=sizeof(request),.version=ASTER_POWER_API_VERSION};
         if(!strcmp(argv[2],"restart")&&argc==3)request.mode=ASTER_POWER_RESTART;
         else if(!strcmp(argv[2],"off")&&argc==3)request.mode=ASTER_POWER_SHUTDOWN;
+        else if(!strcmp(argv[2],"usb")&&argc==3)request.mode=ASTER_POWER_USB_STORAGE;
         else if(!strcmp(argv[2],"sleep")&&(argc==3||argc==4)){
             aster_power_caps_t caps;if(aster_power_caps(&caps))return ASTER_ENOTSUP;
             request.mode=ASTER_POWER_LIGHT_SLEEP;

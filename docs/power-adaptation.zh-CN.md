@@ -86,7 +86,7 @@ https://github.com/lewisxhe/XPowersLib/blob/master/src/XPowersAXP2101.hpp
 
 ## 电源生命周期实现
 
-内部电源适配接口版本升级为 2，增加恢复结果反馈；APP ABI 仍为 4.5，不需要重编现有应用。
+内部电源适配接口版本为 3，保留恢复结果反馈，增加可选 USB 存储会话；APP ABI 仍为 4.5。
 `aster_power_schedule()` 是线程安全的单请求邮箱；APP/UI owner 通过 `aster_power_poll()` 在 VM 完整清理后执行。请求期间禁止新 APP 启动和应用交接。
 公共 `aster_power_session` 负责关闭任务入口、停止音频、等待在途任务、关闭网络、卸载 SD，以及浅休眠醒来或失败后的恢复。
 安装、串口传输、首次开机工作线程、Wi-Fi 操作及原生音频会话持有活动租约，新任务在收尾期间返回忙。已有关键事务可以完成；等待超时会取消电源操作，恢复任务入口，不卸载仍在使用的存储。
@@ -106,6 +106,16 @@ https://github.com/lewisxhe/XPowersLib/blob/master/src/XPowersAXP2101.hpp
 
 `aster power status` 查看请求状态和活动租约；`aster power restart` 请求重启；支持的板可用 `aster power off` 或 `aster power sleep`。
 ESP-IDF 额外提供 `aster power sleep 5`，仅以定时器在 5 秒后唤醒，供恢复路径诊断。
+
+### USB 读卡器
+
+FAKE POD NANO PRO 的构建选项 `CONFIG_ASTER_FAKEPOD_USB_STORAGE` 默认关闭。可用 menuconfig 开启 “Enable USB SD card reader”，或在新构建配置中将 `sdkconfig.defaults.usb-storage` 叠加到板卡的 `sdkconfig.defaults`。
+
+启用后，桌面下拉设置出现“USB 读卡器”，ESP-IDF 也可用 `aster power usb`。进入后连接电脑。若电脑只识别到下载串口，翻转设备端 Type-C 插头。SD 卡以 USB 大容量存储设备出现，可把 WAV 或 FLAC 文件放入根目录的 `music` 文件夹。
+
+连接前，系统退出当前应用、停止音频、等待读写任务结束并卸载 SD。USB 会话内由电脑独占 SD，设备显示操作提示。电脑安全弹出后会话自动结束，可拔线。若操作系统只停用设备、没有发送弹出命令，安全弹出后拔线也会结束会话。回到桌面后可重新打开曲库。
+
+其他板可在各自的电源适配器声明 `ASTER_POWER_USB_STORAGE`，并提供 `usb_storage` 回调。回调运行期间 SD 已由系统卸载，返回时要确保 USB I/O 已结束、USB 已释放，系统再挂载 SD。仅有 USB 串口的设备不声明此能力。
 
 ### 自动验证
 

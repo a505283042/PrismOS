@@ -10,6 +10,9 @@
 #include "aster_idf_apps.h"
 #include "esp_sleep.h"
 #include "aster_os.h"
+#if CONFIG_ASTER_FAKEPOD_USB_STORAGE
+#include "usb_storage.h"
+#endif
 #include <errno.h>
 #include <stdio.h>
 static i2c_master_dev_handle_t touch,imu,pmu;
@@ -123,6 +126,9 @@ static int power_caps(void *context,aster_power_caps_t *out)
  int r=aster_idf_power_base.caps(context,out);if(r)return r;
  out->battery=pmu_ready;out->keys=true;
  out->modes|=ASTER_POWER_SCREEN_OFF;out->screen_wake|=ASTER_WAKE_KEY;
+#if CONFIG_ASTER_FAKEPOD_USB_STORAGE
+ out->modes|=ASTER_POWER_USB_STORAGE;
+#endif
 #ifdef CONFIG_ASTER_FAKEPOD_EXPERIMENTAL_LIGHT_SLEEP
  out->modes|=ASTER_POWER_LIGHT_SLEEP;
  out->light_wake=ASTER_WAKE_KEY|ASTER_WAKE_TOUCH|ASTER_WAKE_TIMER;
@@ -211,7 +217,11 @@ void fakepod_power_register(void)
 {
  static aster_power_ops_t ops;
  const aster_power_ops_t overrides={.size=sizeof(overrides),.version=ASTER_POWER_API_VERSION,
-  .name="fakepod-s31-axp2101",.caps=power_caps,.battery=power_battery,.keys=power_keys,.map_key=power_key_map,.shutdown=power_shutdown,.suspend=power_suspend};
+  .name="fakepod-s31-axp2101",.caps=power_caps,.battery=power_battery,.keys=power_keys,.map_key=power_key_map,.shutdown=power_shutdown,.suspend=power_suspend,
+#if CONFIG_ASTER_FAKEPOD_USB_STORAGE
+  .usb_storage=fakepod_usb_storage,
+#endif
+ };
  if(!aster_power_derive(&ops,&aster_idf_power_base,&overrides)){
   int r=aster_power_bind(&ops,NULL);ESP_LOGI("fakepod","Power adapter: %d",r);
  }

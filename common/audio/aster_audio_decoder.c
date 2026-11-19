@@ -14,6 +14,11 @@
 #define DR_WAV_NO_STDIO
 #define DR_WAV_IMPLEMENTATION
 #include "dr_wav.h"
+#define DR_MP3_NO_STDIO
+#define DR_MP3_NO_SIMD
+#define DR_MP3_ONLY_MP3
+#define DR_MP3_IMPLEMENTATION
+#include "dr_mp3.h"
 #define DECODER_BUDGET (768u*1024u)
 struct aster_audio_decoder {
  aster_os_file_t file;
@@ -24,9 +29,10 @@ struct aster_audio_decoder {
  aster_audio_decoder_info_t info;
  drwav *wav;
  drflac *flac;
+ drmp3 *mp3;
  /* Newlib's int32_t can be long while dr_libs uses int. Do not alias the
   * caller's int32_t buffer through an incompatible int pointer. */
- union {drflac_int32 flac[1024];drwav_int32 wav[1024];} samples;
+ union {drflac_int32 flac[1024];drwav_int32 wav[1024];drmp3_int16 mp3[1024];} samples;
 };
 typedef union {max_align_t alignment;size_t bytes;} allocation_header;
 static void *decoder_alloc(size_t bytes,void *ctx){
@@ -85,10 +91,44 @@ static drwav_bool32 wav_seek(void *ctx,int offset,drwav_seek_origin origin){retu
 static drflac_bool32 flac_seek(void *ctx,int offset,drflac_seek_origin origin){return seek_file(ctx,offset,(unsigned)origin);}
 static drwav_bool32 wav_tell(void *ctx,drwav_int64 *cursor){aster_audio_decoder_t *d=ctx;*cursor=(drwav_int64)d->cursor;return 1;}
 static drflac_bool32 flac_tell(void *ctx,drflac_int64 *cursor){aster_audio_decoder_t *d=ctx;*cursor=(drflac_int64)d->cursor;return 1;}
+static drmp3_bool32 mp3_seek(void *ctx,int offset,drmp3_seek_origin origin)
+{ return seek_file(ctx,offset,(unsigned)origin); }
+static drmp3_bool32 mp3_tell(void *ctx,drmp3_int64 *cursor)
+{ aster_audio_decoder_t *d=ctx;*cursor=(drmp3_int64)d->cursor;return 1; }
+static bool mp3_path(const char *path)
+{
+ size_t length=strlen(path);
+ if(length<4)return false;
+ const char *ext=path+length-4;
+ return ext[0]=='.'&&(ext[1]=='m'||ext[1]=='M')&&(ext[2]=='p'||ext[2]=='P')&&ext[3]=='3';
+}
+
+static int open_mp3(aster_audio_decoder_t *d)
+{
+ drmp3_allocation_callbacks alloc={d,decoder_alloc,decoder_realloc,decoder_free};
+ drmp3 *mp3=decoder_alloc(sizeof(*mp3),d);
+ if(!mp3)return -ENOMEM;
+ if(!drmp3_init(mp3,read_file,mp3_seek,mp3_tell,NULL,d,&alloc)){
+  decoder_free(mp3,d);
+  return d->io_error?d->io_error:-EINVAL;
+ }
+ d->mp3=mp3;
+ d->info.rate=mp3->sampleRate;
+ d->info.channels=mp3->channels;
+ d->info.bits=16;
+ d->info.codec=ASTER_AUDIO_CODEC_MP3;
+ if(!aster_audio_rate_bit(d->info.rate)||!d->info.channels||d->info.channels>2)
+  return -ENOTSUP;
+ d->info.frames=drmp3_get_pcm_frame_count(mp3);
+ if(d->io_error)return d->io_error;
+ return d->info.frames ? 0 : -EINVAL;
+}
+
 int aster_audio_decoder_close(aster_audio_decoder_t *d){
  if(!d)return 0;
  if(d->flac)drflac_close(d->flac);
  if(d->wav){drwav_uninit(d->wav);decoder_free(d->wav,d);}
+ if(d->mp3){drmp3_uninit(d->mp3);decoder_free(d->mp3,d);}
  int r=d->file.handle?aster_os_file_close(&d->file):0;
  aster_os_free_external(d);return r;
 }
@@ -124,6 +164,8 @@ int aster_audio_decoder_open(const char *path,bool (*cancel)(void *),void *ctx,a
   if(wav->dataChunkDataPos>d->length || wav->dataChunkDataSize>d->length-wav->dataChunkDataPos
    || wav->fmt.blockAlign!=wav->channels*(wav->bitsPerSample/8)
    || !wav->fmt.blockAlign || wav->dataChunkDataSize%wav->fmt.blockAlign){r=-EIO;goto fail;}
+ } else if(mp3_path(path)){
+  r=open_mp3(d);if(r)goto fail;
  } else {r=-ENOTSUP;goto fail;}
  if(d->io_error){r=d->io_error;goto fail;}
  if(!aster_audio_rate_bit(d->info.rate) || !d->info.channels || d->info.channels>2
@@ -136,9 +178,16 @@ int aster_audio_decoder_read(aster_audio_decoder_t *d,int32_t *pcm,uint32_t fram
  if(!d||!pcm||!frames||frames>512)return -EINVAL;
  if(cancelled(d))return -ECANCELED;
  if(d->io_error)return d->io_error;
- uint64_t n=d->flac?drflac_read_pcm_frames_s32(d->flac,frames,d->samples.flac):drwav_read_pcm_frames_s32(d->wav,frames,d->samples.wav);
+ uint64_t n;
+ if(d->mp3)n=drmp3_read_pcm_frames_s16(d->mp3,frames,d->samples.mp3);
+ else if(d->flac)n=drflac_read_pcm_frames_s32(d->flac,frames,d->samples.flac);
+ else n=drwav_read_pcm_frames_s32(d->wav,frames,d->samples.wav);
  if(d->io_error)return d->io_error;
- for(size_t i=0;i<(size_t)n*d->info.channels;i++)pcm[i]=d->flac?(int32_t)d->samples.flac[i]:(int32_t)d->samples.wav[i];
+ for(size_t i=0;i<(size_t)n*d->info.channels;i++){
+  if(d->mp3)pcm[i]=(int32_t)d->samples.mp3[i]*65536;
+  else if(d->flac)pcm[i]=d->samples.flac[i];
+  else pcm[i]=d->samples.wav[i];
+ }
  d->decoded+=n;
  if(!n && d->info.frames && d->decoded<d->info.frames)return -EIO;
  return (int)n;
@@ -147,7 +196,8 @@ int aster_audio_decoder_seek(aster_audio_decoder_t *d,uint64_t frame){
  if(!d || (d->info.frames && frame>d->info.frames))return -EINVAL;
  if(cancelled(d))return -ECANCELED;
  d->io_error=0;
- bool ok=d->flac?drflac_seek_to_pcm_frame(d->flac,frame):drwav_seek_to_pcm_frame(d->wav,frame);
+ bool ok=d->mp3?drmp3_seek_to_pcm_frame(d->mp3,frame):
+         d->flac?drflac_seek_to_pcm_frame(d->flac,frame):drwav_seek_to_pcm_frame(d->wav,frame);
  if(d->io_error)return d->io_error;
  if(!ok)return -EIO;
  d->decoded=frame;return 0;

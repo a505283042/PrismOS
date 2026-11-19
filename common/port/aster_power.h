@@ -6,12 +6,13 @@
 /* Firmware service contract, not the guest ABI. All calls belong to one
  * system/UI owner. Drivers must serialize shared buses internally. Native
  * negative errno throughout. Bind only at boot; tables/context are permanent. */
-#define ASTER_POWER_API_VERSION 2u
+#define ASTER_POWER_API_VERSION 3u
 #define ASTER_POWER_SCREEN_OFF (1u << 0)
 #define ASTER_POWER_LIGHT_SLEEP (1u << 1)
 #define ASTER_POWER_DEEP_SLEEP (1u << 2)
 #define ASTER_POWER_RESTART (1u << 3)
 #define ASTER_POWER_SHUTDOWN (1u << 4)
+#define ASTER_POWER_USB_STORAGE (1u << 5)
 #define ASTER_WAKE_TOUCH (1u << 0)
 #define ASTER_WAKE_KEY (1u << 1)
 #define ASTER_WAKE_TIMER (1u << 2)
@@ -58,6 +59,8 @@ typedef struct {
  /* Called while held (pressed=true) and at release. A hold action is
   * dispatched at most once per press. Overridable by each board. */
  aster_power_key_action_t (*map_key)(void *context,uint32_t code,bool pressed,uint32_t held_ms);
+ /* Serve exclusively owned storage until the USB session ends. */
+ int (*usb_storage)(void *context);
 } aster_power_ops_t;
 /* Lifecycle is a separate override table: OS/app/SD teardown must not be
  * embedded in PMIC drivers. prepare must obtain exclusive quiescence, or release all gates on failure.

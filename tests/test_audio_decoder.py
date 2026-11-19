@@ -1,4 +1,4 @@
-"""Decode real WAV/FLAC samples through the production OS callback adapter."""
+"""Decode real WAV/FLAC/MP3 samples through the production OS callback adapter."""
 import math
 import shutil
 import struct
@@ -54,6 +54,49 @@ int main(int argc,char **argv){
 """
 
 class AudioDecoder(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('ffmpeg'), 'ffmpeg needed to generate MP3 samples')
+    def test_mp3_cbr_and_vbr_duration_seek_and_cleanup(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            code=STUB[:STUB.index('int main(')]+r"""
+int main(int argc,char **argv){
+ assert(argc==3);aster_audio_decoder_t *d=NULL;
+ assert(!aster_audio_decoder_open(argv[1],cancel,NULL,&d));
+ aster_audio_decoder_info_t info;aster_audio_decoder_info(d,&info);
+ unsigned rate=(unsigned)atoi(argv[2]);
+ assert(info.codec==ASTER_AUDIO_CODEC_MP3 && info.bits==16 && info.rate==rate);
+ assert(info.channels>=1 && info.channels<=2 && info.frames>=rate && info.frames<=rate+2304);
+ int32_t pcm[1024];uint64_t count=0;bool nonzero=false;
+ for(;;){
+  int n=aster_audio_decoder_read(d,pcm,512);assert(n>=0);
+  if(!n)break;
+  count+=(unsigned)n;
+  for(int i=0;i<n*(int)info.channels;i++)if(pcm[i])nonzero=true;
+ }
+ assert(count==info.frames && nonzero);
+ assert(!aster_audio_decoder_seek(d,rate/2));
+ assert(aster_audio_decoder_read(d,pcm,512)==512);
+ abort_read=true;
+ assert(aster_audio_decoder_read(d,pcm,512)==-ECANCELED);
+ assert(!aster_audio_decoder_close(d) && !allocations);
+ return 0;
+}
+"""
+            (root/'test.c').write_text(code)
+            binary=root/'decoder'
+            subprocess.run(['cc','-std=c11','-O1','-fsanitize=address,undefined',
+                '-I'+str(ROOT/'common/audio'),'-I'+str(ROOT/'common/port'),'-I'+str(ROOT/'contract/include'),
+                '-I'+str(ROOT/'third_party/dr_libs'),str(root/'test.c'),str(ROOT/'common/audio/aster_audio_decoder.c'),
+                str(ROOT/'common/audio/aster_audio_output.c'),str(ROOT/'common/port/aster_power.c'),'-lm','-o',str(binary)],check=True)
+            for rate,channels,opts in ((44100,2,['-q:a','4']),(48000,2,['-b:a','192k','-write_xing','0']),
+                                        (32000,1,['-b:a','96k'])):
+                mp3=root/f'{rate}.MP3'
+                subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i',
+                                f'sine=frequency=440:sample_rate={rate}:duration=1',
+                                '-ac',str(channels),'-c:a','libmp3lame','-metadata','title=Test',*opts,str(mp3)],
+                               check=True,timeout=15)
+                subprocess.run([str(binary),str(mp3),str(rate)],check=True,timeout=10)
+
     @unittest.skipUnless(shutil.which('ffmpeg'), 'ffmpeg needed to create FLAC fixture')
     def test_large_flac_random_seek_matches_wav(self):
         with tempfile.TemporaryDirectory() as td:
@@ -90,7 +133,7 @@ int main(int argc,char **argv){
             subprocess.run(['cc','-std=c11','-O1','-fsanitize=address,undefined',
                 '-I'+str(ROOT/'common/audio'),'-I'+str(ROOT/'common/port'),'-I'+str(ROOT/'contract/include'),
                 '-I'+str(ROOT/'third_party/dr_libs'),str(root/'test.c'),str(ROOT/'common/audio/aster_audio_decoder.c'),
-                str(ROOT/'common/audio/aster_audio_output.c'),'-lm','-o',str(binary)],check=True)
+                str(ROOT/'common/audio/aster_audio_output.c'),str(ROOT/'common/port/aster_power.c'),'-lm','-o',str(binary)],check=True)
             subprocess.run([str(binary),str(wav),str(flac)],check=True,timeout=15)
 
     def test_lossless_and_cleanup(self):
@@ -102,7 +145,7 @@ int main(int argc,char **argv){
                 '-fno-omit-frame-pointer','-I'+str(ROOT/'common/audio'),'-I'+str(ROOT/'common/port'),
                 '-I'+str(ROOT/'contract/include'),'-I'+str(ROOT/'third_party/dr_libs'),
                 str(root/'test.c'),str(ROOT/'common/audio/aster_audio_decoder.c'),
-                str(ROOT/'common/audio/aster_audio_output.c'),'-lm','-o',str(binary)],capture_output=True,text=True)
+                str(ROOT/'common/audio/aster_audio_output.c'),str(ROOT/'common/port/aster_power.c'),'-lm','-o',str(binary)],capture_output=True,text=True)
             self.assertEqual(result.returncode,0,result.stderr)
             for bits in (16,24,32):
                 wav=root/f'pcm{bits}.wav'

@@ -18,6 +18,14 @@ config ASTER_BOARD_CODEC_CS43131
     bool
     default y
 
+config ASTER_FAKEPOD_USB_STORAGE
+    bool "Enable USB SD card reader"
+    default n
+    select TINYUSB_MSC_ENABLED
+    help
+        Allow the user to hand the SD card to a computer through USB OTG.
+        The card is exclusively owned by the computer during the session.
+
 config ASTER_FAKEPOD_EXPERIMENTAL_LIGHT_SLEEP
     bool "Expose unvalidated FAKE POD NANO PRO light sleep"
     default n

@@ -18,7 +18,7 @@ int aster_power_derive(aster_power_ops_t *out,const aster_power_ops_t *base,cons
  aster_power_ops_t merged=*base;merged.name=overrides->name;
 #define OVERRIDE(member) if(overrides->member)merged.member=overrides->member
  OVERRIDE(caps);OVERRIDE(battery);OVERRIDE(screen);OVERRIDE(suspend);
- OVERRIDE(restart);OVERRIDE(shutdown);OVERRIDE(keys);OVERRIDE(map_key);
+ OVERRIDE(restart);OVERRIDE(shutdown);OVERRIDE(keys);OVERRIDE(map_key);OVERRIDE(usb_storage);
 #undef OVERRIDE
  *out=merged;return 0;
 }
@@ -43,11 +43,12 @@ int aster_power_caps(aster_power_caps_t *out)
  if(!driver)return -ENOTSUP;
  aster_power_caps_t value=*out;int r=driver->caps(driver_context,&value);if(r)return r;
  if(value.size!=sizeof(value)||value.version!=ASTER_POWER_API_VERSION)return -EPROTO;
- value.modes&=ASTER_POWER_SCREEN_OFF|ASTER_POWER_LIGHT_SLEEP|ASTER_POWER_DEEP_SLEEP|ASTER_POWER_RESTART|ASTER_POWER_SHUTDOWN;
+ value.modes&=ASTER_POWER_SCREEN_OFF|ASTER_POWER_LIGHT_SLEEP|ASTER_POWER_DEEP_SLEEP|ASTER_POWER_RESTART|ASTER_POWER_SHUTDOWN|ASTER_POWER_USB_STORAGE;
  if(!driver->screen)value.modes&=~ASTER_POWER_SCREEN_OFF;
  if(!driver->suspend)value.modes&=~(ASTER_POWER_LIGHT_SLEEP|ASTER_POWER_DEEP_SLEEP);
  if(!driver->restart)value.modes&=~ASTER_POWER_RESTART;
  if(!driver->shutdown)value.modes&=~ASTER_POWER_SHUTDOWN;
+ if(!driver->usb_storage)value.modes&=~ASTER_POWER_USB_STORAGE;
  if(!lifecycle||!lifecycle->prepare||!lifecycle->finish)value.modes&=ASTER_POWER_SCREEN_OFF;
  value.battery=value.battery&&driver->battery;
  value.keys=value.keys&&driver->keys;
@@ -80,7 +81,7 @@ int aster_power_screen_on(uint8_t brightness)
 int aster_power_transition(const aster_power_request_t *request,uint8_t brightness)
 {
  if(!request||request->size!=sizeof(*request)||request->version!=ASTER_POWER_API_VERSION||!request->mode||(request->mode&(request->mode-1))||
-    (request->mode&~(ASTER_POWER_SCREEN_OFF|ASTER_POWER_LIGHT_SLEEP|ASTER_POWER_DEEP_SLEEP|ASTER_POWER_RESTART|ASTER_POWER_SHUTDOWN)))return -EINVAL;
+    (request->mode&~(ASTER_POWER_SCREEN_OFF|ASTER_POWER_LIGHT_SLEEP|ASTER_POWER_DEEP_SLEEP|ASTER_POWER_RESTART|ASTER_POWER_SHUTDOWN|ASTER_POWER_USB_STORAGE)))return -EINVAL;
  if(transitioning)return -EBUSY;
  aster_power_caps_t caps;int r=aster_power_caps(&caps);if(r)return r;
  if(!(caps.modes&request->mode))return -ENOTSUP;
@@ -97,6 +98,7 @@ int aster_power_transition(const aster_power_request_t *request,uint8_t brightne
   if(!r){
    if(frozen.mode==ASTER_POWER_RESTART)r=driver->restart(driver_context);
    else if(frozen.mode==ASTER_POWER_SHUTDOWN)r=driver->shutdown(driver_context);
+   else if(frozen.mode==ASTER_POWER_USB_STORAGE)r=driver->usb_storage(driver_context);
    else r=driver->suspend(driver_context,&frozen);
    lifecycle->finish(lifecycle_context,&frozen,r);
    if(lifecycle->recovery_error){int recovery=lifecycle->recovery_error(lifecycle_context);if(recovery)r=recovery;}

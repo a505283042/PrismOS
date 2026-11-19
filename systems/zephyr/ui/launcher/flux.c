@@ -50,7 +50,7 @@ static uint32_t art_bakes,art_hits;
 enum { HOME, FILTERS, MIXER, FILES, CLOCK, SYSTEM };
 enum { ACT_NONE, ACT_BACK, ACT_FILTERS, ACT_MIXER, ACT_PREV, ACT_NEXT,
        ACT_OPEN, ACT_WIFI, ACT_QUIET, ACT_MOTION, ACT_SYSTEM,
-       ACT_CANCEL, ACT_UNINSTALL, ACT_TIMEOUT, ACT_SCREEN_OFF, ACT_BT, ACT_RESTART, ACT_SHUTDOWN, ACT_SLEEP, ACT_GROUP=32 };
+       ACT_CANCEL, ACT_UNINSTALL, ACT_TIMEOUT, ACT_SCREEN_OFF, ACT_BT, ACT_RESTART, ACT_SHUTDOWN, ACT_SLEEP, ACT_USB_STORAGE, ACT_GROUP=32 };
 enum { ICON_SETTINGS, ICON_LEFT, ICON_RIGHT, ICON_CLOCK, ICON_FILES,
        ICON_TERMINAL, ICON_BT, ICON_MOON, ICON_WIFI, ICON_MOVE, ICON_BATTERY, ICON_BOX, ICON_ARROW, ICON_ASTER };
 
@@ -700,7 +700,7 @@ static void slider_axis_guard(lv_event_t *event)
 /* Large power controls must not turn a scrolling stroke into a click,
  * including at a scroll boundary where LVGL cannot move the container. */
 struct power_button_stroke {lv_point_t origin;bool moved;};
-static struct power_button_stroke power_button_strokes[5];
+static struct power_button_stroke power_button_strokes[6];
 static void power_button_guard(lv_event_t *event)
 {
  lv_indev_t *indev=lv_indev_active();
@@ -864,10 +864,10 @@ static void build_mixer(void)
   lv_obj_add_event_cb(off_button,power_button_guard,LV_EVENT_ALL|LV_EVENT_PREPROCESS,&power_button_strokes[1]);
   text(body,(power.screen_wake&(ASTER_WAKE_TOUCH|ASTER_WAKE_KEY))==(ASTER_WAKE_TOUCH|ASTER_WAKE_KEY)?"轻触屏幕或按设备按键唤醒":power.screen_wake&ASTER_WAKE_TOUCH?"轻触屏幕唤醒":"按设备按键唤醒",17,y,286,DIM,16,160);y+=40;
  }
- const uint32_t modes[]={ASTER_POWER_LIGHT_SLEEP,ASTER_POWER_RESTART,ASTER_POWER_SHUTDOWN};
- const int actions[]={ACT_SLEEP,ACT_RESTART,ACT_SHUTDOWN};
- const char *titles[]={"浅休眠","重新启动","关机"};
- for(unsigned i=0;i<3;i++)if(power.modes&modes[i]){
+ const uint32_t modes[]={ASTER_POWER_LIGHT_SLEEP,ASTER_POWER_RESTART,ASTER_POWER_SHUTDOWN,ASTER_POWER_USB_STORAGE};
+ const int actions[]={ACT_SLEEP,ACT_RESTART,ACT_SHUTDOWN,ACT_USB_STORAGE};
+ const char *titles[]={"浅休眠","重新启动","关机","USB 读卡器"};
+ for(unsigned i=0;i<ARRAY_SIZE(modes);i++)if(power.modes&modes[i]){
   lv_obj_t *control=button(body,titles[i],17,y,286,power_height,0x252d22,actions[i]);y+=power_height+power_gap;
   lv_obj_add_flag(control,LV_OBJ_FLAG_PRESS_LOCK);
   lv_obj_add_event_cb(control,power_button_guard,LV_EVENT_ALL|LV_EVENT_PREPROCESS,&power_button_strokes[i+2]);
@@ -1327,9 +1327,10 @@ void aster_launcher_pump_idle(void)
   if(!aster_power_transition(&r,power_idle.brightness))power_idle.screen_off=true;
   else notify("当前设备无法熄屏。");
  }
- else if(a==ACT_RESTART||a==ACT_SHUTDOWN||a==ACT_SLEEP){
+ else if(a==ACT_RESTART||a==ACT_SHUTDOWN||a==ACT_SLEEP||a==ACT_USB_STORAGE){
   aster_power_request_t request={.size=sizeof(request),.version=ASTER_POWER_API_VERSION,
-   .mode=a==ACT_RESTART?ASTER_POWER_RESTART:a==ACT_SHUTDOWN?ASTER_POWER_SHUTDOWN:ASTER_POWER_LIGHT_SLEEP};
+   .mode=a==ACT_RESTART?ASTER_POWER_RESTART:a==ACT_SHUTDOWN?ASTER_POWER_SHUTDOWN:
+         a==ACT_USB_STORAGE?ASTER_POWER_USB_STORAGE:ASTER_POWER_LIGHT_SLEEP};
   if(a==ACT_SLEEP){aster_power_caps_t caps={0};(void)aster_power_caps(&caps);request.wake_sources=caps.light_wake&(ASTER_WAKE_TOUCH|ASTER_WAKE_KEY);}
   int r=aster_power_schedule(&request);if(r)notify("当前无法执行，请稍后再试。");
  }

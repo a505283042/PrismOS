@@ -6,6 +6,51 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class WifiRecovery(unittest.TestCase):
+    def test_idf_station_wait_releases_power_transition(self):
+        source = (ROOT / 'systems/espidf/components/aster_connectivity/wifi_service.c').read_text()
+        wait = source[source.index('static int wait_for_ipv4(void)'):
+                      source.index('static int connect_ap(')]
+        run_c(r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+typedef uint32_t TickType_t;
+#define pdMS_TO_TICKS(ms) (ms)
+#define pdFALSE 0
+#define GOT_IP 1
+#define ASTER_ETIMEDOUT -8
+#define ASTER_ECANCELLED -19
+static int events;
+static TickType_t start, now, close_after, ip_after;
+static TickType_t xTaskGetTickCount(void) { return now; }
+static bool aster_power_activity_closing(void) { return now-start >= close_after; }
+static unsigned xEventGroupWaitBits(int handle, unsigned mask, int clear, int all, TickType_t delay) {
+    assert(handle==events && mask==GOT_IP && !clear && !all && delay>0);
+    TickType_t elapsed=now-start;
+    if (ip_after-elapsed<=delay) {
+        now=start+ip_after;
+        return GOT_IP;
+    }
+    now+=delay;
+    return 0;
+}
+''' + wait + r'''
+int main(void) {
+    start=now=UINT32_MAX-25;
+    close_after=UINT32_MAX;ip_after=350;
+    assert(wait_for_ipv4()==0 && now-start==350);
+
+    now=start;close_after=175;ip_after=UINT32_MAX;
+    assert(wait_for_ipv4()==ASTER_ECANCELLED && now-start==200);
+
+    now=start;close_after=0;
+    assert(wait_for_ipv4()==ASTER_ECANCELLED && now==start);
+
+    now=start;close_after=UINT32_MAX;
+    assert(wait_for_ipv4()==ASTER_ETIMEDOUT && now-start==30000);
+}
+''')
+
     def test_association_does_not_imply_ipv4(self):
         source = (ROOT / 'platform/esp32s3/wifi.c').read_text()
         helper = source[source.index('static int wifi_wait_ipv4(void)'):

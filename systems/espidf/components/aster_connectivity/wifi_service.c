@@ -166,8 +166,23 @@ static int configure_hotspot(request_t *request)
     if(!status){xSemaphoreTake(guard,portMAX_DELAY);hotspot=profile;xSemaphoreGive(guard);}
     memset(&profile,0,sizeof(profile));return status;
 }
+static int wait_for_ipv4(void)
+{
+    const TickType_t timeout=pdMS_TO_TICKS(30000);
+    const TickType_t poll=pdMS_TO_TICKS(100);
+    const TickType_t start=xTaskGetTickCount();
+    /* An unassociated station must not hold the power activity lease for 30 seconds. */
+    while(!aster_power_activity_closing()) {
+        TickType_t elapsed=xTaskGetTickCount()-start;
+        if(elapsed>=timeout)return ASTER_ETIMEDOUT;
+        TickType_t remaining=timeout-elapsed;
+        if(xEventGroupWaitBits(events,GOT_IP,pdFALSE,pdFALSE,remaining<poll?remaining:poll)&GOT_IP)return 0;
+    }
+    return ASTER_ECANCELLED;
+}
 static int connect_ap(request_t *request)
 {
+    if(aster_power_activity_closing())return ASTER_ECANCELLED;
     wifi_config_t config={0};
     memcpy(config.sta.ssid,request->ssid,strlen(request->ssid));
     memcpy(config.sta.password,request->password,strlen(request->password));
@@ -179,8 +194,11 @@ static int connect_ap(request_t *request)
     if(r==ESP_OK)r=esp_wifi_connect();
     memset(&config,0,sizeof(config));
     if(r!=ESP_OK)return error(r);
-    if(!(xEventGroupWaitBits(events,GOT_IP,pdFALSE,pdFALSE,pdMS_TO_TICKS(30000))&GOT_IP)) {
-        esp_wifi_disconnect();return ASTER_ETIMEDOUT;
+    int wait_result=wait_for_ipv4();
+    if(wait_result) {
+        esp_wifi_disconnect();
+        if(wait_result==ASTER_ECANCELLED)ESP_LOGI("aster_wifi","Station connection cancelled for power transition");
+        return wait_result;
     }
     profile_t profile={0};strcpy(profile.ssid,request->ssid);strcpy(profile.password,request->password);
     int status=store(&profile);

@@ -10,6 +10,9 @@
 #include "freertos/task.h"
 #include "esp_system.h"
 #include <errno.h>
+#if CONFIG_ASTER_FAKEPOD_USB_STORAGE
+#include "usb_storage.h"
+#endif
 static sdmmc_card_t *mounted_card;
 void fakepod_storage_start(void);
 static int power_suspend(void)
@@ -31,16 +34,42 @@ static int format_and_reboot(void)
     vTaskDelay(pdMS_TO_TICKS(300));esp_restart();return 0;
 }
 
-void fakepod_storage_start(void)
+static sdmmc_slot_config_t board_sd_slot(void)
 {
-    sdmmc_host_t host = SDMMC_HOST_DEFAULT();
-    host.max_freq_khz = SDMMC_FREQ_DEFAULT;
     sdmmc_slot_config_t slot = SDMMC_SLOT_CONFIG_DEFAULT();
     slot.width = 4;
     slot.clk = FP_SD_CLOCK; slot.cmd = FP_SD_CMD;
     slot.d0 = FP_SD_D0; slot.d1 = FP_SD_D1; slot.d2 = FP_SD_D2; slot.d3 = FP_SD_D3;
     slot.cd = GPIO_NUM_NC;
     slot.wp = GPIO_NUM_NC;
+    return slot;
+}
+
+#if CONFIG_ASTER_FAKEPOD_USB_STORAGE
+esp_err_t fakepod_storage_open_raw(sdmmc_card_t *card)
+{
+    if (mounted_card || aster_storage_mounted())
+        return ESP_ERR_INVALID_STATE;
+    sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+    host.max_freq_khz = SDMMC_FREQ_DEFAULT;
+    esp_err_t result = sdmmc_host_init();
+    if (result != ESP_OK)
+        return result;
+    sdmmc_slot_config_t slot = board_sd_slot();
+    result = sdmmc_host_init_slot(host.slot, &slot);
+    if (result == ESP_OK)
+        result = sdmmc_card_init(&host, card);
+    if (result != ESP_OK)
+        sdmmc_host_deinit();
+    return result;
+}
+#endif
+
+void fakepod_storage_start(void)
+{
+    sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+    host.max_freq_khz = SDMMC_FREQ_DEFAULT;
+    sdmmc_slot_config_t slot = board_sd_slot();
     esp_vfs_fat_sdmmc_mount_config_t mount = {
         .format_if_mount_failed = false,
         .max_files = 32,
