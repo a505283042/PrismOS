@@ -121,6 +121,7 @@ static uint64_t now,animation_ms;
 static bool visible=true,modal,motion=true,animating,coasting,draw_pending,launching;
 static uint64_t aster_os_uptime_ms(void) {return now;}
 static bool aster_wifi_settings_is_open(void) {return false;}
+static bool aster_bluetooth_settings_is_open(void) {return false;}
 static bool header_touch(const aster_touch_evt_t *raw) {(void)raw;return false;}
 static void aster_ui_lvgl_pointer(int x,int y,bool pressed) {(void)x;(void)y;(void)pressed;}
 static void *aster_ui_lvgl_indev(void) {return 0;}
@@ -197,6 +198,7 @@ static bool visible=true,modal,wifi,panel,launching;
 static int page=HOME,view_h=320,action,waits,pointers;
 static struct {bool down;} drag;
 static bool aster_wifi_settings_is_open(void) {return wifi;}
+static bool aster_bluetooth_settings_is_open(void) {return false;}
 static bool aster_qpanel_is_open(void) {return panel;}
 static void aster_ui_lvgl_pointer(int x,int y,bool p) {(void)x;(void)y;(void)p;pointers++;}
 static void *aster_ui_lvgl_indev(void) {return 0;}

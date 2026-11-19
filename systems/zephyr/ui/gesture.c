@@ -99,6 +99,12 @@ aster_gest_t aster_gesture_feed(int32_t x, int32_t y, bool pressed, uint32_t all
 		g.latched = true;
 		return ASTER_GEST_PANEL_UP;
 	}
+	/* An established horizontal app swipe keeps its ownership even if it
+	 * curves upward before release. */
+	if ((g.allow & ASTER_GEST_ALLOW_EXIT) && adx >= ASTER_GEST_SWIPE_MIN &&
+	    dominant(adx, ady)) {
+		g.bottom = false;
+	}
 	/* Page flips start anywhere, bands included: a horizontal drag from
 	 * the top strip is a swipe, not a pull, and the dominance test has
 	 * already separated the two. */

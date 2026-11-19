@@ -27,7 +27,7 @@
 typedef enum {
 	ASTER_GEST_NONE = 0,
 	ASTER_GEST_PANEL_DOWN, /* pull down from the top band: toggle the panel */
-	ASTER_GEST_PANEL_UP,   /* pull up from the bottom band: quit the app   */
+	ASTER_GEST_PANEL_UP,   /* pull up from the bottom band: confirm return */
 	ASTER_GEST_PAGE_NEXT,  /* swipe left: next launcher page               */
 	ASTER_GEST_PAGE_PREV,  /* swipe right: previous launcher page          */
 } aster_gest_t;
@@ -38,7 +38,7 @@ typedef enum {
  * the panel open), so one bit cannot express that state without turning
  * pull-up-exit on inside the launcher, where it must stay inert. */
 #define ASTER_GEST_ALLOW_PANEL 0x1u /* pull-down opens/closes the panel  */
-#define ASTER_GEST_ALLOW_EXIT  0x2u /* pull-up quits the foreground app  */
+#define ASTER_GEST_ALLOW_EXIT  0x2u /* pull-up opens return confirmation */
 #define ASTER_GEST_ALLOW_PAGE  0x4u /* horizontal swipe flips a page     */
 
 /* Thresholds in LOGICAL pixels (the space aster_plat_input_poll() reports in,

@@ -1127,23 +1127,6 @@ static void tick_clock(void)
 static void palette(aster_qpanel_palette_t *p)
 { *p=(aster_qpanel_palette_t){.bg=0x181b18,.fg=FG,.dim=DIM,.surface=0x252d22,.accent=ACCENT}; }
 static const aster_qpanel_theme_ops_t theme={.palette=palette};
-static struct {bool down,edge;int32_t x,y;} app_drag;
-void aster_launcher_app_touch_cancel(void)
-{
- memset(&app_drag,0,sizeof(app_drag));
-}
-bool aster_launcher_app_touch(int32_t x,int32_t y,bool pressed)
-{
- if(pressed && !app_drag.down) {
-  app_drag.down=true;app_drag.x=x;app_drag.y=y;
-  app_drag.edge=x>=(int32_t)aster_ui_lvgl_width()-22;
- } else if(!pressed) {
-  bool back=app_drag.down && app_drag.edge && x-app_drag.x<-65 &&
-            abs(x-app_drag.x)>abs(y-app_drag.y);
-  memset(&app_drag,0,sizeof(app_drag));return back;
- }
- return false;
-}
 int aster_launcher_init(void)
 {
  if(initialized) return 0;
@@ -1179,7 +1162,6 @@ void aster_launcher_show(void)
  lv_obj_clean(aster_ui_lvgl_screen());
  aster_ui_lvgl_pointer(0,0,0);lv_indev_reset(aster_ui_lvgl_indev(),NULL);
  read_entries();filter_entries();warm_visible_text();visible=true;dirty=false;launching=false;memset(&drag,0,sizeof(drag));
- memset(&app_drag,0,sizeof(app_drag));
  root=box(aster_ui_lvgl_screen(),0,0,320,480,BG,0);
  lv_obj_t *bar=box(root,0,0,320,40,BG,0);
  lv_obj_t *back=button(bar,NULL,10,5,75,29,BG,ACT_BACK);

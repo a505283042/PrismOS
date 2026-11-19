@@ -724,9 +724,6 @@ static void ui_service(aster_app_ctx_t *ctx)
 			tev[i].contact_mask);
 		if (ui.reset_gesture) {
 			aster_gesture_reset();
-#if IS_ENABLED(CONFIG_ASTER_LAUNCHER_FLUX)
-			aster_launcher_app_touch_cancel();
-#endif
 		}
 		if (ui.release_pointer) {
 			lv_indev_wait_release(aster_ui_lvgl_indev());
@@ -735,18 +732,9 @@ static void ui_service(aster_app_ctx_t *ctx)
 		if (ui.route) {
 			runtime_touch_ui_x = tev[i].x;
 			runtime_touch_ui_y = tev[i].y;
-#if IS_ENABLED(CONFIG_ASTER_LAUNCHER_FLUX)
-			if (!aster_qpanel_is_open() && !aster_qpanel_exit_is_open() &&
-			    aster_launcher_app_touch(tev[i].x, tev[i].y, pressed)) {
-				lv_indev_wait_release(aster_ui_lvgl_indev());
-				ctx->exit_clean = true;
-				ctx->quit = true;
-				LOG_INF("runtime: right-edge return -> %s", ctx->id);
-				continue;
-			}
-#endif
 			/* Asked per sample because an earlier event in this batch may
-			 * have opened or closed the quick-settings sheet. */
+			 * have opened or closed the quick-settings sheet. Touch input
+			 * is already in the current display's logical orientation. */
 			aster_gest_t g = aster_gesture_feed(tev[i].x, tev[i].y, pressed,
 							aster_qpanel_allow(false),
 							(int32_t)aster_ui_lvgl_height());
@@ -1154,6 +1142,8 @@ static void worker_fn(void *p1, void *p2, void *p3)
 		/* publish the owner *before* running aster_app_init: native
 		 * calls (surface/fs) resolve ctx_of() during init too */
 #if IS_ENABLED(CONFIG_ASTER_LVGL)
+        aster_ui_lvgl_resync_window();
+        aster_gesture_reset();
         aster_font_sd_session_begin();
         aster_ui_fonts_prepare(aster_ui_lvgl_width(),aster_ui_lvgl_height(),ctx->rec->name);
 #endif

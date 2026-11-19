@@ -1,4 +1,4 @@
-"""Exercise FLUX cyclic selection and app-edge return using the actual C helpers."""
+"""Exercise FLUX cyclic selection and rendering using the actual C helpers."""
 import unittest
 from test_waveshare import ROOT, run_c
 
@@ -74,38 +74,17 @@ int main(void) {
 }
 ''')
 
-    def test_negative_wrap_and_edge_return(self):
+    def test_negative_wrap(self):
         source=(ROOT/'systems/zephyr/ui/launcher/flux.c').read_text()
         cyclic=source[source.index('static int nearest'):source.index('static entry_t *current')]
-        edge=source[source.index('static struct {bool down,edge;'):source.index('int aster_launcher_init')]
         run_c(r'''
 #include <assert.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include <stdlib.h>
-#include <string.h>
-static int width=320;
-static int aster_ui_lvgl_width(void) {return width;}
-''' +cyclic+edge+r'''
+''' +cyclic+r'''
 int main(void) {
  assert(nearest(-1000)==-1 && nearest(-600)==-1 && nearest(-400)==0);
  assert(nearest(600)==1 && wrap(-1,5)==4 && wrap(7,5)==2);
  assert(distance(4,0,5)==-1000 && distance(0,4000,5)==1000);
  assert(distance(0,0,0)==0 && wrap(1,0)==0);
- assert(!aster_launcher_app_touch(297,160,true));
- assert(!aster_launcher_app_touch(210,160,false));
- assert(!aster_launcher_app_touch(298,160,true));
- assert(!aster_launcher_app_touch(233,160,false));
- assert(!aster_launcher_app_touch(298,160,true));
- assert(aster_launcher_app_touch(232,165,false));
- assert(!aster_launcher_app_touch(232,165,false));
- assert(!aster_launcher_app_touch(319,160,true));
- assert(!aster_launcher_app_touch(230,270,false));
- width=480;
- assert(!aster_launcher_app_touch(457,160,true));
- assert(!aster_launcher_app_touch(300,160,false));
- assert(!aster_launcher_app_touch(458,160,true));
- assert(aster_launcher_app_touch(390,160,false));
  return 0;
 }
 ''')

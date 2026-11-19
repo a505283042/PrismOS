@@ -11,6 +11,7 @@ def run_c(code):
         executable=str(Path(directory)/'test')
         result=subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror',
             '-Wno-unused-function','-I'+str(ROOT/'platform'),
+            '-I'+str(ROOT/'systems/zephyr/ui'),'-I'+str(ROOT/'common/port'),
             '-I'+str(ROOT/'platform'/'esp32s3'),'-I'+str(ROOT/'contract/include'),
             '-x','c','-','-o',executable],input=code,text=True,capture_output=True)
         if result.returncode: raise AssertionError(result.stderr)
@@ -91,26 +92,58 @@ int main(void) {
 }
 ''')
 
-    def test_multitouch_cancels_pending_edge_return(self):
-        source=(ROOT/'systems/zephyr/ui/launcher/flux.c').read_text()
+    def test_return_from_logical_bottom_only(self):
+        recognizer=(ROOT/'systems/zephyr/ui/gesture.c').read_text()
+        display=(ROOT/'platform/esp32s3/display.c').read_text()
         run_c(r'''
-#include <stdbool.h>
-#include <stdint.h>
-#include <string.h>
-#include <stdlib.h>
+#include "gesture.h"
 #include <assert.h>
-static struct {bool down,edge;int32_t x,y;} app_drag;
-static uint32_t aster_ui_lvgl_width(void) {return 480;}
-''' + function(source,'aster_launcher_app_touch_cancel')
-            + function(source,'aster_launcher_app_touch') + r'''
+static bool disp_dev=true;
+static int s_rot;
+static void panel_geom(uint32_t *w,uint32_t *h) {*w=240;*h=320;}
+''' + function(display,'panel_to_logical') + recognizer + r'''
+static aster_gest_t app_point(uint32_t x,uint32_t y,bool pressed,int height) {
+ panel_to_logical(&x,&y);
+ return aster_gesture_feed(x,y,pressed,ASTER_GEST_ALLOW_PANEL|ASTER_GEST_ALLOW_EXIT,height);
+}
 int main(void) {
- assert(!aster_launcher_app_touch(470,200,true));
- /* Second finger cancels the primary's pending edge gesture. */
- aster_launcher_app_touch_cancel();
- assert(!aster_launcher_app_touch(250,200,false));
- /* A fresh single finger keeps the established return behavior. */
- assert(!aster_launcher_app_touch(470,200,true));
- assert(aster_launcher_app_touch(350,200,false));
+ assert(app_point(238,150,true,320)==ASTER_GEST_NONE);
+ assert(app_point(100,150,true,320)==ASTER_GEST_NONE);
+ assert(app_point(100,150,false,320)==ASTER_GEST_NONE);
+
+ assert(app_point(50,318,true,320)==ASTER_GEST_NONE);
+ assert(app_point(130,315,true,320)==ASTER_GEST_NONE);
+ assert(app_point(132,160,true,320)==ASTER_GEST_NONE); /* horizontal swipe curves upward */
+ assert(app_point(132,160,false,320)==ASTER_GEST_NONE);
+
+ assert(app_point(120,285,true,320)==ASTER_GEST_NONE);
+ assert(app_point(120,220,true,320)==ASTER_GEST_NONE); /* starts outside the bottom band */
+ assert(app_point(120,220,false,320)==ASTER_GEST_NONE);
+ assert(app_point(120,318,true,320)==ASTER_GEST_NONE);
+ aster_gesture_reset(); /* second contact cancels the pending single-finger gesture */
+ assert(app_point(120,220,false,320)==ASTER_GEST_NONE);
+ assert(app_point(120,318,true,320)==ASTER_GEST_NONE);
+ assert(app_point(121,270,true,320)==ASTER_GEST_PANEL_UP);
+ assert(app_point(121,240,true,320)==ASTER_GEST_NONE);
+ assert(app_point(121,240,false,320)==ASTER_GEST_NONE);
+ assert(app_point(120,3,true,320)==ASTER_GEST_NONE);
+ assert(app_point(120,50,true,320)==ASTER_GEST_PANEL_DOWN);
+ aster_gesture_reset();
+
+ s_rot=90; /* landscape: panel right edge is the APP's bottom */
+ assert(app_point(238,150,true,240)==ASTER_GEST_NONE);
+ assert(app_point(236,275,true,240)==ASTER_GEST_NONE); /* left in APP coordinates */
+ assert(app_point(236,275,false,240)==ASTER_GEST_NONE);
+ assert(app_point(238,150,true,240)==ASTER_GEST_NONE);
+ assert(app_point(236,40,true,240)==ASTER_GEST_NONE); /* right in APP coordinates */
+ assert(app_point(236,40,false,240)==ASTER_GEST_NONE);
+ assert(app_point(238,150,true,240)==ASTER_GEST_NONE);
+ assert(app_point(175,151,true,240)==ASTER_GEST_PANEL_UP);
+ aster_gesture_reset();
+
+ s_rot=270; /* opposite landscape rotation uses the other panel edge */
+ assert(app_point(1,150,true,240)==ASTER_GEST_NONE);
+ assert(app_point(64,151,true,240)==ASTER_GEST_PANEL_UP);
  return 0;
 }
 ''')
@@ -133,7 +166,7 @@ int main(void) {
 typedef void lv_obj_t;
 #define IS_ENABLED(x) (x)
 #define CONFIG_ASTER_LVGL 1
-#define CONFIG_ASTER_LAUNCHER_FLUX 0
+#define CONFIG_ASTER_LAUNCHER_FLUX 1
 #define ASTER_TOUCH_MAX 4
 #define ASTER_PLAT_TOUCH_EVENT_QUEUE 16
 #define ASTER_QPANEL_OVER_APP 1
@@ -154,6 +187,7 @@ static aster_touch_evt_t queued[ASTER_PLAT_TOUCH_EVENT_QUEUE];
 static int queued_n,gesture,requests,delivered,pumps,pauses,resumes;
 static int order,resume_order,down_order;
 static bool modal,confirmed,close_on_pump,watch_order,pause_exits;
+static bool aster_launcher_power_touch(bool down) {(void)down;return false;}
 int aster_plat_input_poll(aster_touch_evt_t *out,int cap) {
  int n=queued_n<cap?queued_n:cap;
  for(int i=0;i<n;i++)out[i]=queued[i];

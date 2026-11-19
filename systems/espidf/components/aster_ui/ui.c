@@ -213,10 +213,6 @@ static bool touch(void *value)
     aster_gest_t gesture=aster_gesture_feed(event->u.touch.x,event->u.touch.y,down,
         aster_qpanel_allow(false),aster_ui_lvgl_height());
     bool consumed=aster_qpanel_on_gesture(gesture,ASTER_QPANEL_OVER_APP);
-    if(!consumed && !aster_qpanel_is_open() &&
-       aster_launcher_app_touch(event->u.touch.x,event->u.touch.y,down)) {
-        aster_qpanel_request_exit("应用");consumed=true;
-    }
     if(gesture==ASTER_GEST_PANEL_UP){aster_qpanel_request_exit("应用");consumed=true;}
     if(was_open || aster_qpanel_is_open() || consumed) {
         aster_ui_lvgl_pointer(event->u.touch.x,event->u.touch.y,down);
@@ -246,7 +242,7 @@ void aster_idf_ui_idle(void)
     if(us>perf.max_pump_us)perf.max_pump_us=us;
 }
 void aster_idf_ui_before_app(void)
-{aster_deploy_snapshot s;if(aster_deploy_get(&s))aster_deploy_dismiss(s.generation);aster_deploy_ui_close();bench_end=bench_warm=0;app_active=true;aster_launcher_hide();aster_qpanel_force_close();aster_gesture_reset();aster_launcher_app_touch_cancel();}
+{aster_deploy_snapshot s;if(aster_deploy_get(&s))aster_deploy_dismiss(s.generation);aster_deploy_ui_close();bench_end=bench_warm=0;app_active=true;aster_launcher_hide();aster_qpanel_force_close();aster_gesture_reset();}
 void aster_idf_ui_after_app(void)
 {app_active=false;aster_qpanel_on_app_stop();aster_launcher_request_show();}
 
@@ -271,7 +267,7 @@ void aster_idf_ui_install_progress(void *context,aster_install_phase phase,uint6
 {
  (void)context;if(!display)return;uint64_t now=esp_timer_get_time();
  if(!install_root){
-  app_active=false;aster_qpanel_force_close();aster_gesture_reset();aster_launcher_app_touch_cancel();
+  app_active=false;aster_qpanel_force_close();aster_gesture_reset();
   install_since=now;install_last_pump=install_last_draw=0;install_details=false;install_previous=ASTER_INSTALL_DONE;
   install_root=lv_obj_create(lv_layer_top());lv_obj_set_size(install_root,aster_ui_lvgl_width(),aster_ui_lvgl_height());
   lv_obj_set_pos(install_root,0,0);lv_obj_remove_flag(install_root,LV_OBJ_FLAG_SCROLLABLE);

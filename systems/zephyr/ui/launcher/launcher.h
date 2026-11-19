@@ -50,11 +50,6 @@ void aster_launcher_slider_stats(aster_launcher_slider_stats_t *out);
  * the resident name-subset for a rebuild on the next pump. Thread-safe. */
 void aster_launcher_on_registry_change(void);
 
-/* FLUX app return gesture: rightmost 22 pixels, left drag >65 pixels.
- * Called by the runtime in app logical coordinates, UI thread only. */
-bool aster_launcher_app_touch(int32_t x, int32_t y, bool pressed);
-void aster_launcher_app_touch_cancel(void);
-
 bool aster_launcher_power_touch(bool contacts_down);
 void aster_launcher_power_tick(void);
 void aster_launcher_power_resume(void);
