@@ -12,5 +12,15 @@ static uint8_t big_arena[1024];
 #define ARENA big_arena
 #define ARENA_CAP 1024u
 #include "../../scene_text.h"
-static void bench_setup(uint32_t width, uint32_t height) { (void)width;(void)height;scene_setup(); }
-static void bench_draw(uint32_t frame_no) { scene_draw(frame_no); }
+
+static void bench_setup(uint32_t width, uint32_t height)
+{
+    (void)width;
+    (void)height;
+    scene_setup();
+}
+
+static void bench_draw(uint32_t frame_no)
+{
+    scene_draw(frame_no);
+}

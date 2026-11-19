@@ -1,4 +1,5 @@
 """Check async media control, EOF/error cleanup and task reclamation."""
+
 import subprocess
 import tempfile
 import unittest
@@ -7,8 +8,8 @@ from pathlib import Path
 from test_waveshare import ROOT
 from test_audio_decoder import STUB
 
-COMMON=STUB[:STUB.index('static bool abort_read;')]
-SESSION=r"""
+COMMON = STUB[: STUB.index('static bool abort_read;')]
+SESSION = r"""
 #include "aster_media.h"
 #include "aster_audio_output.h"
 #include <pthread.h>
@@ -73,24 +74,53 @@ int main(int argc,char **argv){
 }
 """
 # 'lock' is private to the actual service, so retain only the one boot mutex.
-SESSION=SESSION.replace(' pthread_mutex_destroy(lock.handle);','')
+SESSION = SESSION.replace(' pthread_mutex_destroy(lock.handle);', '')
+
 
 class AudioMedia(unittest.TestCase):
     def test_lifecycle(self):
         with tempfile.TemporaryDirectory() as td:
-            p=Path(td);(p/'test.c').write_text(COMMON+SESSION)
-            wav=p/'test.wav'
-            with wave.open(str(wav),'wb') as w:
-                w.setnchannels(2);w.setsampwidth(3);w.setframerate(48000);w.writeframes(bytes(12000*6))
-            binary=p/'test'
-            command=['cc','-std=c11','-D_POSIX_C_SOURCE=200809L','-O1','-g','-Wall','-Wextra','-Werror',
-              '-Wno-unused-function','-Wno-misleading-indentation',
-              '-I'+str(ROOT/'common/audio'),'-I'+str(ROOT/'common/port'),'-I'+str(ROOT/'contract/include'),
-              '-I'+str(ROOT/'third_party/dr_libs'),str(p/'test.c')]
-            command += [str(ROOT/'common/audio'/name) for name in ('aster_audio_decoder.c','aster_audio_output.c','aster_media.c')]
-            command += [str(ROOT/'common/port/aster_power.c'),'-pthread','-lm','-o',str(binary)]
-            compiled=subprocess.run(command,capture_output=True,text=True)
-            self.assertEqual(compiled.returncode,0,compiled.stderr)
-            subprocess.run([str(binary),str(wav)],check=True,timeout=10)
+            p = Path(td)
+            (p / 'test.c').write_text(COMMON + SESSION)
+            wav = p / 'test.wav'
+            with wave.open(str(wav), 'wb') as w:
+                w.setnchannels(2)
+                w.setsampwidth(3)
+                w.setframerate(48000)
+                w.writeframes(bytes(12000 * 6))
+            binary = p / 'test'
+            command = [
+                'cc',
+                '-std=c11',
+                '-D_POSIX_C_SOURCE=200809L',
+                '-O1',
+                '-g',
+                '-Wall',
+                '-Wextra',
+                '-Werror',
+                '-Wno-unused-function',
+                '-Wno-misleading-indentation',
+                '-I' + str(ROOT / 'common/audio'),
+                '-I' + str(ROOT / 'common/port'),
+                '-I' + str(ROOT / 'contract/include'),
+                '-I' + str(ROOT / 'third_party/dr_libs'),
+                str(p / 'test.c'),
+            ]
+            command += [
+                str(ROOT / 'common/audio' / name)
+                for name in ('aster_audio_decoder.c', 'aster_audio_output.c', 'aster_media.c')
+            ]
+            command += [
+                str(ROOT / 'common/port/aster_power.c'),
+                '-pthread',
+                '-lm',
+                '-o',
+                str(binary),
+            ]
+            compiled = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+            subprocess.run([str(binary), str(wav)], check=True, timeout=10)
 
-if __name__=='__main__':unittest.main()
+
+if __name__ == '__main__':
+    unittest.main()

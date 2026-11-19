@@ -18,30 +18,60 @@
 
 LOG_MODULE_REGISTER(aster_storage, LOG_LEVEL_INF);
 
-static bool mounted,power_suspended;
-static int (*power_suspend)(void),(*power_resume)(void);
-void aster_storage_set_power_handlers(int (*suspend)(void),int (*resume)(void))
-{power_suspend=suspend;power_resume=resume;}
-int aster_storage_power(bool suspend)
+static bool mounted, power_suspended;
+static int (*power_suspend)(void), (*power_resume)(void);
+
+void aster_storage_set_power_handlers(int (*suspend)(void), int (*resume)(void))
 {
- if(suspend){
-  if(!mounted)return 0;
-  if(!power_suspend)return -ENOTSUP;
-  int r=power_suspend();if(!r){mounted=false;power_suspended=true;}return r;
- }
- if(!power_suspended)return 0;
- if(!power_resume)return -ENOTSUP;
- int r=power_resume();if(!r){power_suspended=false;mounted=true;}return r;
-}
-static int (*format_handler)(void);
-void aster_storage_set_format_handler(int (*handler)(void)){format_handler=handler;}
-bool aster_storage_can_format(void){return format_handler!=NULL;}
-int aster_storage_format_and_reboot(void)
-{
- if(!format_handler)return -ENOTSUP;
- mounted=false;return format_handler();
+	power_suspend = suspend;
+	power_resume = resume;
 }
 
+int aster_storage_power(bool suspend)
+{
+	if (suspend) {
+		if (!mounted)
+			return 0;
+		if (!power_suspend)
+			return -ENOTSUP;
+		int r = power_suspend();
+		if (!r) {
+			mounted = false;
+			power_suspended = true;
+		}
+		return r;
+	}
+	if (!power_suspended)
+		return 0;
+	if (!power_resume)
+		return -ENOTSUP;
+	int r = power_resume();
+	if (!r) {
+		power_suspended = false;
+		mounted = true;
+	}
+	return r;
+}
+
+static int (*format_handler)(void);
+
+void aster_storage_set_format_handler(int (*handler)(void))
+{
+	format_handler = handler;
+}
+
+bool aster_storage_can_format(void)
+{
+	return format_handler != NULL;
+}
+
+int aster_storage_format_and_reboot(void)
+{
+	if (!format_handler)
+		return -ENOTSUP;
+	mounted = false;
+	return format_handler();
+}
 
 #ifndef ASTER_SYSTEM_ESP_IDF
 /* ---- DMA-safe file I/O ---------------------------------------------------
@@ -128,27 +158,46 @@ int aster_fs_write_safe(struct fs_file_t *f, const void *src, size_t len)
 	k_mutex_unlock(&bounce_lock);
 	return done ? (int)done : err;
 }
+
 /* FatFs per-volume work object: fs_mount(FS_FATFS) requires mountp->fs_data
  * to point at it, otherwise f_mount() finds no registered filesystem object
  * and returns FR_NOT_ENABLED (mapped to -ENODEV). */
 static FATFS fat_fs;
-static struct fs_mount_t sd_mount={.type=FS_FATFS,.mnt_point=ASTER_MOUNT_POINT,
- .fs_data=&fat_fs,.flags=FS_MOUNT_FLAG_NO_FORMAT};
-static int zephyr_storage_suspend(void){return fs_unmount(&sd_mount);}
-static int zephyr_storage_resume(void){return fs_mount(&sd_mount);}
+static struct fs_mount_t sd_mount = {.type = FS_FATFS,
+                                     .mnt_point = ASTER_MOUNT_POINT,
+                                     .fs_data = &fat_fs,
+                                     .flags = FS_MOUNT_FLAG_NO_FORMAT};
+
+static int zephyr_storage_suspend(void)
+{
+	return fs_unmount(&sd_mount);
+}
+
+static int zephyr_storage_resume(void)
+{
+	return fs_mount(&sd_mount);
+}
+
 static int zephyr_format_and_reboot(void)
 {
 #if defined(CONFIG_FS_FATFS_MKFS) && defined(CONFIG_REBOOT)
- int rc=fs_unmount(&sd_mount);if(rc)return rc;
- uint32_t work[FF_MAX_SS/sizeof(uint32_t)];
- const MKFS_PARM options={.fmt=FM_FAT32|FM_SFD,.n_fat=2,.au_size=16384};
- LOG_WRN("SD FORMAT begin: all card contents will be erased");
- FRESULT result=f_mkfs("SD:",&options,work,sizeof(work));
- if(result!=FR_OK){LOG_ERR("SD FORMAT failed: %d",result);return -EIO;}
- LOG_WRN("SD FORMAT complete; rebooting into empty-card setup");
- k_msleep(300);sys_reboot(SYS_REBOOT_COLD);return 0;
+	int rc = fs_unmount(&sd_mount);
+	if (rc)
+		return rc;
+	uint32_t work[FF_MAX_SS / sizeof(uint32_t)];
+	const MKFS_PARM options = {.fmt = FM_FAT32 | FM_SFD, .n_fat = 2, .au_size = 16384};
+	LOG_WRN("SD FORMAT begin: all card contents will be erased");
+	FRESULT result = f_mkfs("SD:", &options, work, sizeof(work));
+	if (result != FR_OK) {
+		LOG_ERR("SD FORMAT failed: %d", result);
+		return -EIO;
+	}
+	LOG_WRN("SD FORMAT complete; rebooting into empty-card setup");
+	k_msleep(300);
+	sys_reboot(SYS_REBOOT_COLD);
+	return 0;
 #else
- return -ENOTSUP;
+	return -ENOTSUP;
 #endif
 }
 #endif /* !ASTER_SYSTEM_ESP_IDF: board mount and DMA bounce live in IDF port. */
@@ -219,18 +268,20 @@ bool aster_storage_is_music_path(const char *app_path)
 	if (!app_path) {
 		return false;
 	}
-	return strncmp(app_path, "/music", 6) == 0 &&
-	       (app_path[6] == '\0' || app_path[6] == '/');
+	return strncmp(app_path, "/music", 6) == 0 && (app_path[6] == '\0' || app_path[6] == '/');
 }
 
 int aster_storage_init(void)
 {
 #ifdef ASTER_SYSTEM_ESP_IDF
-    struct fs_dirent st;
-    int status=fs_stat(ASTER_MOUNT_POINT,&st);
-    if(status)return status;
-    if(st.type!=FS_DIR_ENTRY_DIR)return -ENOTDIR;
-    mounted=true;return ensure_dirs();
+	struct fs_dirent st;
+	int status = fs_stat(ASTER_MOUNT_POINT, &st);
+	if (status)
+		return status;
+	if (st.type != FS_DIR_ENTRY_DIR)
+		return -ENOTDIR;
+	mounted = true;
+	return ensure_dirs();
 #else
 	int err;
 
@@ -251,8 +302,8 @@ int aster_storage_init(void)
 		return err;
 	}
 	mounted = true;
-    aster_storage_set_format_handler(zephyr_format_and_reboot);
-    aster_storage_set_power_handlers(zephyr_storage_suspend,zephyr_storage_resume);
+	aster_storage_set_format_handler(zephyr_format_and_reboot);
+	aster_storage_set_power_handlers(zephyr_storage_suspend, zephyr_storage_resume);
 
 	err = ensure_dirs();
 	if (err) {
@@ -263,8 +314,7 @@ int aster_storage_init(void)
 	uint32_t blocks, bsize;
 	if (disk_access_ioctl("SD", DISK_IOCTL_GET_SECTOR_COUNT, &blocks) == 0 &&
 	    disk_access_ioctl("SD", DISK_IOCTL_GET_SECTOR_SIZE, &bsize) == 0) {
-		LOG_INF("SD mounted: %llu MB",
-			((uint64_t)blocks * bsize) >> 20);
+		LOG_INF("SD mounted: %llu MB", ((uint64_t)blocks * bsize) >> 20);
 	} else {
 		LOG_INF("SD mounted");
 	}
@@ -295,8 +345,7 @@ int aster_storage_app_code_dir(char *buf, size_t n, const char *id)
 	return err ? err : aster_versions_dir(buf, n, base, version.slot);
 }
 
-int aster_storage_sandbox(char *out, size_t n, const char *id, const char *app_path,
-			uint32_t perm)
+int aster_storage_sandbox(char *out, size_t n, const char *id, const char *app_path, uint32_t perm)
 {
 	const char *sub;
 
@@ -342,7 +391,9 @@ int aster_storage_sandbox(char *out, size_t n, const char *id, const char *app_p
 	char root[96];
 	if (strcmp(sub, "/assets") == 0) {
 		int err = aster_storage_app_code_dir(root, sizeof(root), id);
-		if (err) { return err; }
+		if (err) {
+			return err;
+		}
 	} else {
 		aster_storage_app_dir(root, sizeof(root), id);
 	}

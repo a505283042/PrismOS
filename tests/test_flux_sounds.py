@@ -1,25 +1,29 @@
 """Exercise actual nonblocking UI voice and generated PCM assets."""
+
 import importlib.util
 import unittest
 from test_waveshare import ROOT, run_c
 
+
 class Sounds(unittest.TestCase):
     def test_assets_match_sources(self):
-        path=ROOT/'systems/zephyr/ui/launcher/flux-sounds/bake.py'
-        spec=importlib.util.spec_from_file_location('bake',path)
-        bake=importlib.util.module_from_spec(spec);spec.loader.exec_module(bake)
-        self.assertEqual(bake.render(),(path.parent.parent/'flux_sounds.inc').read_text())
+        path = ROOT / 'systems/zephyr/ui/launcher/flux-sounds/bake.py'
+        spec = importlib.util.spec_from_file_location('bake', path)
+        bake = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(bake)
+        self.assertEqual(bake.render(), (path.parent.parent / 'flux_sounds.inc').read_text())
         for name in bake.NAMES:
-            samples=bake.samples(path.parent/(name+'.wav'))
-            self.assertGreater(len(samples),500)
-            self.assertLessEqual(len(samples),4480)
-            self.assertGreater(max(samples),12000)
-            self.assertLessEqual(max(map(abs,samples)),26213)
+            samples = bake.samples(path.parent / (name + '.wav'))
+            self.assertGreater(len(samples), 500)
+            self.assertLessEqual(len(samples), 4480)
+            self.assertGreater(max(samples), 12000)
+            self.assertLessEqual(max(map(abs, samples)), 26213)
 
     def test_nonblocking_priority_mute_and_app_session(self):
-        s=(ROOT/'platform/esp32s3/audio.c').read_text()
-        code=s[s.index('int aster_plat_audio_ui_play('):s.index('/* On launcher handoff')]
-        run_c(r'''
+        s = (ROOT / 'platform/esp32s3/audio.c').read_text()
+        code = s[s.index('int aster_plat_audio_ui_play(') : s.index('/* On launcher handoff')]
+        run_c(
+            r'''
 #include <assert.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -38,7 +42,9 @@ static struct {bool effect_closing,stop,effect_only;size_t size,off;int err,stat
 static struct {const int16_t *pcm;size_t frames,off;uint32_t fraction;unsigned gain,priority;} ui_voice;
 static int wake_player(void) {wakes++;return wake_error;}
 static void sess_clear_locked(void) {clears++;sess.state=ASTER_AUDIO_IDLE;sess.effect_only=false;}
-''' + code + r'''
+'''
+            + code
+            + r'''
 int main(void) {
  static const int16_t a[]={100,200}, b[]={300,400};
  assert(!aster_plat_audio_ui_play(a,2,1000,0));
@@ -59,12 +65,14 @@ int main(void) {
  assert(clears==1 && sess.state==ASTER_AUDIO_IDLE && !sess.effect_only);
  return 0;
 }
-''')
+'''
+        )
 
     def test_tick_cadence_gain_and_quiet(self):
-        s=(ROOT/'systems/zephyr/ui/launcher/flux.c').read_text()
-        code=s[s.index('static void sound_play('):s.index('static lv_obj_t *box(')]
-        run_c(r'''
+        s = (ROOT / 'systems/zephyr/ui/launcher/flux.c').read_text()
+        code = s[s.index('static void sound_play(') : s.index('static lv_obj_t *box(')]
+        run_c(
+            r'''
 #include <assert.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -84,7 +92,9 @@ static void aster_device_audio_ui_stop(void) {stops++;}
 static int aster_device_audio_ui_play(const int16_t *pcm,size_t frames,unsigned gain,unsigned priority) {
  assert(pcm && frames==1);plays++;last_gain=gain;last_priority=priority;return 0;
 }
-''' + code + r'''
+'''
+            + code
+            + r'''
 int main(void) {
  sound_play(S_TICK,0);assert(plays==1 && last_gain==1000 && last_priority==0);
  now=194;sound_play(S_TICK,0);assert(plays==1);
@@ -98,12 +108,14 @@ int main(void) {
  volume_pending=-1;volume=0;sound_play(S_TAP,0);assert(plays==5 && stops==3);
  return 0;
 }
-''')
+'''
+        )
 
     def test_actual_mix_duplicates_mono_and_saturates(self):
-        s=(ROOT/'platform/esp32s3/audio.c').read_text()
-        code=s[s.index('static int i2s_submit('):s.index('static int i2s_recover(')]
-        run_c(r'''
+        s = (ROOT / 'platform/esp32s3/audio.c').read_text()
+        code = s[s.index('static int i2s_submit(') : s.index('static int i2s_recover(')]
+        run_c(
+            r'''
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -130,7 +142,9 @@ static audio_effect_voice_t effects[EFFECT_SLOTS];
 static bool effects_suspended;
 static uint32_t mixed_peak;
 static struct {const int16_t *pcm;size_t frames,off;uint32_t fraction;unsigned gain;} ui_voice;
-''' + code + r'''
+'''
+            + code
+            + r'''
 int main(void) {
  static int16_t mono[]={2000,-2000,30000}, app[]={30000,30000,0,0,30000,30000,123,456};
  ui_voice.pcm=mono;ui_voice.frames=3;ui_voice.gain=500;
@@ -154,4 +168,5 @@ int main(void) {
  assert(!i2s_submit(app,&started));assert(mixed_peak==0);
  return 0;
 }
-''')
+'''
+        )

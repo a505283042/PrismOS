@@ -12,28 +12,57 @@
 #include <string.h>
 #include <errno.h>
 extern bool aster_sysinfo_has_feature(uint32_t bit);
-typedef struct {uint32_t audio_stream_handle;} aster_app_ctx_t;
+
+typedef struct {
+	uint32_t audio_stream_handle;
+} aster_app_ctx_t;
+
 static aster_app_ctx_t context;
-static aster_app_ctx_t *ctx_of(wasm_exec_env_t env) {(void)env;return &context;}
-static bool aster_ctx_perm(aster_app_ctx_t *ctx,uint32_t p) {(void)ctx;return aster_idf_has_permission(p);}
-static uint8_t *buf(wasm_exec_env_t env,uint32_t off,uint32_t n)
+
+static aster_app_ctx_t *ctx_of(wasm_exec_env_t env)
 {
- wasm_module_inst_t inst=wasm_runtime_get_module_inst(env);uint64_t end;
- if(!off || !n || !wasm_runtime_get_app_addr_range(inst,off,NULL,&end) || (uint64_t)off+n>end)return NULL;
- return wasm_runtime_addr_app_to_native(inst,off);
+	(void)env;
+	return &context;
 }
-static int app_str(wasm_exec_env_t env,uint32_t off,uint32_t len,char *out,size_t cap)
+
+static bool aster_ctx_perm(aster_app_ctx_t *ctx, uint32_t p)
 {
- if(!len || len>=cap)return -1;
- const char *p=(const char *)buf(env,off,len);if(!p || memchr(p,0,len))return -1;
- memcpy(out,p,len);out[len]=0;return 0;
+	(void)ctx;
+	return aster_idf_has_permission(p);
 }
-static int sandbox_map(aster_app_ctx_t *ctx,const char *path,char *out,size_t size)
+
+static uint8_t *buf(wasm_exec_env_t env, uint32_t off, uint32_t n)
 {
- (void)ctx;if(strchr(path,':') || strchr(path,'\\'))return ASTER_EPERM;
- uint32_t permissions=ASTER_PERM_FS|(aster_idf_has_permission(ASTER_PERM_SD)?ASTER_PERM_SD:0);
- return aster_storage_sandbox(out,size,aster_idf_app_identity(),path,permissions);
+	wasm_module_inst_t inst = wasm_runtime_get_module_inst(env);
+	uint64_t end;
+	if (!off || !n || !wasm_runtime_get_app_addr_range(inst, off, NULL, &end) ||
+	    (uint64_t)off + n > end)
+		return NULL;
+	return wasm_runtime_addr_app_to_native(inst, off);
 }
+
+static int app_str(wasm_exec_env_t env, uint32_t off, uint32_t len, char *out, size_t cap)
+{
+	if (!len || len >= cap)
+		return -1;
+	const char *p = (const char *)buf(env, off, len);
+	if (!p || memchr(p, 0, len))
+		return -1;
+	memcpy(out, p, len);
+	out[len] = 0;
+	return 0;
+}
+
+static int sandbox_map(aster_app_ctx_t *ctx, const char *path, char *out, size_t size)
+{
+	(void)ctx;
+	if (strchr(path, ':') || strchr(path, '\\'))
+		return ASTER_EPERM;
+	uint32_t permissions =
+	        ASTER_PERM_FS | (aster_idf_has_permission(ASTER_PERM_SD) ? ASTER_PERM_SD : 0);
+	return aster_storage_sandbox(out, size, aster_idf_app_identity(), path, permissions);
+}
+
 /* ============ audio (ABI 1.6 PCM, 1.7 volume/session, 1.8 MP3, 1.9 file) ============ */
 
 static int32_t audio_out_gate(void)
@@ -118,8 +147,8 @@ static int32_t n_audio_get_info(wasm_exec_env_t env, uint32_t off, uint32_t info
 		return ASTER_EINVAL;
 	}
 	aster_audio_info_t info = {
-		.size = sizeof(aster_audio_info_t),
-		.version = 1,
+	        .size = sizeof(aster_audio_info_t),
+	        .version = 1,
 	};
 #if IS_ENABLED(CONFIG_ASTER_AUDIO)
 	uint32_t rate, ch, bits;
@@ -256,15 +285,21 @@ static int32_t n_audio_effect_load(wasm_exec_env_t env, uint32_t off, uint32_t l
 #endif
 }
 
-static int32_t n_audio_effect_load_memory(wasm_exec_env_t env,uint32_t off,uint32_t len)
+static int32_t n_audio_effect_load_memory(wasm_exec_env_t env, uint32_t off, uint32_t len)
 {
- int32_t e=audio_out_gate();if(e!=ASTER_OK)return e;
- if(!ctx_of(env)||len<12||len>69632)return ASTER_EINVAL;
- const void *data=buf(env,off,len);if(!data)return ASTER_EINVAL;
+	int32_t e = audio_out_gate();
+	if (e != ASTER_OK)
+		return e;
+	if (!ctx_of(env) || len < 12 || len > 69632)
+		return ASTER_EINVAL;
+	const void *data = buf(env, off, len);
+	if (!data)
+		return ASTER_EINVAL;
 #if IS_ENABLED(CONFIG_ASTER_AUDIO)
- int h=aster_plat_audio_effect_load_memory(data,len);return h>0?h:map_audio_err(h);
+	int h = aster_plat_audio_effect_load_memory(data, len);
+	return h > 0 ? h : map_audio_err(h);
 #else
- return ASTER_ENODEV;
+	return ASTER_ENODEV;
 #endif
 }
 
@@ -283,47 +318,64 @@ static int32_t n_audio_effect_play(wasm_exec_env_t env, uint32_t handle)
 }
 
 /* Copy versioned guest descriptors before entering the audio service. */
-static int32_t n_audio_effect_play_ex(wasm_exec_env_t env, uint32_t handle,
-                                     uint32_t off, uint32_t size)
+static int32_t n_audio_effect_play_ex(wasm_exec_env_t env, uint32_t handle, uint32_t off,
+                                      uint32_t size)
 {
- int32_t e=audio_out_gate();
- if(e!=ASTER_OK) return e;
- if(size!=sizeof(aster_audio_effect_play_desc_t)) return ASTER_EINVAL;
- const void *src=buf(env,off,size);
- if(!src) return ASTER_EINVAL;
- aster_audio_effect_play_desc_t d;memcpy(&d,src,sizeof(d));
- if(d.size!=size || d.version!=1) return ASTER_EINVAL;
+	int32_t e = audio_out_gate();
+	if (e != ASTER_OK)
+		return e;
+	if (size != sizeof(aster_audio_effect_play_desc_t))
+		return ASTER_EINVAL;
+	const void *src = buf(env, off, size);
+	if (!src)
+		return ASTER_EINVAL;
+	aster_audio_effect_play_desc_t d;
+	memcpy(&d, src, sizeof(d));
+	if (d.size != size || d.version != 1)
+		return ASTER_EINVAL;
 #if IS_ENABLED(CONFIG_ASTER_AUDIO)
- return map_audio_err(aster_plat_audio_effect_play_ex(handle,&d));
+	return map_audio_err(aster_plat_audio_effect_play_ex(handle, &d));
 #else
- ARG_UNUSED(handle);return ASTER_ENODEV;
+	ARG_UNUSED(handle);
+	return ASTER_ENODEV;
 #endif
 }
-static int32_t n_audio_effect_set_params(wasm_exec_env_t env, uint32_t handle,
-                                        uint32_t off, uint32_t size)
+
+static int32_t n_audio_effect_set_params(wasm_exec_env_t env, uint32_t handle, uint32_t off,
+                                         uint32_t size)
 {
- int32_t e=audio_out_gate();
- if(e!=ASTER_OK) return e;
- if(size!=sizeof(aster_audio_effect_params_t)) return ASTER_EINVAL;
- const void *src=buf(env,off,size);
- if(!src) return ASTER_EINVAL;
- aster_audio_effect_params_t p;memcpy(&p,src,sizeof(p));
- if(p.size!=size || p.version!=1) return ASTER_EINVAL;
+	int32_t e = audio_out_gate();
+	if (e != ASTER_OK)
+		return e;
+	if (size != sizeof(aster_audio_effect_params_t))
+		return ASTER_EINVAL;
+	const void *src = buf(env, off, size);
+	if (!src)
+		return ASTER_EINVAL;
+	aster_audio_effect_params_t p;
+	memcpy(&p, src, sizeof(p));
+	if (p.size != size || p.version != 1)
+		return ASTER_EINVAL;
 #if IS_ENABLED(CONFIG_ASTER_AUDIO)
- return map_audio_err(aster_plat_audio_effect_set_params(handle,&p));
+	return map_audio_err(aster_plat_audio_effect_set_params(handle, &p));
 #else
- ARG_UNUSED(handle);return ASTER_ENODEV;
+	ARG_UNUSED(handle);
+	return ASTER_ENODEV;
 #endif
 }
-static int32_t n_audio_effect_stop(wasm_exec_env_t env,uint32_t handle,uint32_t ms)
+
+static int32_t n_audio_effect_stop(wasm_exec_env_t env, uint32_t handle, uint32_t ms)
 {
- ARG_UNUSED(env);
- int32_t e=audio_out_gate();
- if(e!=ASTER_OK) return e;
+	ARG_UNUSED(env);
+	int32_t e = audio_out_gate();
+	if (e != ASTER_OK)
+		return e;
 #if IS_ENABLED(CONFIG_ASTER_AUDIO)
- return map_audio_err(aster_plat_audio_effect_stop(handle,ms));
+	return map_audio_err(aster_plat_audio_effect_stop(handle, ms));
 #else
- ARG_UNUSED(handle);ARG_UNUSED(ms);return ASTER_ENODEV;
+	ARG_UNUSED(handle);
+	ARG_UNUSED(ms);
+	return ASTER_ENODEV;
 #endif
 }
 
@@ -398,8 +450,8 @@ static int32_t n_audio_get_state(wasm_exec_env_t env, uint32_t off, uint32_t st_
 		return ASTER_EINVAL;
 	}
 	aster_audio_state_t st = {
-		.size = sizeof(aster_audio_state_t),
-		.version = 2,
+	        .size = sizeof(aster_audio_state_t),
+	        .version = 2,
 	};
 #if IS_ENABLED(CONFIG_ASTER_AUDIO)
 	(void)aster_plat_audio_get_state(&st.state, &st.bytes_total, &st.bytes_done, &st.volume);
@@ -456,39 +508,45 @@ static int32_t n_audio_get_lyrics(wasm_exec_env_t env, uint32_t off, uint32_t si
 #endif
 }
 
-
 void aster_idf_audio_cleanup(void)
 {
- aster_native_release_audio_stream(&context);
- aster_plat_audio_stop();aster_plat_audio_effect_reset();
+	aster_native_release_audio_stream(&context);
+	aster_plat_audio_stop();
+	aster_plat_audio_effect_reset();
 }
+
 #include "aster_player_native.inc"
-static NativeSymbol symbols[]={
- { "aster_player_bt_list", (void *)n_player_bt_list, "(ii)i", NULL },
- { "aster_player_get_info", (void *)n_player_get_info, "(ii)i", NULL },
- { "aster_player_control", (void *)n_player_control, "(ii)i", NULL },
-	{ "aster_audio_get_info", (void *)n_audio_get_info, "(ii)i", NULL },
-	{ "aster_audio_get_lyrics", (void *)n_audio_get_lyrics, "(ii)i", NULL },
-	{ "aster_audio_get_state", (void *)n_audio_get_state, "(ii)i", NULL },
-	{ "aster_audio_get_volume", (void *)n_audio_get_volume, "()i", NULL },
-	{ "aster_audio_effect_load", (void *)n_audio_effect_load, "(ii)i", NULL },
-	{ "aster_audio_effect_load_memory", (void *)n_audio_effect_load_memory, "(ii)i", NULL },
-	{ "aster_audio_effect_play", (void *)n_audio_effect_play, "(i)i", NULL },
-	{ "aster_audio_effect_play_ex", (void *)n_audio_effect_play_ex, "(iii)i", NULL },
-	{ "aster_audio_effect_set_params", (void *)n_audio_effect_set_params, "(iii)i", NULL },
-	{ "aster_audio_effect_stop", (void *)n_audio_effect_stop, "(ii)i", NULL },
-	{ "aster_audio_effect_unload", (void *)n_audio_effect_unload, "(i)i", NULL },
-	{ "aster_audio_pause", (void *)n_audio_pause, "()i", NULL },
-	{ "aster_audio_record", (void *)n_audio_record, "(ii)i", NULL },
-	{ "aster_audio_resume", (void *)n_audio_resume, "()i", NULL },
-	{ "aster_audio_seek", (void *)n_audio_seek, "(i)i", NULL },
-	{ "aster_audio_set_volume", (void *)n_audio_set_volume, "(i)i", NULL },
-	{ "aster_audio_start_file", (void *)n_audio_start_file, "(ii)i", NULL },
-	{ "aster_audio_stream_open", (void *)n_audio_stream_open, "(i)i", NULL },
-	{ "aster_audio_stream_write", (void *)n_audio_stream_write, "(iii)i", NULL },
-	{ "aster_audio_stream_finish", (void *)n_audio_stream_finish, "(i)i", NULL },
-	{ "aster_audio_stream_status", (void *)n_audio_stream_status, "(iii)i", NULL },
-	{ "aster_audio_stream_close", (void *)n_audio_stream_close, "(i)i", NULL },
-	{ "aster_audio_stop", (void *)n_audio_stop, "()i", NULL },
+static NativeSymbol symbols[] = {
+        {"aster_player_bt_list", (void *)n_player_bt_list, "(ii)i", NULL},
+        {"aster_player_get_info", (void *)n_player_get_info, "(ii)i", NULL},
+        {"aster_player_control", (void *)n_player_control, "(ii)i", NULL},
+        {"aster_audio_get_info", (void *)n_audio_get_info, "(ii)i", NULL},
+        {"aster_audio_get_lyrics", (void *)n_audio_get_lyrics, "(ii)i", NULL},
+        {"aster_audio_get_state", (void *)n_audio_get_state, "(ii)i", NULL},
+        {"aster_audio_get_volume", (void *)n_audio_get_volume, "()i", NULL},
+        {"aster_audio_effect_load", (void *)n_audio_effect_load, "(ii)i", NULL},
+        {"aster_audio_effect_load_memory", (void *)n_audio_effect_load_memory, "(ii)i", NULL},
+        {"aster_audio_effect_play", (void *)n_audio_effect_play, "(i)i", NULL},
+        {"aster_audio_effect_play_ex", (void *)n_audio_effect_play_ex, "(iii)i", NULL},
+        {"aster_audio_effect_set_params", (void *)n_audio_effect_set_params, "(iii)i", NULL},
+        {"aster_audio_effect_stop", (void *)n_audio_effect_stop, "(ii)i", NULL},
+        {"aster_audio_effect_unload", (void *)n_audio_effect_unload, "(i)i", NULL},
+        {"aster_audio_pause", (void *)n_audio_pause, "()i", NULL},
+        {"aster_audio_record", (void *)n_audio_record, "(ii)i", NULL},
+        {"aster_audio_resume", (void *)n_audio_resume, "()i", NULL},
+        {"aster_audio_seek", (void *)n_audio_seek, "(i)i", NULL},
+        {"aster_audio_set_volume", (void *)n_audio_set_volume, "(i)i", NULL},
+        {"aster_audio_start_file", (void *)n_audio_start_file, "(ii)i", NULL},
+        {"aster_audio_stream_open", (void *)n_audio_stream_open, "(i)i", NULL},
+        {"aster_audio_stream_write", (void *)n_audio_stream_write, "(iii)i", NULL},
+        {"aster_audio_stream_finish", (void *)n_audio_stream_finish, "(i)i", NULL},
+        {"aster_audio_stream_status", (void *)n_audio_stream_status, "(iii)i", NULL},
+        {"aster_audio_stream_close", (void *)n_audio_stream_close, "(i)i", NULL},
+        {"aster_audio_stop", (void *)n_audio_stop, "()i", NULL},
 };
-NativeSymbol *aster_idf_audio_symbols(uint32_t *n) {*n=sizeof(symbols)/sizeof(symbols[0]);return symbols;}
+
+NativeSymbol *aster_idf_audio_symbols(uint32_t *n)
+{
+	*n = sizeof(symbols) / sizeof(symbols[0]);
+	return symbols;
+}

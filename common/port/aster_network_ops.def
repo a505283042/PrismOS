@@ -1,42 +1,85 @@
 /* SPDX-License-Identifier: MIT */
-ASTER_NETWORK_OP(int,socket_interface_info,(struct aster_net_interface_info *out),(out),status)
-ASTER_NETWORK_OP(int,socket_open,(uint64_t owner, enum aster_net_kind kind, const char *host, uint16_t port, uint32_t timeout_ms),(owner,kind,host,port,timeout_ms),status)
-ASTER_NETWORK_OP(int,socket_restart,(uint64_t owner, uint32_t handle, const char *host, uint16_t port, uint32_t timeout_ms),(owner,handle,host,port,timeout_ms),status)
-ASTER_NETWORK_OP(int,socket_finish,(uint64_t owner, uint32_t handle),(owner,handle),status)
-ASTER_NETWORK_OP(int,socket_snapshot,(uint64_t owner, uint32_t handle, struct aster_net_snapshot *out),(owner,handle,out),status)
-ASTER_NETWORK_OP(int,socket_send,(uint64_t owner, uint32_t handle, const void *data, size_t length, const char *host, uint16_t port),(owner,handle,data,length,host,port),status)
-ASTER_NETWORK_OP(int,socket_recv,(uint64_t owner, uint32_t handle, void *data, size_t capacity, size_t *required, uint32_t *ipv4, uint16_t *port),(owner,handle,data,capacity,required,ipv4,port),status)
-ASTER_NETWORK_OP(int,socket_cancel,(uint64_t owner, uint32_t handle),(owner,handle),status)
-ASTER_NETWORK_OP(int,socket_close,(uint64_t owner, uint32_t handle),(owner,handle),status)
-ASTER_NETWORK_OP(int,socket_close_owner,(uint64_t owner),(owner),status)
-ASTER_NETWORK_OP(int,socket_get_stats,(struct aster_net_stats *out),(out),status)
-ASTER_NETWORK_OP(int,http_start,(uint64_t owner, const struct aster_http_options *options),(owner,options),status)
-ASTER_NETWORK_OP(int,http_status,(uint64_t owner, uint32_t handle, struct aster_http_snapshot *out),(owner,handle,out),status)
-ASTER_NETWORK_OP(int,http_read,(uint64_t owner, uint32_t handle, void *out, size_t capacity),(owner,handle,out,capacity),status)
-ASTER_NETWORK_OP(int,http_header,(uint64_t owner, uint32_t handle, const char *name, unsigned index, char *out, size_t capacity, size_t *length),(owner,handle,name,index,out,capacity,length),status)
-ASTER_NETWORK_OP(int,http_cancel,(uint64_t owner, uint32_t handle),(owner,handle),status)
-ASTER_NETWORK_OP(int,http_close,(uint64_t owner, uint32_t handle),(owner,handle),status)
-ASTER_NETWORK_OP(int,http_close_owner,(uint64_t owner),(owner),status)
-ASTER_NETWORK_OP(int,http_ca_set,(const char *pem, size_t length),(pem,length),status)
-ASTER_NETWORK_OP(int,http_get_stats,(struct aster_http_stats *out),(out),status)
-ASTER_NETWORK_OP(int,mqtt_open,(uint64_t owner, const struct aster_mqtt_connect *options),(owner,options),status)
-ASTER_NETWORK_OP(int,mqtt_publish,(uint64_t owner, uint32_t handle, const char *topic, const void *data, size_t length, unsigned qos, bool retain),(owner,handle,topic,data,length,qos,retain),status)
-ASTER_NETWORK_OP(int,mqtt_subscribe,(uint64_t owner, uint32_t handle, const char *filter, unsigned qos, bool unsubscribe),(owner,handle,filter,qos,unsubscribe),status)
-ASTER_NETWORK_OP(int,mqtt_status,(uint64_t owner, uint32_t handle, struct aster_mqtt_snapshot *out),(owner,handle,out),status)
-ASTER_NETWORK_OP(int,mqtt_operation,(uint64_t owner, uint32_t handle, uint32_t sequence, int32_t *operation_error),(owner,handle,sequence,operation_error),status)
-ASTER_NETWORK_OP(int,mqtt_recv,(uint64_t owner, uint32_t handle, struct aster_mqtt_message *out),(owner,handle,out),status)
-ASTER_NETWORK_OP(int,mqtt_cancel,(uint64_t owner, uint32_t handle),(owner,handle),status)
-ASTER_NETWORK_OP(int,mqtt_close,(uint64_t owner, uint32_t handle),(owner,handle),status)
-ASTER_NETWORK_OP(int,mqtt_close_owner,(uint64_t owner),(owner),status)
-ASTER_NETWORK_OP(int,mqtt_stats,(struct aster_mqtt_stats *out),(out),status)
-ASTER_NETWORK_OP(uint32_t,mqtt_reconnects,(void),(),u32)
-ASTER_NETWORK_OP(int,ws_open,(uint64_t owner, const char *url, uint32_t timeout_ms),(owner,url,timeout_ms),status)
-ASTER_NETWORK_OP(int,ws_send,(uint64_t owner, uint32_t handle, unsigned opcode, const void *data, size_t length),(owner,handle,opcode,data,length),status)
-ASTER_NETWORK_OP(int,ws_status,(uint64_t owner, uint32_t handle, struct aster_ws_snapshot *out),(owner,handle,out),status)
-ASTER_NETWORK_OP(int,ws_recv,(uint64_t owner,uint32_t handle,void *data,size_t capacity,size_t *length,unsigned *opcode),(owner,handle,data,capacity,length,opcode),status)
-ASTER_NETWORK_OP(int,ws_close,(uint64_t owner,uint32_t handle),(owner,handle),status)
-ASTER_NETWORK_OP(int,ws_cancel,(uint64_t owner,uint32_t handle),(owner,handle),status)
-ASTER_NETWORK_OP(int,ws_close_owner,(uint64_t owner),(owner),status)
-ASTER_NETWORK_OP(int,ws_stats,(struct aster_ws_stats *out),(out),status)
-ASTER_NETWORK_OP(bool,event_take,(uint64_t owner, uint32_t *handle, uint32_t *kind, uint32_t *state),(owner,handle,kind,state),boolean)
-ASTER_NETWORK_OP(void,event_drop_owner,(uint64_t owner),(owner),void)
+ASTER_NETWORK_OP(int, socket_interface_info, (struct aster_net_interface_info * out), (out), status)
+ASTER_NETWORK_OP(int, socket_open,
+                 (uint64_t owner, enum aster_net_kind kind, const char *host, uint16_t port,
+                  uint32_t timeout_ms),
+                 (owner, kind, host, port, timeout_ms), status)
+ASTER_NETWORK_OP(int, socket_restart,
+                 (uint64_t owner, uint32_t handle, const char *host, uint16_t port,
+                  uint32_t timeout_ms),
+                 (owner, handle, host, port, timeout_ms), status)
+ASTER_NETWORK_OP(int, socket_finish, (uint64_t owner, uint32_t handle), (owner, handle), status)
+ASTER_NETWORK_OP(int, socket_snapshot,
+                 (uint64_t owner, uint32_t handle, struct aster_net_snapshot *out),
+                 (owner, handle, out), status)
+ASTER_NETWORK_OP(int, socket_send,
+                 (uint64_t owner, uint32_t handle, const void *data, size_t length,
+                  const char *host, uint16_t port),
+                 (owner, handle, data, length, host, port), status)
+ASTER_NETWORK_OP(int, socket_recv,
+                 (uint64_t owner, uint32_t handle, void *data, size_t capacity, size_t *required,
+                  uint32_t *ipv4, uint16_t *port),
+                 (owner, handle, data, capacity, required, ipv4, port), status)
+ASTER_NETWORK_OP(int, socket_cancel, (uint64_t owner, uint32_t handle), (owner, handle), status)
+ASTER_NETWORK_OP(int, socket_close, (uint64_t owner, uint32_t handle), (owner, handle), status)
+ASTER_NETWORK_OP(int, socket_close_owner, (uint64_t owner), (owner), status)
+ASTER_NETWORK_OP(int, socket_get_stats, (struct aster_net_stats * out), (out), status)
+ASTER_NETWORK_OP(int, http_start, (uint64_t owner, const struct aster_http_options *options),
+                 (owner, options), status)
+ASTER_NETWORK_OP(int, http_status,
+                 (uint64_t owner, uint32_t handle, struct aster_http_snapshot *out),
+                 (owner, handle, out), status)
+ASTER_NETWORK_OP(int, http_read, (uint64_t owner, uint32_t handle, void *out, size_t capacity),
+                 (owner, handle, out, capacity), status)
+ASTER_NETWORK_OP(int, http_header,
+                 (uint64_t owner, uint32_t handle, const char *name, unsigned index, char *out,
+                  size_t capacity, size_t *length),
+                 (owner, handle, name, index, out, capacity, length), status)
+ASTER_NETWORK_OP(int, http_cancel, (uint64_t owner, uint32_t handle), (owner, handle), status)
+ASTER_NETWORK_OP(int, http_close, (uint64_t owner, uint32_t handle), (owner, handle), status)
+ASTER_NETWORK_OP(int, http_close_owner, (uint64_t owner), (owner), status)
+ASTER_NETWORK_OP(int, http_ca_set, (const char *pem, size_t length), (pem, length), status)
+ASTER_NETWORK_OP(int, http_get_stats, (struct aster_http_stats * out), (out), status)
+ASTER_NETWORK_OP(int, mqtt_open, (uint64_t owner, const struct aster_mqtt_connect *options),
+                 (owner, options), status)
+ASTER_NETWORK_OP(int, mqtt_publish,
+                 (uint64_t owner, uint32_t handle, const char *topic, const void *data,
+                  size_t length, unsigned qos, bool retain),
+                 (owner, handle, topic, data, length, qos, retain), status)
+ASTER_NETWORK_OP(int, mqtt_subscribe,
+                 (uint64_t owner, uint32_t handle, const char *filter, unsigned qos,
+                  bool unsubscribe),
+                 (owner, handle, filter, qos, unsubscribe), status)
+ASTER_NETWORK_OP(int, mqtt_status,
+                 (uint64_t owner, uint32_t handle, struct aster_mqtt_snapshot *out),
+                 (owner, handle, out), status)
+ASTER_NETWORK_OP(int, mqtt_operation,
+                 (uint64_t owner, uint32_t handle, uint32_t sequence, int32_t *operation_error),
+                 (owner, handle, sequence, operation_error), status)
+ASTER_NETWORK_OP(int, mqtt_recv, (uint64_t owner, uint32_t handle, struct aster_mqtt_message *out),
+                 (owner, handle, out), status)
+ASTER_NETWORK_OP(int, mqtt_cancel, (uint64_t owner, uint32_t handle), (owner, handle), status)
+ASTER_NETWORK_OP(int, mqtt_close, (uint64_t owner, uint32_t handle), (owner, handle), status)
+ASTER_NETWORK_OP(int, mqtt_close_owner, (uint64_t owner), (owner), status)
+ASTER_NETWORK_OP(int, mqtt_stats, (struct aster_mqtt_stats * out), (out), status)
+ASTER_NETWORK_OP(uint32_t, mqtt_reconnects, (void), (), u32)
+ASTER_NETWORK_OP(int, ws_open, (uint64_t owner, const char *url, uint32_t timeout_ms),
+                 (owner, url, timeout_ms), status)
+ASTER_NETWORK_OP(int, ws_send,
+                 (uint64_t owner, uint32_t handle, unsigned opcode, const void *data,
+                  size_t length),
+                 (owner, handle, opcode, data, length), status)
+ASTER_NETWORK_OP(int, ws_status, (uint64_t owner, uint32_t handle, struct aster_ws_snapshot *out),
+                 (owner, handle, out), status)
+ASTER_NETWORK_OP(int, ws_recv,
+                 (uint64_t owner, uint32_t handle, void *data, size_t capacity, size_t *length,
+                  unsigned *opcode),
+                 (owner, handle, data, capacity, length, opcode), status)
+ASTER_NETWORK_OP(int, ws_close, (uint64_t owner, uint32_t handle), (owner, handle), status)
+ASTER_NETWORK_OP(int, ws_cancel, (uint64_t owner, uint32_t handle), (owner, handle), status)
+ASTER_NETWORK_OP(int, ws_close_owner, (uint64_t owner), (owner), status)
+ASTER_NETWORK_OP(int, ws_stats, (struct aster_ws_stats * out), (out), status)
+ASTER_NETWORK_OP(bool, event_take,
+                 (uint64_t owner, uint32_t *handle, uint32_t *kind, uint32_t *state),
+                 (owner, handle, kind, state), boolean)
+ASTER_NETWORK_OP(void, event_drop_owner, (uint64_t owner), (owner), void)

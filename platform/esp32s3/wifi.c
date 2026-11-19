@@ -26,18 +26,17 @@
 
 LOG_MODULE_REGISTER(aster_wifi, LOG_LEVEL_INF);
 
-#define SCAN_TO_MS   15000
-#define CONN_TO_MS   35000
-#define DHCP_TO_MS   15000
-#define DISC_TO_MS   5000
-#define WIFI_KV_ID   "aster_wifi"
-#define WIFI_KV_KEY  "profile"
+#define SCAN_TO_MS 15000
+#define CONN_TO_MS 35000
+#define DHCP_TO_MS 15000
+#define DISC_TO_MS 5000
+#define WIFI_KV_ID "aster_wifi"
+#define WIFI_KV_KEY "profile"
 #define WIFI_PROFILE_VERSION 1u
 
-#define WIFI_EVT_SCAN   (NET_EVENT_WIFI_SCAN_RESULT | \
-			 NET_EVENT_WIFI_SCAN_DONE | \
-			 NET_EVENT_WIFI_CONNECT_RESULT | \
-			 NET_EVENT_WIFI_DISCONNECT_RESULT)
+#define WIFI_EVT_SCAN \
+	(NET_EVENT_WIFI_SCAN_RESULT | NET_EVENT_WIFI_SCAN_DONE | NET_EVENT_WIFI_CONNECT_RESULT | \
+	 NET_EVENT_WIFI_DISCONNECT_RESULT)
 
 static struct net_if *iface;
 static struct net_mgmt_event_callback wifi_cb;
@@ -51,7 +50,9 @@ static aster_wifi_ap_t scan_aps[ASTER_WIFI_AP_MAX];
 static int scan_n;
 static int conn_status = -1;
 static atomic_t conn_wait_kind;
+
 enum { CONN_WAIT_NONE, CONN_WAIT_CONNECT, CONN_WAIT_DISCONNECT };
+
 static char req_ssid[ASTER_WIFI_SSID_MAX + 1];
 static char req_psk[65];
 /* Kept alongside the buffer because the length is what says "open AP"
@@ -128,11 +129,11 @@ uint32_t aster_plat_wifi_security_class(uint8_t security)
 	switch (security) {
 	case WIFI_SECURITY_TYPE_NONE:
 		return ASTER_PLAT_WIFI_SECURITY_OPEN;
-	/* ESP32 scan reports unhandled mixed personal modes as UNKNOWN.
+		/* ESP32 scan reports unhandled mixed personal modes as UNKNOWN.
      * Match sta_security(): offer password entry and try PSK, rather than
      * reject before association. This is a connection attempt, not proof
      * that every unknown authentication mode is supported. */
-    case WIFI_SECURITY_TYPE_UNKNOWN:
+	case WIFI_SECURITY_TYPE_UNKNOWN:
 	case WIFI_SECURITY_TYPE_PSK:
 	case WIFI_SECURITY_TYPE_PSK_SHA256:
 	case WIFI_SECURITY_TYPE_SAE:
@@ -260,25 +261,28 @@ static void fill_ip(char *dst, size_t max)
  * wifi_mu, in a blocking control path (never UI or system workqueue). */
 static int wifi_wait_ipv4(void)
 {
-    char ip[NET_IPV4_ADDR_LEN];
-    fill_ip(ip, sizeof(ip));
-    if (ip[0]) return 0;
-    while (k_sem_take(&dhcp_done, K_NO_WAIT) == 0) {}
-    net_dhcpv4_restart(iface);
-    int64_t deadline = k_uptime_get() + DHCP_TO_MS;
-    do {
-        fill_ip(ip, sizeof(ip));
-        if (ip[0]) return 0;
-        (void)k_sem_take(&dhcp_done, K_MSEC(250));
-    } while (k_uptime_get() < deadline);
-    fill_ip(ip, sizeof(ip));
-    return ip[0] ? 0 : -ETIMEDOUT;
+	char ip[NET_IPV4_ADDR_LEN];
+	fill_ip(ip, sizeof(ip));
+	if (ip[0])
+		return 0;
+	while (k_sem_take(&dhcp_done, K_NO_WAIT) == 0) {
+	}
+	net_dhcpv4_restart(iface);
+	int64_t deadline = k_uptime_get() + DHCP_TO_MS;
+	do {
+		fill_ip(ip, sizeof(ip));
+		if (ip[0])
+			return 0;
+		(void)k_sem_take(&dhcp_done, K_MSEC(250));
+	} while (k_uptime_get() < deadline);
+	fill_ip(ip, sizeof(ip));
+	return ip[0] ? 0 : -ETIMEDOUT;
 }
 
-static void wifi_handler(struct net_mgmt_event_callback *cb, uint64_t event,
-			 struct net_if *ift)
+static void wifi_handler(struct net_mgmt_event_callback *cb, uint64_t event, struct net_if *ift)
 {
-	if (ift != iface) return;
+	if (ift != iface)
+		return;
 
 	switch (event) {
 	case NET_EVENT_WIFI_SCAN_RESULT:
@@ -302,8 +306,7 @@ static void wifi_handler(struct net_mgmt_event_callback *cb, uint64_t event,
 		if (atomic_get(&conn_wait_kind) == CONN_WAIT_DISCONNECT) {
 			conn_status = -ENOTCONN;
 			k_sem_give(&conn_done);
-		} else if (atomic_get(&conn_wait_kind) == CONN_WAIT_NONE &&
-			   req_ssid[0]) {
+		} else if (atomic_get(&conn_wait_kind) == CONN_WAIT_NONE && req_ssid[0]) {
 			LOG_WRN("Wi-Fi link lost; queuing saved-profile reconnect");
 			(void)queue_wifi_job(ASTER_PLAT_WIFI_OP_RECONNECT, NULL, NULL);
 		}
@@ -313,11 +316,11 @@ static void wifi_handler(struct net_mgmt_event_callback *cb, uint64_t event,
 	}
 }
 
-static void ipv4_handler(struct net_mgmt_event_callback *cb, uint64_t event,
-			 struct net_if *ift)
+static void ipv4_handler(struct net_mgmt_event_callback *cb, uint64_t event, struct net_if *ift)
 {
 	ARG_UNUSED(cb);
-	if (ift != iface) return;
+	if (ift != iface)
+		return;
 
 	if (event == NET_EVENT_IPV4_DHCP_BOUND) {
 		k_sem_give(&dhcp_done);
@@ -381,11 +384,10 @@ int aster_plat_wifi_scan(aster_wifi_ap_t *out, int max, int *count)
 	}
 	{
 		struct wifi_scan_params params = {
-			.scan_type = WIFI_SCAN_TYPE_ACTIVE,
+		        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
 		};
 
-		err = net_mgmt(NET_REQUEST_WIFI_SCAN, iface, &params,
-			       sizeof(params));
+		err = net_mgmt(NET_REQUEST_WIFI_SCAN, iface, &params, sizeof(params));
 	}
 	if (err) {
 		k_mutex_unlock(&wifi_mu);
@@ -450,7 +452,7 @@ int aster_plat_wifi_connect(const char *ssid, const char *psk)
 		if (aster_plat_wifi_status(&current) == 0) {
 			if (current.state == WIFI_STATE_COMPLETED &&
 			    strcmp(current.ssid, join_ssid) == 0) {
-                err = wifi_wait_ipv4();
+				err = wifi_wait_ipv4();
 				k_mutex_unlock(&wifi_mu);
 				return err;
 			}
@@ -460,7 +462,8 @@ int aster_plat_wifi_connect(const char *ssid, const char *psk)
 			    current.state == WIFI_STATE_ASSOCIATED) {
 				k_mutex_unlock(&wifi_mu);
 				err = aster_plat_wifi_disconnect();
-				if (err) return err;
+				if (err)
+					return err;
 				k_mutex_lock(&wifi_mu, K_FOREVER);
 			}
 		}
@@ -503,17 +506,18 @@ int aster_plat_wifi_connect(const char *ssid, const char *psk)
 	}
 	err = k_sem_take(&conn_done, K_MSEC(CONN_TO_MS));
 	atomic_set(&conn_wait_kind, CONN_WAIT_NONE);
-    if (err || conn_status) {
-        aster_wifi_status_t current;
-        bool associated = aster_plat_wifi_status(&current) == 0 &&
-            current.state == WIFI_STATE_COMPLETED && !strcmp(current.ssid, join_ssid);
-        if (!associated) {
-            int result = err ? -ETIMEDOUT : conn_status > 0 ? -EIO : conn_status;
-            k_mutex_unlock(&wifi_mu);
-            return result;
-        }
-        LOG_WRN("connect completion missing; checking associated station IPv4");
-    }
+	if (err || conn_status) {
+		aster_wifi_status_t current;
+		bool associated = aster_plat_wifi_status(&current) == 0 &&
+		                  current.state == WIFI_STATE_COMPLETED &&
+		                  !strcmp(current.ssid, join_ssid);
+		if (!associated) {
+			int result = err ? -ETIMEDOUT : conn_status > 0 ? -EIO : conn_status;
+			k_mutex_unlock(&wifi_mu);
+			return result;
+		}
+		LOG_WRN("connect completion missing; checking associated station IPv4");
+	}
 
 	/* Keep the last known-good credentials, not a failed request. The RAM
 	 * copy powers reconnect/qpanel even when the card is later removed. */
@@ -521,20 +525,19 @@ int aster_plat_wifi_connect(const char *ssid, const char *psk)
 	memcpy(req_psk, join_psk, plen + 1);
 	req_psk_len = plen;
 	{
-		wifi_profile_t profile = { .version = WIFI_PROFILE_VERSION,
-			.psk_len = (uint32_t)plen };
+		wifi_profile_t profile = {.version = WIFI_PROFILE_VERSION,
+		                          .psk_len = (uint32_t)plen};
 		memcpy(profile.ssid, join_ssid, slen + 1);
 		memcpy(profile.psk, join_psk, plen + 1);
-		int save_err = aster_kv_set(WIFI_KV_ID, WIFI_KV_KEY,
-					    &profile, sizeof(profile));
+		int save_err = aster_kv_set(WIFI_KV_ID, WIFI_KV_KEY, &profile, sizeof(profile));
 
 		if (save_err) {
-			LOG_WRN("connected to %s but saving Wi-Fi profile failed: %d",
-				join_ssid, save_err);
+			LOG_WRN("connected to %s but saving Wi-Fi profile failed: %d", join_ssid,
+			        save_err);
 		}
 	}
 
-    err = wifi_wait_ipv4();
+	err = wifi_wait_ipv4();
 	k_mutex_unlock(&wifi_mu);
 	return err;
 }
@@ -548,8 +551,7 @@ int aster_plat_wifi_disconnect(void)
 	if (err) {
 		return err;
 	}
-	if (aster_plat_wifi_status(&st) == 0 &&
-	    st.state != WIFI_STATE_COMPLETED &&
+	if (aster_plat_wifi_status(&st) == 0 && st.state != WIFI_STATE_COMPLETED &&
 	    st.state != WIFI_STATE_ASSOCIATED) {
 		return 0;
 	}
@@ -565,10 +567,8 @@ int aster_plat_wifi_disconnect(void)
 			err = 0;
 		} else if (err == 0) {
 			err = conn_status ? conn_status : -EIO;
-		} else if (err == -EAGAIN &&
-			   aster_plat_wifi_status(&st) == 0 &&
-			   st.state != WIFI_STATE_COMPLETED &&
-			   st.state != WIFI_STATE_ASSOCIATED) {
+		} else if (err == -EAGAIN && aster_plat_wifi_status(&st) == 0 &&
+		           st.state != WIFI_STATE_COMPLETED && st.state != WIFI_STATE_ASSOCIATED) {
 			err = 0;
 		}
 	}
@@ -631,9 +631,9 @@ int aster_plat_wifi_reconnect(void)
 	memcpy(psk, req_psk, sizeof(psk));
 	have_psk = req_psk_len != 0;
 	k_mutex_unlock(&wifi_mu);
-	if (aster_plat_wifi_status(&st) == 0 &&
-	    st.state == WIFI_STATE_COMPLETED && strcmp(st.ssid, ssid) == 0) {
-        /* Reuse connect's IPv4 recovery without another radio association. */
+	if (aster_plat_wifi_status(&st) == 0 && st.state == WIFI_STATE_COMPLETED &&
+	    strcmp(st.ssid, ssid) == 0) {
+		/* Reuse connect's IPv4 recovery without another radio association. */
 		return aster_plat_wifi_connect(ssid, have_psk ? psk : NULL);
 	}
 	/* Re-discover the saved AP's security mode after reboot so WPA3 personal
@@ -641,8 +641,7 @@ int aster_plat_wifi_reconnect(void)
 	 * scan still permits a hidden SSID to use the ordinary PSK attempt. */
 	int scan_err = aster_plat_wifi_scan(aps, ARRAY_SIZE(aps), &ap_count);
 	if (scan_err) {
-		LOG_WRN("Wi-Fi reconnect scan failed: %d; trying saved credentials",
-			scan_err);
+		LOG_WRN("Wi-Fi reconnect scan failed: %d; trying saved credentials", scan_err);
 	}
 
 	/* NULL, not "", for an open AP: connect() derives its PSK length
@@ -659,8 +658,8 @@ int aster_plat_wifi_forget(void)
 	int err;
 
 	if (aster_plat_wifi_last_ssid(saved, sizeof(saved)) == 0 &&
-	    aster_plat_wifi_status(&st) == 0 &&
-	    st.state == WIFI_STATE_COMPLETED && strcmp(st.ssid, saved) == 0) {
+	    aster_plat_wifi_status(&st) == 0 && st.state == WIFI_STATE_COMPLETED &&
+	    strcmp(st.ssid, saved) == 0) {
 		disconnect = true;
 	}
 	if (disconnect) {
@@ -684,7 +683,8 @@ int aster_plat_wifi_forget(void)
 
 void aster_plat_wifi_hotspot_status(aster_wifi_hotspot_status_t *status)
 {
-	if (!status) return;
+	if (!status)
+		return;
 	k_mutex_lock(&job_mu, K_FOREVER);
 	memcpy(status->ssid, hotspot_profile.ssid, sizeof(status->ssid));
 	status->enabled = hotspot_enabled;
@@ -696,10 +696,13 @@ static int hotspot_stop(void)
 {
 #if defined(CONFIG_NET_DHCPV4_SERVER) && defined(CONFIG_WIFI_USAGE_MODE_STA_AP)
 	struct net_if *ap = net_if_get_wifi_sap();
-	if (!ap) return -ENODEV;
-	if (!hotspot_enabled) return 0;
+	if (!ap)
+		return -ENODEV;
+	if (!hotspot_enabled)
+		return 0;
 	int err = net_mgmt(NET_REQUEST_WIFI_AP_DISABLE, ap, NULL, 0);
-	if (err) return err;
+	if (err)
+		return err;
 	(void)net_dhcpv4_server_stop(ap);
 	k_mutex_lock(&job_mu, K_FOREVER);
 	hotspot_enabled = false;
@@ -716,25 +719,34 @@ static int hotspot_start(const char *ssid, const char *psk)
 	struct net_if *ap = net_if_get_wifi_sap();
 	struct net_in_addr addr, mask, pool;
 	int err;
-	if (!ap) return -ENODEV;
+	if (!ap)
+		return -ENODEV;
 	if (hotspot_enabled) {
 		err = hotspot_stop();
-		if (err) return err;
+		if (err)
+			return err;
 	}
 	err = net_if_up(ap);
-	if (err && err != -EALREADY) return err;
+	if (err && err != -EALREADY)
+		return err;
 	net_addr_pton(NET_AF_INET, "192.168.4.1", &addr);
 	net_addr_pton(NET_AF_INET, "255.255.255.0", &mask);
 	net_addr_pton(NET_AF_INET, "192.168.4.10", &pool);
 	if (!net_if_ipv4_addr_add(ap, &addr, NET_ADDR_MANUAL, 0) ||
-	    !net_if_ipv4_set_netmask_by_addr(ap, &addr, &mask)) return -EIO;
+	    !net_if_ipv4_set_netmask_by_addr(ap, &addr, &mask))
+		return -EIO;
 	err = net_dhcpv4_server_start(ap, &pool);
-	if (err) return err;
+	if (err)
+		return err;
 	struct wifi_connect_req_params params = {
-		.ssid = (const uint8_t *)ssid, .ssid_length = strlen(ssid),
-		.psk = (const uint8_t *)psk, .psk_length = strlen(psk),
-		.security = WIFI_SECURITY_TYPE_PSK, .channel = 6,
-		.band = WIFI_FREQ_BAND_2_4_GHZ, .mfp = WIFI_MFP_OPTIONAL,
+	        .ssid = (const uint8_t *)ssid,
+	        .ssid_length = strlen(ssid),
+	        .psk = (const uint8_t *)psk,
+	        .psk_length = strlen(psk),
+	        .security = WIFI_SECURITY_TYPE_PSK,
+	        .channel = 6,
+	        .band = WIFI_FREQ_BAND_2_4_GHZ,
+	        .mfp = WIFI_MFP_OPTIONAL,
 	};
 	err = net_mgmt(NET_REQUEST_WIFI_AP_ENABLE, ap, &params, sizeof(params));
 	if (err) {
@@ -750,7 +762,8 @@ static int hotspot_start(const char *ssid, const char *psk)
 	hotspot_configured = true;
 	k_mutex_unlock(&job_mu);
 	err = aster_kv_set(WIFI_KV_ID, "hotspot", &profile, sizeof(profile));
-	if (err) LOG_WRN("hotspot enabled but saving configuration failed: %d", err);
+	if (err)
+		LOG_WRN("hotspot enabled but saving configuration failed: %d", err);
 	return 0;
 #else
 	ARG_UNUSED(ssid);
@@ -774,15 +787,16 @@ static void hotspot_load(void)
 	wifi_profile_t profile = {0};
 	size_t len = 0;
 	int err = aster_kv_get(WIFI_KV_ID, "hotspot", &profile, sizeof(profile), &len);
-	if (err == -ENOENT) return;
+	if (err == -ENOENT)
+		return;
 	if (err) {
 		LOG_WRN("saved hotspot read failed: %d", err);
 		return;
 	}
 	size_t slen = strnlen(profile.ssid, sizeof(profile.ssid));
-	if (len != sizeof(profile) || profile.version != WIFI_PROFILE_VERSION ||
-	    !slen || slen > ASTER_WIFI_SSID_MAX || profile.psk_len < 8 ||
-	    profile.psk_len > 63 || strnlen(profile.psk, sizeof(profile.psk)) != profile.psk_len) {
+	if (len != sizeof(profile) || profile.version != WIFI_PROFILE_VERSION || !slen ||
+	    slen > ASTER_WIFI_SSID_MAX || profile.psk_len < 8 || profile.psk_len > 63 ||
+	    strnlen(profile.psk, sizeof(profile.psk)) != profile.psk_len) {
 		LOG_WRN("saved hotspot configuration is invalid");
 		return;
 	}
@@ -806,8 +820,8 @@ static int queue_wifi_job_impl(uint32_t op, const char *ssid, const char *psk)
 			return -ENOMEM;
 		}
 		k_work_queue_start(&job_q, job_stack,
-				   K_KERNEL_STACK_LEN(8192) - K_KERNEL_STACK_RESERVED,
-				   K_PRIO_PREEMPT(12), NULL);
+		                   K_KERNEL_STACK_LEN(8192) - K_KERNEL_STACK_RESERVED,
+		                   K_PRIO_PREEMPT(12), NULL);
 		job_q_up = true;
 	}
 	if (job_busy) {
@@ -817,8 +831,8 @@ static int queue_wifi_job_impl(uint32_t op, const char *ssid, const char *psk)
 	if (op == ASTER_PLAT_WIFI_OP_HOTSPOT_START) {
 		const char *name = ssid ? ssid : hotspot_profile.ssid;
 		const char *password = psk && psk[0] ? psk : hotspot_profile.psk;
-		if (!name[0] || strlen(name) > ASTER_WIFI_SSID_MAX ||
-		    strlen(password) < 8 || strlen(password) > 63) {
+		if (!name[0] || strlen(name) > ASTER_WIFI_SSID_MAX || strlen(password) < 8 ||
+		    strlen(password) > 63) {
 			k_mutex_unlock(&job_mu);
 			return -EINVAL;
 		}
@@ -856,10 +870,15 @@ static int queue_wifi_job_impl(uint32_t op, const char *ssid, const char *psk)
 	return err;
 }
 
-static int queue_wifi_job(uint32_t op,const char *ssid,const char *psk)
+static int queue_wifi_job(uint32_t op, const char *ssid, const char *psk)
 {
- int r=aster_power_activity_begin();if(r)return r;
- r=queue_wifi_job_impl(op,ssid,psk);if(r)aster_power_activity_end();return r;
+	int r = aster_power_activity_begin();
+	if (r)
+		return r;
+	r = queue_wifi_job_impl(op, ssid, psk);
+	if (r)
+		aster_power_activity_end();
+	return r;
 }
 
 static void wifi_job_fn(struct k_work *work)
@@ -918,7 +937,7 @@ static void wifi_job_fn(struct k_work *work)
 	job_op = ASTER_PLAT_WIFI_OP_NONE;
 	job_busy = false;
 	k_mutex_unlock(&job_mu);
-    aster_power_activity_end();
+	aster_power_activity_end();
 	if (err) {
 		LOG_WRN("async operation %u failed: %d", (unsigned)op, err);
 	} else {
@@ -975,8 +994,7 @@ int aster_plat_wifi_forget_start(void)
 	return queue_wifi_job(ASTER_PLAT_WIFI_OP_FORGET, NULL, NULL);
 }
 
-void aster_plat_wifi_operation(uint32_t *operation, uint32_t *last_operation,
-			       int *last_result)
+void aster_plat_wifi_operation(uint32_t *operation, uint32_t *last_operation, int *last_result)
 {
 	k_mutex_lock(&job_mu, K_FOREVER);
 	if (operation) {
@@ -1000,8 +1018,7 @@ int aster_plat_wifi_storage_ready(void)
 	int err;
 
 	memset(&profile, 0, sizeof(profile));
-	err = aster_kv_get(WIFI_KV_ID, WIFI_KV_KEY, &profile,
-			   sizeof(profile), &len);
+	err = aster_kv_get(WIFI_KV_ID, WIFI_KV_KEY, &profile, sizeof(profile), &len);
 	if (err == -ENOENT) {
 		return 0;
 	}
@@ -1011,9 +1028,8 @@ int aster_plat_wifi_storage_ready(void)
 	}
 	ssid_len = strnlen(profile.ssid, sizeof(profile.ssid));
 	psk_len = profile.psk_len;
-	if (len != sizeof(profile) || profile.version != WIFI_PROFILE_VERSION ||
-	    ssid_len == 0 || ssid_len > ASTER_WIFI_SSID_MAX ||
-	    psk_len > 64 || (psk_len != 0 && psk_len < 8) ||
+	if (len != sizeof(profile) || profile.version != WIFI_PROFILE_VERSION || ssid_len == 0 ||
+	    ssid_len > ASTER_WIFI_SSID_MAX || psk_len > 64 || (psk_len != 0 && psk_len < 8) ||
 	    profile.ssid[ssid_len] != 0 || profile.psk[psk_len] != 0) {
 		LOG_WRN("saved Wi-Fi profile is invalid; forgetting it");
 		(void)aster_kv_delete(WIFI_KV_ID, WIFI_KV_KEY);
@@ -1080,8 +1096,7 @@ static int aster_wifi_sys_init(void)
 	}
 	net_mgmt_init_event_callback(&wifi_cb, wifi_handler, WIFI_EVT_SCAN);
 	net_mgmt_add_event_callback(&wifi_cb);
-	net_mgmt_init_event_callback(&ipv4_cb, ipv4_handler,
-				     NET_EVENT_IPV4_DHCP_BOUND);
+	net_mgmt_init_event_callback(&ipv4_cb, ipv4_handler, NET_EVENT_IPV4_DHCP_BOUND);
 	net_mgmt_add_event_callback(&ipv4_cb);
 	LOG_INF("wifi iface %s", iface ? "ready" : "missing");
 	return 0;

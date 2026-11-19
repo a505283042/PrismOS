@@ -3,7 +3,9 @@
 #include <assert.h>
 #include <string.h>
 #include <stdio.h>
-int main(void) {
+
+int main(void)
+{
     aster_setup_json j;
     assert(!aster_setup_json_parse(
         &j, " {\"ssid\":\"中文\\\"Wi-Fi\",\"bytes\":18446744073709551615} \n"));

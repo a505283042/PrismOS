@@ -26,8 +26,7 @@
  * board's PSRAM BSS pool so DMA-capable internal DRAM stays available to the
  * display and audio paths. Keep the host preview on ordinary host BSS. */
 #if defined(__ZEPHYR__)
-#define PP_WORK_BUFFER_ATTR \
-	__attribute__((section(".ext_ram.bss.pp_gfx_work"), aligned(32)))
+#define PP_WORK_BUFFER_ATTR __attribute__((section(".ext_ram.bss.pp_gfx_work"), aligned(32)))
 #endif
 
 /* ---------------- arena (must precede PP_IMPLEMENTATION) ---------------- */
@@ -51,9 +50,9 @@ static void *pp_alloc_hook(size_t size)
 
 /* pretty-poly only ever mallocs/reallocs (both hooked below); PP_CALLOC is
  * defined but never called, so it gets no hook of its own. */
-#define PP_MALLOC(size)     pp_alloc_hook(size)
-#define PP_REALLOC(p, s)    NULL /* never: we pre-size every path */
-#define PP_FREE(p)          ((void)(p))
+#define PP_MALLOC(size) pp_alloc_hook(size)
+#define PP_REALLOC(p, s) NULL /* never: we pre-size every path */
+#define PP_FREE(p) ((void)(p))
 
 #define PP_IMPLEMENTATION
 #include "pretty-poly.h"
@@ -78,7 +77,7 @@ static const ppg_target_t *s_t;
 static uint16_t s_col;
 static int32_t s_bx0, s_by0, s_bx1, s_by1;
 static int32_t s_cx0, s_cy0, s_cx1, s_cy1; /* render window, half-open */
-static bool s_out_be;        /* target holds panel-order words */
+static bool s_out_be;                      /* target holds panel-order words */
 
 /* Coverage-weighted 565 blend into the surface, alpha = tile coverage. */
 static void tile_cb(const pp_tile_t *tile)
@@ -112,8 +111,8 @@ static void tile_cb(const pp_tile_t *tile)
 		tx1 = (int32_t)s_t->w;
 	}
 	for (int32_t y = ty0; y < ty1; y++) {
-		const uint8_t *src = tile->data +
-			(size_t)(y - tile->y) * tile->stride + (size_t)(tx0 - tile->x);
+		const uint8_t *src =
+		        tile->data + (size_t)(y - tile->y) * tile->stride + (size_t)(tx0 - tile->x);
 		uint16_t *dst = s_t->px + (size_t)y * s_t->pitch + (size_t)tx0;
 		uint16_t pc = s_out_be ? pp_bswap16(s_col) : s_col;
 
@@ -131,8 +130,7 @@ static void tile_cb(const pp_tile_t *tile)
 				 * swizzle is free here (it rides along with the
 				 * value the blend already has to compute) whereas
 				 * a post-pass over the frame costs ~7 ms. */
-				*o = pp_bswap16(blend565(pp_bswap16(*o),
-							 s_col, cov));
+				*o = pp_bswap16(blend565(pp_bswap16(*o), s_col, cov));
 			} else {
 				*o = blend565(*o, s_col, cov);
 			}
@@ -252,8 +250,8 @@ static int add_inset_path(pp_poly_t *poly, const float *xy, int n, float inset)
  * 2*r == w|h, emits its shared tangent point twice (to within float rounding);
  * a zero-length edge has no direction, so the stroker's miter normals would
  * divide by noise. Returns the compacted count and the contour bbox. */
-static int compact_contour(const float *xy, int n, float *out, float *x0,
-			   float *y0, float *x1, float *y1)
+static int compact_contour(const float *xy, int n, float *out, float *x0, float *y0, float *x1,
+                           float *y1)
 {
 	int m = 0;
 
@@ -262,28 +260,29 @@ static int compact_contour(const float *xy, int n, float *out, float *x0,
 	for (int i = 0; i < n; i++) {
 		float px = xy[2 * i], py = xy[2 * i + 1];
 
-		if (px < *x0) *x0 = px;
-		if (px > *x1) *x1 = px;
-		if (py < *y0) *y0 = py;
-		if (py > *y1) *y1 = py;
-		if (m > 0 && aster_gfx_same_point(out[2 * m - 2], out[2 * m - 1],
-						px, py)) {
+		if (px < *x0)
+			*x0 = px;
+		if (px > *x1)
+			*x1 = px;
+		if (py < *y0)
+			*y0 = py;
+		if (py > *y1)
+			*y1 = py;
+		if (m > 0 && aster_gfx_same_point(out[2 * m - 2], out[2 * m - 1], px, py)) {
 			continue;
 		}
 		out[2 * m] = px;
 		out[2 * m + 1] = py;
 		m++;
 	}
-	if (m > 3 && aster_gfx_same_point(out[2 * m - 2], out[2 * m - 1], out[0],
-					out[1])) {
+	if (m > 3 && aster_gfx_same_point(out[2 * m - 2], out[2 * m - 1], out[0], out[1])) {
 		m--;
 	}
 	return m;
 }
 
-int ppg_path(const ppg_target_t *t, const float *xy, int n, float stroke_w,
-	     uint16_t col, const ppg_clip_t *clip, int32_t *bx0, int32_t *by0,
-	     int32_t *bx1, int32_t *by1)
+int ppg_path(const ppg_target_t *t, const float *xy, int n, float stroke_w, uint16_t col,
+             const ppg_clip_t *clip, int32_t *bx0, int32_t *by0, int32_t *bx1, int32_t *by1)
 {
 	float cxy[PP_MAX_VERTS * 2];
 	float x0, y0, x1, y1;
@@ -341,8 +340,7 @@ int ppg_path(const ppg_target_t *t, const float *xy, int n, float stroke_w,
 	 * out of the fill. A shape too thin to hold a hole (< 2 strokes wide)
 	 * is left solid: an inverted/self-crossing inner contour would punch
 	 * arbitrary wedges out of it instead. */
-	if (!err && stroke_w > 0.5f && (x1 - x0) > 2.0f * stroke_w &&
-	    (y1 - y0) > 2.0f * stroke_w) {
+	if (!err && stroke_w > 0.5f && (x1 - x0) > 2.0f * stroke_w && (y1 - y0) > 2.0f * stroke_w) {
 		err = add_inset_path(poly, cxy, m, stroke_w);
 	}
 	if (err) {

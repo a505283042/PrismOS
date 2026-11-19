@@ -5,13 +5,19 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+
 static void report(const aster_pkg_policy_t *policy, bool error, const char *format, ...)
 {
-    if (!policy->diagnostic) return;
-    char message[192];va_list args;va_start(args,format);
-    vsnprintf(message,sizeof(message),format,args);va_end(args);
-    policy->diagnostic(error,message);
+	if (!policy->diagnostic)
+		return;
+	char message[192];
+	va_list args;
+	va_start(args, format);
+	vsnprintf(message, sizeof(message), format, args);
+	va_end(args);
+	policy->diagnostic(error, message);
 }
+
 bool aster_pkg_in_bounds(uint32_t off, size_t len, size_t total, size_t base)
 {
 	/* Not `(size_t)off + len <= total`: an app-supplied u32 offset near
@@ -23,11 +29,13 @@ bool aster_pkg_in_bounds(uint32_t off, size_t len, size_t total, size_t base)
 	return o >= base && o <= total && len <= total - o;
 }
 
-int aster_pkg_decode(const aster_pkg_policy_t *policy, const uint8_t *img, size_t size, aster_manifest_t *m,
-		  const uint8_t **wasm, size_t *wasm_len,
-		  const uint8_t **aot, size_t *aot_len, uint32_t *aot_target)
+int aster_pkg_decode(const aster_pkg_policy_t *policy, const uint8_t *img, size_t size,
+                     aster_manifest_t *m, const uint8_t **wasm, size_t *wasm_len,
+                     const uint8_t **aot, size_t *aot_len, uint32_t *aot_target)
 {
-	if (!policy || !policy->target_id || !policy->alloc || !policy->release || !policy->has_feature || !img || !m) return ASTER_EINVAL;
+	if (!policy || !policy->target_id || !policy->alloc || !policy->release ||
+	    !policy->has_feature || !img || !m)
+		return ASTER_EINVAL;
 	if (size < ASTER_PKG_HDRSIZE) {
 		return ASTER_ECORRUPT;
 	}
@@ -114,10 +122,14 @@ int aster_pkg_decode(const aster_pkg_policy_t *policy, const uint8_t *img, size_
 	char mem[128];
 	if (aster_json_obj(jbuf, "memory", mem, sizeof(mem)) == 0) {
 		uint32_t v;
-		if (aster_json_u32(mem, "initial", &v) == 0) m->mem_initial = v;
-		if (aster_json_u32(mem, "max", &v) == 0)     m->mem_max = v;
-		if (aster_json_u32(mem, "stack", &v) == 0)   m->mem_stack = v;
-		if (aster_json_u32(mem, "heap", &v) == 0)    m->mem_heap = v;
+		if (aster_json_u32(mem, "initial", &v) == 0)
+			m->mem_initial = v;
+		if (aster_json_u32(mem, "max", &v) == 0)
+			m->mem_max = v;
+		if (aster_json_u32(mem, "stack", &v) == 0)
+			m->mem_stack = v;
+		if (aster_json_u32(mem, "heap", &v) == 0)
+			m->mem_heap = v;
 	}
 
 	m->requires_n = aster_json_str_array(jbuf, "requires", m->requires, 8);
@@ -133,8 +145,7 @@ int aster_pkg_decode(const aster_pkg_policy_t *policy, const uint8_t *img, size_
 	{
 		char orient[16];
 
-		if (aster_json_str(jbuf, "orientation", orient,
-				 sizeof(orient)) >= 0) {
+		if (aster_json_str(jbuf, "orientation", orient, sizeof(orient)) >= 0) {
 			m->orientation = aster_pkg_norm_orientation(orient);
 			if (m->orientation == ASTER_ORIENT_ANY) {
 				/* Drop the key rather than guess a default: a
@@ -142,22 +153,24 @@ int aster_pkg_decode(const aster_pkg_policy_t *policy, const uint8_t *img, size_
 				 * it must not quietly get the other orientation,
 				 * and this is the only moment anyone can be told
 				 * which package it was. */
-				report(policy, false, "manifest: orientation '%s' is not "
-					"portrait/landscape; ignored, app follows "
-					"the panel", orient);
+				report(policy, false,
+				       "manifest: orientation '%s' is not "
+				       "portrait/landscape; ignored, app follows "
+				       "the panel",
+				       orient);
 			}
 		}
 	}
 
-    /* Aster package identity is mandatory, including interpreter-only packages. */
-    char product[16] = {0}, target_id[64] = {0};
-    aster_json_str(jbuf, "product", product, sizeof(product));
-    aster_json_str(jbuf, "target_id", target_id, sizeof(target_id));
-    if (strcmp(product, "aster") != 0 || strcmp(target_id, policy->target_id) != 0) {
-        report(policy, true, "package product/target mismatch: %s/%s", product, target_id);
-        policy->release(jbuf);
-        return ASTER_EABI;
-    }
+	/* Aster package identity is mandatory, including interpreter-only packages. */
+	char product[16] = {0}, target_id[64] = {0};
+	aster_json_str(jbuf, "product", product, sizeof(product));
+	aster_json_str(jbuf, "target_id", target_id, sizeof(target_id));
+	if (strcmp(product, "aster") != 0 || strcmp(target_id, policy->target_id) != 0) {
+		report(policy, true, "package product/target mismatch: %s/%s", product, target_id);
+		policy->release(jbuf);
+		return ASTER_EABI;
+	}
 	policy->release(jbuf);
 
 	if (m->id[0] == 0) {
@@ -179,7 +192,7 @@ int aster_pkg_decode(const aster_pkg_policy_t *policy, const uint8_t *img, size_
 	}
 	if ((dev >> 16) != appmajor || (((dev >> 8) & 0xFFu) < appminor)) {
 		report(policy, true, "abi mismatch: 需用新 SDK 重编 (device %u.%u app min %u.%u)",
-			dev >> 16, (dev >> 8) & 0xFFu, appmajor, appminor);
+		       dev >> 16, (dev >> 8) & 0xFFu, appmajor, appminor);
 		return ASTER_EABI;
 	}
 
@@ -257,8 +270,7 @@ void aster_pkg_norm_category(const char *src, char *dst, size_t n)
 	if (!src || !src[0]) {
 		return;
 	}
-	if (strcmp(src, "game") != 0 && strcmp(src, "tool") != 0 &&
-	    strcmp(src, "system") != 0) {
+	if (strcmp(src, "game") != 0 && strcmp(src, "tool") != 0 && strcmp(src, "system") != 0) {
 		return;
 	}
 	strncpy(dst, src, n - 1);
@@ -320,12 +332,15 @@ void aster_pkg_read_description(const char *json, char *out)
 		return;
 	}
 	size_t len = strlen(out);
-	if (!len) return;
+	if (!len)
+		return;
 	size_t start = len - 1;
-	while (start && ((unsigned char)out[start] & 0xc0) == 0x80) start--;
+	while (start && ((unsigned char)out[start] & 0xc0) == 0x80)
+		start--;
 	unsigned char c = (unsigned char)out[start];
 	size_t width = c < 0x80 ? 1 : c < 0xe0 ? 2 : c < 0xf0 ? 3 : 4;
-	if (len - start < width) out[start] = 0;
+	if (len - start < width)
+		out[start] = 0;
 }
 
 int aster_json_u32(const char *json, const char *key, uint32_t *out)

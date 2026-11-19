@@ -1,4 +1,5 @@
 """Exercise the actual sparse SD cache with a mixed-size launcher working set."""
+
 import re
 import unittest
 from test_waveshare import ROOT, run_c
@@ -7,8 +8,9 @@ from test_waveshare import ROOT, run_c
 class SparseCache(unittest.TestCase):
     def test_unchanged_app_caption_does_not_request_another_warm(self):
         s = (ROOT / 'systems/zephyr/ui/launcher/flux.c').read_text()
-        helper = s[s.index('static void set_label_text'):s.index('static lv_obj_t *icon(')]
-        run_c(r'''
+        helper = s[s.index('static void set_label_text') : s.index('static lv_obj_t *icon(')]
+        run_c(
+            r'''
 #include <assert.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -30,7 +32,9 @@ static void lv_obj_set_style_transform_scale_y(lv_obj_t *o,int scale,int part){(
 static void aster_ui_font_warm(int px,const char *s) {(void)px;(void)s;}
 static void lv_obj_set_style_text_font(lv_obj_t *o,const lv_font_t *f,int part) {(void)part;o->font=f;}
 static void lv_label_set_text(lv_obj_t *o,const char *s) {o->text=s;}
-''' + helper + r'''
+'''
+            + helper
+            + r'''
 int main(void) {
  lv_obj_t label={.text="",.spec=(16u<<24)|(160u<<12)|100u};
  set_caption_text(&label,"Package");assert(warm_calls==1 && generic.px==10);
@@ -40,15 +44,22 @@ int main(void) {
  set_caption_text(&label,"新的介绍");assert(warm_calls==3);
  return 0;
 }
-''')
+'''
+        )
 
     def test_per_size_cache_lru_and_lifetime(self):
-        s=(ROOT/'systems/zephyr/ui/font_sd.c').read_text()
-        constants='\n'.join(re.findall(r'^#define (?:SPARSE_(?:BYTES|N)|SCRATCH_BYTES)\s+.+$',s,re.M))
-        structs=s[s.index('typedef struct {uint8_t w,h;'):s.index('static const uint8_t LUT2')]
-        code=s[s.index('/* A synchronous UI operation'):s.index('static bool sd_get_dsc')]
-        lifetime=s[s.index('void aster_font_sd_cache_drop'):s.index('bool aster_font_sd_cache_status')]
-        run_c(r'''
+        s = (ROOT / 'systems/zephyr/ui/font_sd.c').read_text()
+        constants = '\n'.join(
+            re.findall(r'^#define (?:SPARSE_(?:BYTES|N)|SCRATCH_BYTES)\s+.+$', s, re.M)
+        )
+        start = re.search(r'typedef struct\s*\{\s*uint8_t w,\s*h;', s).start()
+        structs = s[start : s.index('static const uint8_t LUT2', start)]
+        code = s[s.index('/* A synchronous UI operation') : s.index('static bool sd_get_dsc')]
+        lifetime = s[
+            s.index('void aster_font_sd_cache_drop') : s.index('bool aster_font_sd_cache_status')
+        ]
+        run_c(
+            r'''
 #include <assert.h>
 #include <stdint.h>
 #include <string.h>
@@ -66,7 +77,9 @@ int main(void) {
 #define SCRATCH_BYTES ASTER_FONT_MAX_SCRATCH
 typedef struct {int unused;} lv_draw_buf_t;
 typedef struct {int unused;} lv_font_t;
-''' +structs+r'''
+'''
+            + structs
+            + r'''
 static slot_t s_slots[2];
 static bool s_inited=true;
 enum {ST_EMPTY,ST_SPARSE,ST_DEAD};
@@ -92,7 +105,10 @@ static bool read_at(aster_os_file_t *f,unsigned off,void *buf,unsigned len) {
 static void rd_rec(cp_rec_t *r,const uint8_t raw[16]) {
  uint32_t index;memcpy(&index,raw,4);memset(r,0,sizeof(*r));r->w=8;r->h=16;r->doff=index*64;r->dlen=64;
 }
-''' +code+lifetime+r'''
+'''
+            + code
+            + lifetime
+            + r'''
 int main(void) {
  for(int i=0;i<2;i++) {s_slots[i].px=i?16:20;snprintf(s_slots[i].path,64,"%u",s_slots[i].px);s_slots[i].rec_foff=32;s_slots[i].bm_foff=100000;s_slots[i].fsize=1000000;}
  assert(!s_slots[0].cache && !live_allocs);
@@ -163,32 +179,53 @@ int main(void) {
  for(unsigned i=0;i<2;i++)assert(!s_slots[i].ivs && !s_slots[i].cache && s_slots[i].state==ST_EMPTY && !s_slots[i].iv_cnt && !s_slots[i].gl_cnt);
  return 0;
 }
-''')
+'''
+        )
 
     def test_accelerated_font_bake_matches_scalar_edge_sampling(self):
-        import importlib.util,random
-        for dependency in ('numpy','freetype','fontTools'):
+        import importlib.util, random
+
+        for dependency in ('numpy', 'freetype', 'fontTools'):
             if importlib.util.find_spec(dependency) is None:
-                self.skipTest('optional font bake dependency unavailable: '+dependency)
-        spec=importlib.util.spec_from_file_location('cpfont_bake',ROOT/'tools/build_cpfont.py')
-        bake=importlib.util.module_from_spec(spec);spec.loader.exec_module(bake)
-        if bake.np is None: self.skipTest('optional numpy accelerator unavailable')
-        numpy=bake.np;r=random.Random(42)
+                self.skipTest('optional font bake dependency unavailable: ' + dependency)
+        spec = importlib.util.spec_from_file_location('cpfont_bake', ROOT / 'tools/build_cpfont.py')
+        bake = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(bake)
+        if bake.np is None:
+            self.skipTest('optional numpy accelerator unavailable')
+        numpy = bake.np
+        r = random.Random(42)
         for _ in range(80):
-            w,h=r.randrange(1,45),r.randrange(1,45)
-            args=(bytes(r.randrange(256) for _ in range(w*h)),w,h,r.randrange(-8,9),r.randrange(-8,50),r.randrange(-4,5),r.randrange(0,15),r.choice([1,2,4]))
-            fast=bake.resample_anchored(*args)
+            w, h = r.randrange(1, 45), r.randrange(1, 45)
+            args = (
+                bytes(r.randrange(256) for _ in range(w * h)),
+                w,
+                h,
+                r.randrange(-8, 9),
+                r.randrange(-8, 50),
+                r.randrange(-4, 5),
+                r.randrange(0, 15),
+                r.choice([1, 2, 4]),
+            )
+            fast = bake.resample_anchored(*args)
             try:
-                bake.np=None;slow=bake.resample_anchored(*args)
-            finally: bake.np=numpy
-            self.assertEqual(fast,slow)
+                bake.np = None
+                slow = bake.resample_anchored(*args)
+            finally:
+                bake.np = numpy
+            self.assertEqual(fast, slow)
 
     def test_large_complete_font_passes_streaming_file_size_gate(self):
-        s=(ROOT/'systems/zephyr/services/aster_file_svc.c').read_text()
-        define=re.search(r'^#define FSVC_MAX_FILE.*$',s,re.M)[0]
-        a=s.index('static void do_put(');b=s.index('\n\tchar tmp[192];',a)
-        gate=s[a:b].replace('{\n','{\n (void)dev;(void)path;(void)want_crc;(void)off;\n',1)+'\n}\n'
-        run_c(r'''
+        s = (ROOT / 'systems/zephyr/services/aster_file_svc.c').read_text()
+        define = re.search(r'^#define FSVC_MAX_FILE.*$', s, re.M)[0]
+        a = s.index('static void do_put(')
+        b = s.index('\n\tchar tmp[192];', a)
+        gate = (
+            s[a:b].replace('{\n', '{\n (void)dev;(void)path;(void)want_crc;(void)off;\n', 1)
+            + '\n}\n'
+        )
+        run_c(
+            r'''
 #include <assert.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -198,32 +235,55 @@ struct device {int unused;};
 static int verdict;
 static void cdc_reply(const char *s,...) {va_list a;va_start(a,s);verdict=va_arg(a,int);va_end(a);}
 static int aster_storage_mounted(void) {return 0;}
-''' +define+'\n'+gate+r'''
+'''
+            + define
+            + '\n'
+            + gate
+            + r'''
 int main(void) {
  do_put(NULL,"font",19586836,0,0);assert(verdict==-ENODEV);
  do_put(NULL,"font",27776000,0,0);assert(verdict==-ENODEV);
  do_put(NULL,"font",FSVC_MAX_FILE+1,0,0);assert(verdict==-EFBIG);
  return 0;
 }
-''')
+'''
+        )
 
     def test_native_hinting_keeps_metrics_and_grayscale_at_requested_size(self):
         import importlib.util
-        for dependency in ('freetype','fontTools'):
+
+        for dependency in ('freetype', 'fontTools'):
             if importlib.util.find_spec(dependency) is None:
-                self.skipTest('optional font bake dependency unavailable: '+dependency)
-        spec=importlib.util.spec_from_file_location('bake_hint',ROOT/'tools/build_cpfont.py')
-        bake=importlib.util.module_from_spec(spec);spec.loader.exec_module(bake)
-        text=set(map(ord,'音乐设置清晰中文笔画ABCxyz012345'))
-        for px in (12,14,16,18,20):
+                self.skipTest('optional font bake dependency unavailable: ' + dependency)
+        spec = importlib.util.spec_from_file_location('bake_hint', ROOT / 'tools/build_cpfont.py')
+        bake = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(bake)
+        text = set(map(ord, '音乐设置清晰中文笔画ABCxyz012345'))
+        for px in (12, 14, 16, 18, 20):
             with self.subTest(px=px):
-                base=bake.rasterize(ROOT/'resources/fonts/ui.ttf',px,text,bake.make_lut(1),4)
-                hinted=bake.rasterize(ROOT/'resources/fonts/ui.ttf',px,text,bake.make_lut(1),4,bake.NATIVE_HINT_MAX_DEFAULT)
-                self.assertEqual(base[1],hinted[1])
-                self.assertEqual(base[4:7],hinted[4:7])
-                self.assertEqual([g[2] for g in base[2]],[g[2] for g in hinted[2]])
-                self.assertNotEqual(base[3],hinted[3])
-                levels={v for packed in hinted[3] for byte in packed for v in (byte>>4,byte&15)}
-                self.assertGreater(len(levels),8) # Grayscale, not monochrome thresholding.
-        unchanged=bake.rasterize(ROOT/'resources/fonts/ui.ttf',16,text,bake.make_lut(1),4,12)
-        self.assertEqual(unchanged,bake.rasterize(ROOT/'resources/fonts/ui.ttf',16,text,bake.make_lut(1),4))
+                base = bake.rasterize(
+                    ROOT / 'resources/fonts/ui.ttf', px, text, bake.make_lut(1), 4
+                )
+                hinted = bake.rasterize(
+                    ROOT / 'resources/fonts/ui.ttf',
+                    px,
+                    text,
+                    bake.make_lut(1),
+                    4,
+                    bake.NATIVE_HINT_MAX_DEFAULT,
+                )
+                self.assertEqual(base[1], hinted[1])
+                self.assertEqual(base[4:7], hinted[4:7])
+                self.assertEqual([g[2] for g in base[2]], [g[2] for g in hinted[2]])
+                self.assertNotEqual(base[3], hinted[3])
+                levels = {
+                    v for packed in hinted[3] for byte in packed for v in (byte >> 4, byte & 15)
+                }
+                self.assertGreater(len(levels), 8)  # Grayscale, not monochrome thresholding.
+        unchanged = bake.rasterize(
+            ROOT / 'resources/fonts/ui.ttf', 16, text, bake.make_lut(1), 4, 12
+        )
+        self.assertEqual(
+            unchanged,
+            bake.rasterize(ROOT / 'resources/fonts/ui.ttf', 16, text, bake.make_lut(1), 4),
+        )

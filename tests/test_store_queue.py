@@ -1,11 +1,13 @@
-from test_waveshare import ROOT, run_c
+import re
 import unittest
+from test_waveshare import ROOT, run_c
 
 
 class StoreQueue(unittest.TestCase):
     def test_install_runs_only_after_cleanup_and_receipt_is_updated(self):
         source = (ROOT / 'systems/zephyr/services/aster_app_mgr.c').read_text()
-        source = source[source.index('static struct {char owner[64],package[256],resources[256];} pending_install;'):]
+        declaration = re.search(r'static struct\s*\{[^{}]*\}\s*pending_install;', source)
+        source = source[declaration.start():source.index('\nint aster_app_mgr_install(', declaration.end())]
         header=(ROOT / 'systems/zephyr/services/aster_pkg.h').read_text()
         progress=header[header.index('typedef enum'):header.index('#ifdef CONFIG_ASTER_PKG_FAULT_INJECTION')]
         run_c(r'''

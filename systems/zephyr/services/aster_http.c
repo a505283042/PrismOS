@@ -29,6 +29,7 @@
 #endif
 #define HTTP_IO ASTER_HTTP_BODY_BUFFER
 #define HTTP_TX_MAX (ASTER_HTTP_URL_MAX + ASTER_HTTP_HEADERS_MAX + 512)
+
 struct http_request {
     uint64_t owner, transport_owner;
     uint32_t transport;
@@ -62,9 +63,11 @@ K_SEM_DEFINE(http_wake, 0, 1);
 static char *custom_ca;
 static bool external_tls_reserved;
 static size_t custom_ca_length;
+
 static bool tls_busy(void)
 {
-    if (external_tls_reserved) return true;
+    if (external_tls_reserved)
+        return true;
     for (unsigned i = 0; i < ASTER_NET_SLOTS; ++i)
         if (requests[i] && requests[i]->tls_reserved)
             return true;
@@ -83,15 +86,20 @@ static int tls_release(struct http_request *r)
     return rc;
 }
 #endif
-static bool finished(uint32_t state) { return state >= ASTER_HTTP_DONE; }
+static bool finished(uint32_t state)
+{
+    return state >= ASTER_HTTP_DONE;
+}
+
 static struct http_request *find(uint64_t owner, uint32_t handle)
 {
     for (unsigned i = 0; i < ASTER_NET_SLOTS; ++i)
-        if (requests[i] && requests[i]->owner == owner &&
-            requests[i]->pub.handle == handle && !requests[i]->closing)
+        if (requests[i] && requests[i]->owner == owner && requests[i]->pub.handle == handle &&
+            !requests[i]->closing)
             return requests[i];
     return NULL;
 }
+
 static void state(struct http_request *r, uint32_t value, int error)
 {
     k_mutex_lock(&http_lock, K_FOREVER);
@@ -106,6 +114,7 @@ static void state(struct http_request *r, uint32_t value, int error)
         r->stop_pending = true;
     k_mutex_unlock(&http_lock);
 }
+
 static int request_head(struct http_request *r)
 {
     const char *method = r->opts.method == ASTER_HTTP_HEAD   ? "HEAD"
@@ -121,18 +130,17 @@ static int request_head(struct http_request *r)
         return -EMSGSIZE;
     r->tx_length = n;
     r->tx_offset = r->upload_offset = r->input_length = r->input_offset = 0;
-    aster_http_codec_init(&r->codec, r->opts.method == ASTER_HTTP_HEAD,
-                          r->opts.body_limit);
+    aster_http_codec_init(&r->codec, r->opts.method == ASTER_HTTP_HEAD, r->opts.body_limit);
     return 0;
 }
+
 static int redirect_prepare(struct http_request *r)
 {
     unsigned code = r->codec.status;
     if (code != 301 && code != 302 && code != 303 && code != 307 && code != 308)
         return 0;
     size_t n;
-    int rc = aster_http_field_get(&r->codec.headers, "Location", 0, r->tx,
-                                  sizeof(r->tx) - 1, &n);
+    int rc = aster_http_field_get(&r->codec.headers, "Location", 0, r->tx, sizeof(r->tx) - 1, &n);
     if (rc == -ENOENT)
         return 0;
     if (rc)
@@ -170,6 +178,7 @@ static int redirect_prepare(struct http_request *r)
     r->redirect_pending = true;
     return 1;
 }
+
 static void process(struct http_request *r, bool cancelled)
 {
     if (cancelled && !finished(r->pub.state))
@@ -196,9 +205,8 @@ static void process(struct http_request *r, bool cancelled)
             return;
 #endif
         int64_t remaining = r->deadline - k_uptime_get();
-        int rc = aster_net_restart(r->transport_owner, r->transport,
-                                   r->next_url.host, r->next_url.port,
-                                   remaining > 30000 ? 30000 : remaining);
+        int rc = aster_net_restart(r->transport_owner, r->transport, r->next_url.host,
+                                   r->next_url.port, remaining > 30000 ? 30000 : remaining);
         if (rc == -EAGAIN)
             return;
         if (rc < 0) {
@@ -250,8 +258,8 @@ static void process(struct http_request *r, bool cancelled)
                 length = custom_ca_length;
             } else
                 pem = aster_http_tls_default_ca(&length);
-            rc = aster_http_tls_new(&r->tls, r->transport_owner, r->transport,
-                                    r->url.host, pem, length, &r->tls_report);
+            rc = aster_http_tls_new(&r->tls, r->transport_owner, r->transport, r->url.host, pem,
+                                    length, &r->tls_report);
             if (!rc) {
                 k_mutex_lock(&http_lock, K_FOREVER);
                 r->tls_bytes = aster_http_tls_context_bytes();
@@ -290,8 +298,7 @@ static void process(struct http_request *r, bool cancelled)
                 rc = aster_http_tls_send(r->tls, p, n, &r->tls_report);
             else
 #endif
-                rc = aster_net_send(r->transport_owner, r->transport, p, n,
-                                    NULL, 0);
+                rc = aster_net_send(r->transport_owner, r->transport, p, n, NULL, 0);
             if (rc < 0 && rc != -EAGAIN)
                 tx_error = rc;
             if (rc > 0) {
@@ -318,12 +325,11 @@ static void process(struct http_request *r, bool cancelled)
         int rc;
 #if defined(CONFIG_ASTER_HTTP_TLS)
         if (r->tls)
-            rc = aster_http_tls_recv(r->tls, r->input, sizeof(r->input),
-                                     &r->tls_report);
+            rc = aster_http_tls_recv(r->tls, r->input, sizeof(r->input), &r->tls_report);
         else
 #endif
-            rc = aster_net_recv(r->transport_owner, r->transport, r->input,
-                                sizeof(r->input), &required, NULL, NULL);
+            rc = aster_net_recv(r->transport_owner, r->transport, r->input, sizeof(r->input),
+                                &required, NULL, NULL);
         if (rc == -EAGAIN) {
             if (tx_error)
                 state(r, ASTER_HTTP_FAILED, tx_error);
@@ -343,9 +349,9 @@ static void process(struct http_request *r, bool cancelled)
     }
     bool previous = r->codec.headers_ready;
     size_t used, wrote;
-    int rc = aster_http_codec_feed(&r->codec, r->input + r->input_offset,
-                                   r->input_length - r->input_offset, &used,
-                                   r->decoded, cap, &wrote);
+    int rc =
+        aster_http_codec_feed(&r->codec, r->input + r->input_offset,
+                              r->input_length - r->input_offset, &used, r->decoded, cap, &wrote);
     r->input_offset += used;
     if (!previous && r->codec.headers_ready) {
         if (!r->ttfb_ms)
@@ -374,6 +380,7 @@ static void process(struct http_request *r, bool cancelled)
     if (rc || r->codec.state == HC_DONE)
         state(r, rc ? ASTER_HTTP_FAILED : ASTER_HTTP_DONE, rc);
 }
+
 static bool http_tick(void)
 {
     bool active = false;
@@ -406,11 +413,13 @@ static bool http_tick(void)
         k_mutex_lock(&http_lock, K_FOREVER);
         uint32_t st = r->pub.state;
         bool changed = st != r->published_state;
-        if (changed) r->published_state = st;
+        if (changed)
+            r->published_state = st;
         uint64_t owner = r->owner;
         uint32_t handle = r->pub.handle;
         k_mutex_unlock(&http_lock);
-        if (changed) aster_net_event_post(owner, handle, ASTER_NET_EVENT_HTTP, st);
+        if (changed)
+            aster_net_event_post(owner, handle, ASTER_NET_EVENT_HTTP, st);
     }
     return active;
 }
@@ -420,12 +429,15 @@ static bool http_tick(void)
  * priority, but force a 1 ms sleep after each 2 ms CPU slice so native TCP and
  * the shell retain scheduling opportunities. No blocking work runs in ISR. */
 static atomic_t http_cpu_yields;
+
 static void http_budget_resume(struct k_timer *timer)
 {
     (void)timer;
     k_thread_resume(&http_thread);
 }
+
 K_TIMER_DEFINE(http_budget_timer, http_budget_resume, NULL);
+
 static void http_budget_expired(struct k_thread *thread, void *data)
 {
     (void)data;
@@ -440,8 +452,7 @@ static void http_worker(void *a, void *b, void *c)
     (void)b;
     (void)c;
 #if !defined(ASTER_HTTP_HOST_TEST) && !defined(ASTER_SYSTEM_ESP_IDF)
-    k_thread_time_slice_set(&http_thread, k_ms_to_ticks_ceil32(2),
-                            http_budget_expired, NULL);
+    k_thread_time_slice_set(&http_thread, k_ms_to_ticks_ceil32(2), http_budget_expired, NULL);
 #endif
     for (;;) {
         bool active = http_tick();
@@ -457,67 +468,92 @@ static void http_worker(void *a, void *b, void *c)
         k_sem_take(&http_wake, active ? K_MSEC(HTTP_POLL_MS) : K_FOREVER);
     }
 }
+
 static int http_worker_ensure(void)
 {
-    if (http_stack) return 0;
+    if (http_stack)
+        return 0;
     http_stack = aster_dram_alloc(K_KERNEL_STACK_LEN(HTTP_STACK));
-    if (!http_stack) return -ENOMEM;
-    k_thread_create(&http_thread, http_stack, HTTP_STACK, http_worker, NULL,
-                    NULL, NULL, K_PRIO_PREEMPT(7), 0, K_NO_WAIT);
+    if (!http_stack)
+        return -ENOMEM;
+    k_thread_create(&http_thread, http_stack, HTTP_STACK, http_worker, NULL, NULL, NULL,
+                    K_PRIO_PREEMPT(7), 0, K_NO_WAIT);
     k_thread_name_set(&http_thread, "aster_http");
     return 0;
 }
-void aster_http_svc_worker_signal(void) { k_sem_give(&http_wake); }
+
+void aster_http_svc_worker_signal(void)
+{
+    k_sem_give(&http_wake);
+}
+
 int aster_http_svc_worker_wake(void)
 {
-    if (k_mutex_lock(&http_lock, K_NO_WAIT)) return -EAGAIN;
+    if (k_mutex_lock(&http_lock, K_NO_WAIT))
+        return -EAGAIN;
     int rc = http_worker_ensure();
     k_mutex_unlock(&http_lock);
     k_sem_give(&http_wake);
     return rc;
 }
+
 int aster_http_svc_tls_acquire(char **pem, size_t *length)
 {
 #if defined(CONFIG_ASTER_HTTP_TLS)
-    if (!pem || !length || *pem) return -EINVAL;
-    if (k_mutex_lock(&http_lock, K_NO_WAIT)) return -EAGAIN;
+    if (!pem || !length || *pem)
+        return -EINVAL;
+    if (k_mutex_lock(&http_lock, K_NO_WAIT))
+        return -EAGAIN;
     int rc = -EBUSY;
     if (!tls_busy()) {
         size_t n;
         const char *source = custom_ca ? custom_ca : aster_http_tls_default_ca(&n);
-        if (custom_ca) n = custom_ca_length;
+        if (custom_ca)
+            n = custom_ca_length;
         char *copy = aster_psram_alloc(n);
-        if (!copy) rc = -ENOMEM;
+        if (!copy)
+            rc = -ENOMEM;
         else {
-            memcpy(copy, source, n); *pem = copy; *length = n;
-            external_tls_reserved = true; rc = 0;
+            memcpy(copy, source, n);
+            *pem = copy;
+            *length = n;
+            external_tls_reserved = true;
+            rc = 0;
         }
     }
     k_mutex_unlock(&http_lock);
     return rc;
 #else
-    (void)pem; (void)length; return -ENOTSUP;
+    (void)pem;
+    (void)length;
+    return -ENOTSUP;
 #endif
 }
+
 int aster_http_svc_tls_release(char **pem)
 {
 #if defined(CONFIG_ASTER_HTTP_TLS)
-    if (!pem || !*pem) return -EINVAL;
-    if (k_mutex_lock(&http_lock, K_NO_WAIT)) return -EAGAIN;
-    aster_psram_free(*pem); *pem = NULL; external_tls_reserved = false;
-    k_mutex_unlock(&http_lock); return 0;
+    if (!pem || !*pem)
+        return -EINVAL;
+    if (k_mutex_lock(&http_lock, K_NO_WAIT))
+        return -EAGAIN;
+    aster_psram_free(*pem);
+    *pem = NULL;
+    external_tls_reserved = false;
+    k_mutex_unlock(&http_lock);
+    return 0;
 #else
-    (void)pem; return -ENOTSUP;
+    (void)pem;
+    return -ENOTSUP;
 #endif
 }
+
 int aster_http_svc_start(uint64_t owner, const struct aster_http_options *o)
 {
     if (!owner || owner > INT64_MAX || !o || o->method < ASTER_HTTP_GET ||
-        o->method > ASTER_HTTP_POST || !o->timeout_ms ||
-        o->timeout_ms > 600000 || !o->body_limit || o->body_limit > 67108864 ||
-        o->body_length > ASTER_HTTP_UPLOAD_MAX ||
-        (!o->body && o->body_length) ||
-        (o->method != ASTER_HTTP_POST && o->body_length))
+        o->method > ASTER_HTTP_POST || !o->timeout_ms || o->timeout_ms > 600000 || !o->body_limit ||
+        o->body_limit > 67108864 || o->body_length > ASTER_HTTP_UPLOAD_MAX ||
+        (!o->body && o->body_length) || (o->method != ASTER_HTTP_POST && o->body_length))
         return -EINVAL;
     int rc = aster_http_validate_headers(o->headers, o->headers_length);
     if (rc)
@@ -576,7 +612,10 @@ int aster_http_svc_start(uint64_t owner, const struct aster_http_options *o)
         goto out;
     }
     rc = http_worker_ensure();
-    if (rc) { aster_psram_free(r); goto out; }
+    if (rc) {
+        aster_psram_free(r);
+        goto out;
+    }
     rc = aster_net_open(r->transport_owner, ASTER_NET_TCP, url.host, url.port,
                         o->timeout_ms > 30000 ? 30000 : o->timeout_ms);
     if (rc < 0) {
@@ -593,8 +632,8 @@ out:
     k_sem_give(&http_wake);
     return rc;
 }
-int aster_http_svc_status(uint64_t owner, uint32_t h,
-                      struct aster_http_snapshot *out)
+
+int aster_http_svc_status(uint64_t owner, uint32_t h, struct aster_http_snapshot *out)
 {
     if (!out)
         return -EINVAL;
@@ -606,6 +645,7 @@ int aster_http_svc_status(uint64_t owner, uint32_t h,
     k_mutex_unlock(&http_lock);
     return r ? 0 : -EBADF;
 }
+
 int aster_http_svc_read(uint64_t owner, uint32_t h, void *out, size_t cap)
 {
     if (!out || !cap)
@@ -628,8 +668,9 @@ int aster_http_svc_read(uint64_t owner, uint32_t h, void *out, size_t cap)
     k_sem_give(&http_wake);
     return rc;
 }
-int aster_http_svc_header(uint64_t owner, uint32_t h, const char *name,
-                      unsigned index, char *out, size_t cap, size_t *length)
+
+int aster_http_svc_header(uint64_t owner, uint32_t h, const char *name, unsigned index, char *out,
+                          size_t cap, size_t *length)
 {
     if (k_mutex_lock(&http_lock, K_NO_WAIT))
         return -EAGAIN;
@@ -637,11 +678,11 @@ int aster_http_svc_header(uint64_t owner, uint32_t h, const char *name,
     int rc = !r ? -EBADF
              : !r->pub.headers_ready
                  ? -EAGAIN
-                 : aster_http_field_get(&r->published_headers, name, index, out,
-                                        cap, length);
+                 : aster_http_field_get(&r->published_headers, name, index, out, cap, length);
     k_mutex_unlock(&http_lock);
     return rc;
 }
+
 static int http_end(uint64_t owner, uint32_t h, bool close)
 {
     if (k_mutex_lock(&http_lock, K_NO_WAIT))
@@ -663,8 +704,17 @@ static int http_end(uint64_t owner, uint32_t h, bool close)
     k_sem_give(&http_wake);
     return r ? 0 : -EBADF;
 }
-int aster_http_svc_close(uint64_t o, uint32_t h) { return http_end(o, h, true); }
-int aster_http_svc_cancel(uint64_t o, uint32_t h) { return http_end(o, h, false); }
+
+int aster_http_svc_close(uint64_t o, uint32_t h)
+{
+    return http_end(o, h, true);
+}
+
+int aster_http_svc_cancel(uint64_t o, uint32_t h)
+{
+    return http_end(o, h, false);
+}
+
 int aster_http_svc_close_owner(uint64_t owner)
 {
     if (k_mutex_lock(&http_lock, K_NO_WAIT))
@@ -679,6 +729,7 @@ int aster_http_svc_close_owner(uint64_t owner)
      * transport/crypto progress, just as the underlying network service does. */
     return 0;
 }
+
 int aster_http_svc_get_stats(struct aster_http_stats *out)
 {
     if (!out)

@@ -20,8 +20,10 @@ static uint32_t last_draw;
 static uint8_t *qr_pixels;
 static lv_image_dsc_t qr_image;
 static aster_setup_snapshot status;
+
 static lv_obj_t *label(lv_obj_t *parent, const char *value, int x, int y, int w, unsigned px,
-                       uint32_t color) {
+                       uint32_t color)
+{
     lv_obj_t *o = lv_label_create(parent);
     lv_obj_set_pos(o, x, y);
     lv_obj_set_width(o, w);
@@ -31,14 +33,18 @@ static lv_obj_t *label(lv_obj_t *parent, const char *value, int x, int y, int w,
     lv_label_set_text(o, value);
     return o;
 }
-static void click(lv_event_t *event) {
+
+static void click(lv_event_t *event)
+{
     intptr_t command = (intptr_t)lv_event_get_user_data(event);
     if (command == 1)
         aster_setup_begin();
     else
         aster_setup_retry();
 }
-static void button(const char *text, int command, int w, int h) {
+
+static void button(const char *text, int command, int w, int h)
+{
     lv_obj_t *o = lv_button_create(root);
     lv_obj_set_size(o, w - 40, 48);
     lv_obj_set_pos(o, 20, h - 68);
@@ -50,7 +56,9 @@ static void button(const char *text, int command, int w, int h) {
     lv_obj_set_style_text_align(t, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_center(t);
 }
-static void qr(int w, int y) {
+
+static void qr(int w, int y)
+{
     char value[160];
     snprintf(value, sizeof(value), "WIFI:T:WPA;S:%s;P:%s;;", status.ssid, status.password);
     uint8_t temporary[qrcodegen_BUFFER_LEN_FOR_VERSION(6)],
@@ -83,7 +91,9 @@ static void qr(int w, int y) {
     lv_image_set_src(image, &qr_image);
     lv_obj_set_pos(image, (w - qw) / 2, y);
 }
-static void rebuild(int next) {
+
+static void rebuild(int next)
+{
     if (root)
         lv_obj_delete(root);
     if (qr_pixels) {
@@ -112,26 +122,28 @@ static void rebuild(int next) {
     bar = numbers = detail = NULL;
     page = next;
     if (next == ASTER_SETUP_WELCOME) {
-        lv_label_set_text(message,h<400?
-            "首次使用只需几步\n\n连接网络后，自动下载\n系统字体和商城。\n请勿移除存储卡。":
-            "首次使用只需几步\n\n连接网络，下载字体和商城。\n请勿移除存储卡。");
-        if(h>=400)label(root, "Wi-Fi  /  字体  /  商城", 24, h / 2 + 24, w - 48, 20, 0xd8ff8c);
+        lv_label_set_text(
+            message,
+            h < 400 ? "首次使用只需几步\n\n连接网络后，自动下载\n系统字体和商城。\n请勿移除存储卡。"
+                    : "首次使用只需几步\n\n连接网络，下载字体和商城。\n请勿移除存储卡。");
+        if (h >= 400)
+            label(root, "Wi-Fi  /  字体  /  商城", 24, h / 2 + 24, w - 48, 20, 0xd8ff8c);
         button("开始设置", 1, w, h);
     } else if (next == ASTER_SETUP_STORAGE) {
         lv_label_set_text(message, "请插入存储卡\n\n系统需要一张可读写的存储卡。");
         button("重新检查", 2, w, h);
     } else if (next == ASTER_SETUP_PROVISION) {
-        lv_label_set_text(message, h<400?"扫码连接热点":"连接下方热点后打开配网页面");
-        int qr_y=h<400?128:139;
+        lv_label_set_text(message, h < 400 ? "扫码连接热点" : "连接下方热点后打开配网页面");
+        int qr_y = h < 400 ? 128 : 139;
         qr(w, qr_y);
         int qh = (aster_ui_lvgl_width() < 360 ? 112 : 152) * h / aster_ui_lvgl_height();
         char text[192];
         snprintf(text, sizeof(text), "热点  %s\n密码  %s\n地址  http://192.168.4.1", status.ssid,
                  status.password);
-        label(root, text, 24, qr_y+12+qh, w - 48, 16, 0xf3f3e8);
+        label(root, text, 24, qr_y + 12 + qh, w - 48, 16, 0xf3f3e8);
     } else if (next == ASTER_SETUP_ERROR) {
         char text[256];
-        const char *reason = status.state.error == -28                          ? "存储空间不足"
+        const char *reason = status.state.error == -28 ? "存储空间不足"
                              : status.state.failed_phase == ASTER_SETUP_CONNECT ? "网络连接失败"
                              : status.state.failed_phase == ASTER_SETUP_VERIFY
                                  ? "资源校验失败"
@@ -141,8 +153,9 @@ static void rebuild(int next) {
         lv_label_set_text(message, text);
         button("重新连接", 2, w, h);
     } else {
-        lv_label_set_text(message,h<400?"请保持供电，勿移除卡。\n可离开手机页面。":
-            "请保持供电，请勿移除存储卡。\n此过程可离开手机页面。");
+        lv_label_set_text(message, h < 400
+                                       ? "请保持供电，勿移除卡。\n可离开手机页面。"
+                                       : "请保持供电，请勿移除存储卡。\n此过程可离开手机页面。");
         bar = lv_bar_create(root);
         lv_obj_set_size(bar, w - 48, 12);
         lv_obj_set_pos(bar, 24, h / 2);
@@ -154,9 +167,13 @@ static void rebuild(int next) {
     aster_ui_lvgl_pointer(0, 0, 0);
     lv_indev_reset(aster_ui_lvgl_indev(), NULL);
 }
-bool aster_setup_ui_tick(void) {
-    if(aster_setup_format_pending()) {
-        aster_launcher_hide();aster_font_sd_cache_drop();aster_setup_format_ui_ready();
+
+bool aster_setup_ui_tick(void)
+{
+    if (aster_setup_format_pending()) {
+        aster_launcher_hide();
+        aster_font_sd_cache_drop();
+        aster_setup_format_ui_ready();
     }
     if (!aster_setup_poll(&status)) {
         if (root) {
@@ -164,7 +181,8 @@ bool aster_setup_ui_tick(void) {
             root = NULL;
             heading = message = bar = numbers = detail = NULL;
             page = -1;
-            if(status.state.files)aster_font_sd_reload();
+            if (status.state.files)
+                aster_font_sd_reload();
         }
         if (qr_pixels) {
             aster_os_free_external(qr_pixels);

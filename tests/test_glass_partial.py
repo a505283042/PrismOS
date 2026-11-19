@@ -1,11 +1,13 @@
 """Ordinary band/partial writes must retain truthful snapshots without a prior grab."""
+import re
 import unittest
 from test_waveshare import ROOT, run_c
 
 class GlassPartial(unittest.TestCase):
  def test_owned_record_bands_alias_failure_and_reuse(self):
   source=(ROOT/'platform/esp32s3/display.c').read_text()
-  code=source[source.index('static const uint8_t *s_glass;'):source.index('#else /* !CONFIG_ASTER_SCREENSHOT */')]+ '\n#endif\n'
+  end = re.search(r'#else\s+/\* !CONFIG_ASTER_SCREENSHOT \*/', source).start()
+  code = source[source.index('static const uint8_t *s_glass;'):end] + '\n#endif\n'
   run_c(r'''
 #include <assert.h>
 #include <stdint.h>

@@ -28,8 +28,8 @@ static atomic_t s_sync_error = ATOMIC_INIT(-EAGAIN);
 
 #ifdef CONFIG_SNTP
 #define TIME_SYNC_TIMEOUT_MS 4000
-#define TIME_SYNC_RETRY      K_SECONDS(60)
-#define TIME_SYNC_PERIODIC   K_HOURS(6)
+#define TIME_SYNC_RETRY K_SECONDS(60)
+#define TIME_SYNC_PERIODIC K_HOURS(6)
 
 /* DNS and a socket timeout must never stall the UI's system work queue.
  * The worker exists only while one attempt is in flight. */
@@ -44,8 +44,8 @@ static struct net_mgmt_event_callback s_time_net_cb;
 static void time_sync_thread(void *a, void *b, void *c)
 {
 	static const char *const servers[] = {
-		"ntp.aliyun.com",
-		"time.cloudflare.com",
+	        "ntp.aliyun.com",
+	        "time.cloudflare.com",
 	};
 	struct sntp_time ntp = {0};
 	struct timespec ts;
@@ -73,8 +73,7 @@ static void time_sync_thread(void *a, void *b, void *c)
 	atomic_set(&s_sync_error, err);
 	if (err == 0) {
 		atomic_set(&s_time_synced, 1);
-		LOG_INF("wall clock synchronized (%lld UTC)",
-			(long long)ntp.seconds);
+		LOG_INF("wall clock synchronized (%lld UTC)", (long long)ntp.seconds);
 		again = TIME_SYNC_PERIODIC;
 	} else {
 		LOG_WRN("wall clock sync failed: %d; retrying", err);
@@ -106,14 +105,12 @@ static void time_sync_spawn(struct k_work *work)
 		return;
 	}
 	k_thread_create(&s_time_thread, s_time_stack,
-			K_KERNEL_STACK_LEN(TIME_SYNC_STACK) - K_KERNEL_STACK_RESERVED,
-			time_sync_thread, NULL, NULL, NULL,
-			K_PRIO_PREEMPT(8), 0, K_NO_WAIT);
+	                K_KERNEL_STACK_LEN(TIME_SYNC_STACK) - K_KERNEL_STACK_RESERVED,
+	                time_sync_thread, NULL, NULL, NULL, K_PRIO_PREEMPT(8), 0, K_NO_WAIT);
 	k_thread_name_set(&s_time_thread, "aster_time");
 }
 
-static void time_net_event(struct net_mgmt_event_callback *cb,
-			   uint64_t event, struct net_if *iface)
+static void time_net_event(struct net_mgmt_event_callback *cb, uint64_t event, struct net_if *iface)
 {
 	ARG_UNUSED(cb);
 	ARG_UNUSED(iface);
@@ -141,8 +138,8 @@ int aster_time_read(aster_time_info_t *out)
 		return err;
 	}
 
-	local_seconds = (time_t)((int64_t)now.tv_sec +
-		(int64_t)CONFIG_ASTER_TIMEZONE_OFFSET_MINUTES * 60);
+	local_seconds =
+	        (time_t)((int64_t)now.tv_sec + (int64_t)CONFIG_ASTER_TIMEZONE_OFFSET_MINUTES * 60);
 	if (!gmtime_r(&local_seconds, &local)) {
 		return -ERANGE;
 	}
@@ -150,8 +147,7 @@ int aster_time_read(aster_time_info_t *out)
 	memset(out, 0, sizeof(*out));
 	out->size = sizeof(*out);
 	out->version = 1;
-	out->unix_ms = (uint64_t)now.tv_sec * 1000ULL +
-		(uint64_t)now.tv_nsec / 1000000ULL;
+	out->unix_ms = (uint64_t)now.tv_sec * 1000ULL + (uint64_t)now.tv_nsec / 1000000ULL;
 	out->flags = atomic_get(&s_time_synced) ? ASTER_TIME_FLAG_SYNCED : 0;
 	out->year = local.tm_year + 1900;
 	out->month = (uint32_t)local.tm_mon + 1;
@@ -166,8 +162,8 @@ int aster_time_read(aster_time_info_t *out)
 static int aster_time_init(void)
 {
 	const struct timespec fallback = {
-		.tv_sec = (time_t)CONFIG_ASTER_TIME_DEFAULT_EPOCH,
-		.tv_nsec = 0,
+	        .tv_sec = (time_t)CONFIG_ASTER_TIME_DEFAULT_EPOCH,
+	        .tv_nsec = 0,
 	};
 	int err = sys_clock_settime(SYS_CLOCK_REALTIME, &fallback);
 
@@ -178,8 +174,7 @@ static int aster_time_init(void)
 #ifdef CONFIG_SNTP
 	k_work_init(&s_time_reap, time_sync_reap);
 	k_work_init_delayable(&s_time_sync_work, time_sync_spawn);
-	net_mgmt_init_event_callback(&s_time_net_cb, time_net_event,
-				     NET_EVENT_IPV4_DHCP_BOUND);
+	net_mgmt_init_event_callback(&s_time_net_cb, time_net_event, NET_EVENT_IPV4_DHCP_BOUND);
 	net_mgmt_add_event_callback(&s_time_net_cb);
 	/* Also cover an already-bound interface and boards without Wi-Fi events. */
 	k_work_schedule(&s_time_sync_work, K_SECONDS(5));

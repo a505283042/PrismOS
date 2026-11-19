@@ -50,7 +50,8 @@ static int cmd_bl(const struct shell *sh, size_t argc, char **argv)
 
 static int cmd_bl_pulse(const struct shell *sh, size_t argc, char **argv)
 {
-	ARG_UNUSED(argc); ARG_UNUSED(argv);
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
 	for (int i = 0; i < 6; i++) {
 		(void)aster_plat_backlight_set(false, 0);
 		k_msleep(120);
@@ -65,7 +66,8 @@ static int cmd_bl_pulse(const struct shell *sh, size_t argc, char **argv)
 
 static int cmd_disp_info(const struct shell *sh, size_t argc, char **argv)
 {
-	ARG_UNUSED(argc); ARG_UNUSED(argv);
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
 	aster_display_info_t d;
 	int err = aster_plat_display_get_info(0, &d);
 	if (err) {
@@ -83,18 +85,18 @@ static int cmd_disp_info(const struct shell *sh, size_t argc, char **argv)
 	 * one it can. That second failure is the one that actually happened:
 	 * RGB888 was implemented and accepted while being advertised nowhere. */
 #define ASTER_FORMAT_NAME(fmt_, bpp_, fn_) " " #fmt_
-	shell_print(sh, "display0: %ux%u fmt=%#x refresh=%uHz dpi_x100=%u orient=%s",
-		    d.width, d.height, d.native_format, d.refresh_rate, d.dpi_x100,
-		    d.orientation == ASTER_ORIENT_LANDSCAPE ? "landscape" : "portrait");
+	shell_print(sh, "display0: %ux%u fmt=%#x refresh=%uHz dpi_x100=%u orient=%s", d.width,
+	            d.height, d.native_format, d.refresh_rate, d.dpi_x100,
+	            d.orientation == ASTER_ORIENT_LANDSCAPE ? "landscape" : "portrait");
 	/* Printed unconditionally, including when it repeats the line above.
 	 * The repetition IS the answer -- "this board hands apps the same
 	 * space the glass has" and "this board scales" are different boards,
 	 * and a reader who only sees one number cannot tell which one they
 	 * are looking at. */
 	shell_print(sh, "  app space: %ux%u%s", d.app_width, d.app_height,
-		    (d.app_width == d.width && d.app_height == d.height)
-			    ? " (1:1, no scaling compiled in)"
-			    : " (scaled)");
+	            (d.app_width == d.width && d.app_height == d.height)
+	                    ? " (1:1, no scaling compiled in)"
+	                    : " (scaled)");
 	shell_print(sh, "  accepts:" ASTER_FORMAT_TABLE(ASTER_FORMAT_NAME));
 #undef ASTER_FORMAT_NAME
 	return 0;
@@ -102,7 +104,8 @@ static int cmd_disp_info(const struct shell *sh, size_t argc, char **argv)
 
 static int cmd_disp_clear(const struct shell *sh, size_t argc, char **argv)
 {
-	ARG_UNUSED(argc); ARG_UNUSED(argv);
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
 	int err = aster_plat_display_clear(0x0000);
 	shell_print(sh, err ? "clear failed" : "cleared black");
 	return 0;
@@ -128,36 +131,45 @@ static int cmd_disp_fill(const struct shell *sh, size_t argc, char **argv)
 }
 
 #if IS_ENABLED(CONFIG_ASTER_QSPI_TUNING)
-static int cmd_disp_qspi(const struct shell *sh,size_t argc,char **argv)
+static int cmd_disp_qspi(const struct shell *sh, size_t argc, char **argv)
 {
- ARG_UNUSED(argc);uint32_t mhz=strtoul(argv[1],NULL,10),flag=strtoul(argv[2],NULL,10),effective=0;
- if(flag>1) return -EINVAL;
- int err=aster_plat_display_qspi_tune(mhz,flag!=0,&effective);
- shell_print(sh,"QSPI TUNE result=%d requested=%u MHz effective=%u Hz prefetch=%u",err,mhz,effective,flag);
- return err;
+	ARG_UNUSED(argc);
+	uint32_t mhz = strtoul(argv[1], NULL, 10), flag = strtoul(argv[2], NULL, 10), effective = 0;
+	if (flag > 1)
+		return -EINVAL;
+	int err = aster_plat_display_qspi_tune(mhz, flag != 0, &effective);
+	shell_print(sh, "QSPI TUNE result=%d requested=%u MHz effective=%u Hz prefetch=%u", err,
+	            mhz, effective, flag);
+	return err;
 }
 #endif
 
 #if IS_ENABLED(CONFIG_ASTER_AXS_WINDOW_TEST)
-static int cmd_disp_windowtest(const struct shell *sh,size_t argc,char **argv)
+static int cmd_disp_windowtest(const struct shell *sh, size_t argc, char **argv)
 {
- ARG_UNUSED(argc);ARG_UNUSED(argv);
- aster_app_ctx_t *ctx=aster_app_current();
- if(!ctx||!ctx->paused) {shell_error(sh,"pause the foreground APP first");return -EBUSY;}
- uint32_t completed=0;int err=aster_plat_display_window_test(&completed);
- shell_print(sh,"AXS WINDOWTEST result=%d baseline=307200 B completed_patch_bytes=%u",err,completed);
- shell_print(sh,"Expected: RED 32x32 at (16,16), GREEN at (144,224), BLUE at (272,432)");
- shell_print(sh,"Physical screen/photo required; software shadow contains baseline only");
- return err;
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+	aster_app_ctx_t *ctx = aster_app_current();
+	if (!ctx || !ctx->paused) {
+		shell_error(sh, "pause the foreground APP first");
+		return -EBUSY;
+	}
+	uint32_t completed = 0;
+	int err = aster_plat_display_window_test(&completed);
+	shell_print(sh, "AXS WINDOWTEST result=%d baseline=307200 B completed_patch_bytes=%u", err,
+	            completed);
+	shell_print(sh, "Expected: RED 32x32 at (16,16), GREEN at (144,224), BLUE at (272,432)");
+	shell_print(sh, "Physical screen/photo required; software shadow contains baseline only");
+	return err;
 }
 #endif
 
 static int cmd_disp_colorbar(const struct shell *sh, size_t argc, char **argv)
 {
-	ARG_UNUSED(argc); ARG_UNUSED(argv);
-	static const uint16_t bar[8] = {
-		0xFFFF, 0xFFE0, 0x07FF, 0x07E0, 0xF81F, 0xF800, 0x001F, 0x0000
-	};
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+	static const uint16_t bar[8] = {0xFFFF, 0xFFE0, 0x07FF, 0x07E0,
+	                                0xF81F, 0xF800, 0x001F, 0x0000};
 	aster_display_info_t d;
 	if (aster_plat_display_get_info(0, &d) != ASTER_OK) {
 		shell_error(sh, "no display");
@@ -199,7 +211,7 @@ static int cmd_disp_rot(const struct shell *sh, size_t argc, char **argv)
 	 * string in the registration below (a grammar that was advertised and
 	 * never implemented); this one fails louder, because a wrong number
 	 * looks like a right one. */
-	static const char *const degs[] = { "0", "90", "180", "270" };
+	static const char *const degs[] = {"0", "90", "180", "270"};
 
 	if (argc >= 2 && strcmp(argv[1], "get")) {
 		int deg = -1;
@@ -223,7 +235,7 @@ static int cmd_disp_rot(const struct shell *sh, size_t argc, char **argv)
 		/* re-probe geometry so the glass + info agree immediately */
 	}
 	shell_print(sh, "rotation=%d (set with: hw display rot <deg>)",
-		    aster_plat_display_rotation_get());
+	            aster_plat_display_rotation_get());
 	return 0;
 }
 
@@ -242,11 +254,12 @@ static int cmd_disp_orient(const struct shell *sh, size_t argc, char **argv)
 			shell_error(sh, "orient takes get|portrait|landscape");
 			return 0;
 		}
-		#if IS_ENABLED(CONFIG_ASTER_WAMR)
-        err = aster_runtime_display_mode_request(want == ASTER_ORIENT_PORTRAIT
-            ? ASTER_DISPLAY_MODE_PORTRAIT : ASTER_DISPLAY_MODE_LANDSCAPE);
+#if IS_ENABLED(CONFIG_ASTER_WAMR)
+		err = aster_runtime_display_mode_request(want == ASTER_ORIENT_PORTRAIT
+		                                                 ? ASTER_DISPLAY_MODE_PORTRAIT
+		                                                 : ASTER_DISPLAY_MODE_LANDSCAPE);
 #else
-        err = aster_plat_display_orientation_set(want);
+		err = aster_plat_display_orientation_set(want);
 #endif
 		if (err) {
 			/* Two different refusals land here and the difference
@@ -256,47 +269,48 @@ static int cmd_disp_orient(const struct shell *sh, size_t argc, char **argv)
 			 * scaling is on) -- while anything else is a
 			 * driver-level failure. Printing one sentence for
 			 * both would send someone to the wrong subsystem. */
-			shell_error(sh, "cannot switch to %s (%d): %s",
-				    argv[1], err,
-				    err == ASTER_ENOTSUP
-					    ? "no second window on this panel and "
-					      "software rotation is unavailable here"
-					    : "the panel driver refused it");
+			shell_error(sh, "cannot switch to %s (%d): %s", argv[1], err,
+			            err == ASTER_ENOTSUP ? "no second window on this panel and "
+			                                   "software rotation is unavailable here"
+			                                 : "the panel driver refused it");
 			return 0;
 		}
 	}
-	shell_print(sh, "orientation=%s (set with: hw display orient "
-		    "<portrait|landscape>)",
-		    aster_plat_display_orientation_get() == ASTER_ORIENT_LANDSCAPE
-			    ? "landscape" : "portrait");
+	shell_print(sh,
+	            "orientation=%s (set with: hw display orient "
+	            "<portrait|landscape>)",
+	            aster_plat_display_orientation_get() == ASTER_ORIENT_LANDSCAPE ? "landscape"
+	                                                                           : "portrait");
 	shell_print(sh, "  queued changes rebuild the desktop on the UI worker");
 	return 0;
 }
 
-SHELL_STATIC_SUBCMD_SET_CREATE(sub_disp,
+SHELL_STATIC_SUBCMD_SET_CREATE(
+        sub_disp,
 #if IS_ENABLED(CONFIG_ASTER_QSPI_TUNING)
- SHELL_CMD_ARG(qspi,NULL,"<40|48|60|80 MHz> <prefetch 0|1>",cmd_disp_qspi,3,0),
+        SHELL_CMD_ARG(qspi, NULL, "<40|48|60|80 MHz> <prefetch 0|1>", cmd_disp_qspi, 3, 0),
 #endif
-	SHELL_CMD(info, NULL, "display info", cmd_disp_info),
-	SHELL_CMD(clear, NULL, "fill black", cmd_disp_clear),
-	SHELL_CMD_ARG(fill, NULL, "fill <hex>", cmd_disp_fill, 2, 0),
-	SHELL_CMD(colorbar, NULL, "8-bar color test", cmd_disp_colorbar),
+        SHELL_CMD(info, NULL, "display info", cmd_disp_info),
+        SHELL_CMD(clear, NULL, "fill black", cmd_disp_clear),
+        SHELL_CMD_ARG(fill, NULL, "fill <hex>", cmd_disp_fill, 2, 0),
+        SHELL_CMD(colorbar, NULL, "8-bar color test", cmd_disp_colorbar),
 #if IS_ENABLED(CONFIG_ASTER_AXS_WINDOW_TEST)
-    SHELL_CMD(windowtest,NULL,"raw CASET/RASET/RAMWR patches (paused APP)",cmd_disp_windowtest),
+        SHELL_CMD(windowtest, NULL, "raw CASET/RASET/RAMWR patches (paused APP)",
+                  cmd_disp_windowtest),
 #endif
-	/* These two read "get|set <...>" -- copied from a design where the verb
+        /* These two read "get|set <...>" -- copied from a design where the verb
 	 * took an opcode the way `hw touch tap` does. It does not: the argument
 	 * is bare, and the advertised spelling died in the shell's own count
 	 * check ("wrong parameter count") before the handler ever saw it, so
 	 * the one thing the help was for -- telling someone how to call it --
 	 * was the one thing it got wrong. The canonical reminder is printed by
 	 * the handler itself ("set with: ..."), so these stay short. */
-	SHELL_CMD_ARG(rot, NULL, "get|<0|90|180|270>: software rotation",
-		      cmd_disp_rot, 1, 1),
-	SHELL_CMD_ARG(orient, NULL, "get|<portrait|landscape>: turn the panel "
-		      "now, no reboot", cmd_disp_orient, 1, 1),
-	SHELL_SUBCMD_SET_END
-);
+        SHELL_CMD_ARG(rot, NULL, "get|<0|90|180|270>: software rotation", cmd_disp_rot, 1, 1),
+        SHELL_CMD_ARG(orient, NULL,
+                      "get|<portrait|landscape>: turn the panel "
+                      "now, no reboot",
+                      cmd_disp_orient, 1, 1),
+        SHELL_SUBCMD_SET_END);
 
 /* ---------- touch ---------- */
 
@@ -320,10 +334,11 @@ static int cmd_touch(const struct shell *sh, size_t argc, char **argv)
 		const char *op = argv[1];
 		uint32_t x = 0, y = 0;
 #if defined(CONFIG_ASTER_AXS15231B_RAW_DIAG)
-		if (strcmp(op,"replay") == 0) {
-			if (argc != 2) return -EINVAL;
-			int err=aster_plat_axs_touch_diag_replay_start();
-			shell_print(sh,"injected touch driver replay result=%d",err);
+		if (strcmp(op, "replay") == 0) {
+			if (argc != 2)
+				return -EINVAL;
+			int err = aster_plat_axs_touch_diag_replay_start();
+			shell_print(sh, "injected touch driver replay result=%d", err);
 			return err;
 		}
 #endif
@@ -332,39 +347,48 @@ static int cmd_touch(const struct shell *sh, size_t argc, char **argv)
 			uint32_t pts[ASTER_PLAT_MAX_TOUCH * 4] = {0};
 			aster_plat_input_state(pts, ASTER_PLAT_MAX_TOUCH);
 			uint32_t count = 0;
-			for (; count < ASTER_PLAT_MAX_TOUCH && pts[count*4+2] != ASTER_INPUT_TERM; count++) {
+			for (;
+			     count < ASTER_PLAT_MAX_TOUCH && pts[count * 4 + 2] != ASTER_INPUT_TERM;
+			     count++) {
 				shell_print(sh, "touch slot=%u x=%u y=%u action=%u",
-					pts[count*4+3], pts[count*4], pts[count*4+1], pts[count*4+2]);
+				            pts[count * 4 + 3], pts[count * 4], pts[count * 4 + 1],
+				            pts[count * 4 + 2]);
 			}
 			shell_print(sh, "touch active=%u", count);
 			aster_touch_debug_t health;
 			aster_plat_input_touch_debug(&health);
-			shell_print(sh,"touch recovery=%u errors=%u pending=%u hardware=%#x synthetic=%#x",
-				health.recovery,health.errors,health.pending,
-				health.hardware_mask,health.synthetic_mask);
+			shell_print(
+			        sh,
+			        "touch recovery=%u errors=%u pending=%u hardware=%#x synthetic=%#x",
+			        health.recovery, health.errors, health.pending,
+			        health.hardware_mask, health.synthetic_mask);
 			return 0;
 		}
 		if (strcmp(op, "slot") == 0) {
 			if (argc != 6) {
-				shell_error(sh, "usage: hw touch slot <0|1> <down|move|up> <x> <y>");
+				shell_error(sh,
+				            "usage: hw touch slot <0|1> <down|move|up> <x> <y>");
 				return -EINVAL;
 			}
 			uint32_t values[3];
-			const unsigned positions[3] = {2,4,5};
-			for (unsigned i=0; i<3; i++) {
+			const unsigned positions[3] = {2, 4, 5};
+			for (unsigned i = 0; i < 3; i++) {
 				char *end;
-				unsigned long value=strtoul(argv[positions[i]],&end,0);
-				if (!argv[positions[i]][0] || *end || argv[positions[i]][0]=='-' || value>UINT16_MAX)
+				unsigned long value = strtoul(argv[positions[i]], &end, 0);
+				if (!argv[positions[i]][0] || *end ||
+				    argv[positions[i]][0] == '-' || value > UINT16_MAX)
 					return -EINVAL;
-				values[i]=(uint32_t)value;
+				values[i] = (uint32_t)value;
 			}
-			uint32_t action = !strcmp(argv[3],"down") ? ASTER_TOUCH_DOWN :
-				!strcmp(argv[3],"move") ? ASTER_TOUCH_MOVE :
-				!strcmp(argv[3],"up") ? ASTER_TOUCH_UP : 0;
-			if (values[0]>=ASTER_PLAT_MAX_TOUCH || !action) return -EINVAL;
-			aster_plat_input_touch_inject_slot(values[0],values[1],values[2],action);
-			shell_print(sh,"injected touch slot=%u %s x=%u y=%u",
-				values[0],argv[3],values[1],values[2]);
+			uint32_t action = !strcmp(argv[3], "down")   ? ASTER_TOUCH_DOWN
+			                  : !strcmp(argv[3], "move") ? ASTER_TOUCH_MOVE
+			                  : !strcmp(argv[3], "up")   ? ASTER_TOUCH_UP
+			                                             : 0;
+			if (values[0] >= ASTER_PLAT_MAX_TOUCH || !action)
+				return -EINVAL;
+			aster_plat_input_touch_inject_slot(values[0], values[1], values[2], action);
+			shell_print(sh, "injected touch slot=%u %s x=%u y=%u", values[0], argv[3],
+			            values[1], values[2]);
 			return 0;
 		}
 
@@ -385,8 +409,7 @@ static int cmd_touch(const struct shell *sh, size_t argc, char **argv)
 			uint32_t ax = lx, ay = ly;
 
 			(void)aster_plat_display_app_touch(&ax, &ay);
-			shell_print(sh, "touch map: logical %ux%u -> app %ux%u",
-				    lx, ly, ax, ay);
+			shell_print(sh, "touch map: logical %ux%u -> app %ux%u", lx, ly, ax, ay);
 			return 0;
 		}
 		if (strcmp(op, "up") == 0) {
@@ -403,8 +426,7 @@ static int cmd_touch(const struct shell *sh, size_t argc, char **argv)
 			shell_print(sh, "injected touch up x=%u y=%u", pts[0], pts[1]);
 			return 0;
 		}
-		if (strcmp(op, "tap") == 0 || strcmp(op, "down") == 0 ||
-		    strcmp(op, "move") == 0) {
+		if (strcmp(op, "tap") == 0 || strcmp(op, "down") == 0 || strcmp(op, "move") == 0) {
 			if (argc < 4) {
 				shell_error(sh, "usage: hw touch %s <x> <y>", op);
 				return -EINVAL;
@@ -435,7 +457,7 @@ static int cmd_touch(const struct shell *sh, size_t argc, char **argv)
 
 			if (argc < 6) {
 				shell_error(sh, "usage: hw touch drag <x1> <y1>"
-					    " <x2> <y2> [steps] [step_ms]");
+				                " <x2> <y2> [steps] [step_ms]");
 				return -EINVAL;
 			}
 			x = (uint32_t)strtoul(argv[2], NULL, 0);
@@ -455,25 +477,26 @@ static int cmd_touch(const struct shell *sh, size_t argc, char **argv)
 			k_msleep(40);
 			for (uint32_t i = 1; i <= steps; i++) {
 				aster_plat_input_touch_inject(
-					(uint32_t)((int64_t)x + ((int64_t)x2 - x) * i / steps),
-					(uint32_t)((int64_t)y + ((int64_t)y2 - y) * i / steps),
-					ASTER_TOUCH_MOVE);
+				        (uint32_t)((int64_t)x + ((int64_t)x2 - x) * i / steps),
+				        (uint32_t)((int64_t)y + ((int64_t)y2 - y) * i / steps),
+				        ASTER_TOUCH_MOVE);
 				k_msleep(step_ms);
 			}
 			aster_plat_input_touch_inject(x2, y2, ASTER_TOUCH_UP);
-			shell_print(sh, "injected touch drag %u,%u -> %u,%u"
-				    " (%u moves, %u ms apart)", x, y, x2, y2,
-				    steps, step_ms);
+			shell_print(sh,
+			            "injected touch drag %u,%u -> %u,%u"
+			            " (%u moves, %u ms apart)",
+			            x, y, x2, y2, steps, step_ms);
 			return 0;
 		}
 		if (strcmp(op, "help") == 0) {
 			shell_print(sh, "hw touch state | slot <0|1> <down|move|up> <x> <y>");
 #if defined(CONFIG_ASTER_AXS15231B_RAW_DIAG)
-			shell_print(sh,"hw touch replay: bounded lost-UP driver fault fixture");
+			shell_print(sh, "hw touch replay: bounded lost-UP driver fault fixture");
 #endif
 			shell_print(sh, "hw touch [n] | tap <x> <y> | down <x> <y> |"
-					" move <x> <y> | up | drag <x1> <y1> <x2> <y2>"
-					" [steps] [step_ms]");
+			                " move <x> <y> | up | drag <x1> <y1> <x2> <y2>"
+			                " [steps] [step_ms]");
 			return 0;
 		}
 	}
@@ -494,9 +517,10 @@ static int cmd_touch(const struct shell *sh, size_t argc, char **argv)
 	 * silent death is to make it audible, not to promise an abort we
 	 * cannot deliver. */
 	if (n > HW_TOUCH_MAX_ITER) {
-		shell_warn(sh, "clamped to %d samples (%d s);"
-			   " this command cannot be interrupted",
-			   HW_TOUCH_MAX_ITER, HW_TOUCH_MAX_ITER / 100);
+		shell_warn(sh,
+		           "clamped to %d samples (%d s);"
+		           " this command cannot be interrupted",
+		           HW_TOUCH_MAX_ITER, HW_TOUCH_MAX_ITER / 100);
 		n = HW_TOUCH_MAX_ITER;
 	}
 	if (n < 1) {
@@ -535,16 +559,14 @@ static int cmd_key(const struct shell *sh, size_t argc, char **argv)
 	}
 	uint32_t held[ASTER_PLAT_MAX_KEYS];
 	int n = aster_plat_input_keys_state(held, ASTER_PLAT_MAX_KEYS);
-	shell_print(sh, "keys available=%d held=%d",
-		    aster_plat_input_keys_available(), n);
+	shell_print(sh, "keys available=%d held=%d", aster_plat_input_keys_available(), n);
 	for (int i = 0; i < n; i++) {
 		shell_print(sh, "  held code=%u", held[i]);
 	}
 	aster_key_evt_t ev[ASTER_PLAT_MAX_KEYS];
 	int m = aster_plat_input_keys_poll(ev, ASTER_PLAT_MAX_KEYS);
 	for (int i = 0; i < m; i++) {
-		shell_print(sh, "  edge code=%u %s", ev[i].code,
-			    ev[i].pressed ? "down" : "up");
+		shell_print(sh, "  edge code=%u %s", ev[i].code, ev[i].pressed ? "down" : "up");
 	}
 	return 0;
 }
@@ -553,17 +575,18 @@ static int cmd_key(const struct shell *sh, size_t argc, char **argv)
 
 static int cmd_imu(const struct shell *sh, size_t argc, char **argv)
 {
-	ARG_UNUSED(argc); ARG_UNUSED(argv);
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
 	float ax, ay, az, gx, gy, gz;
 	int err = aster_plat_imu_read(&ax, &ay, &az, &gx, &gy, &gz);
 	if (err) {
 		shell_error(sh, "imu read failed (%d)", err);
 		return 0;
 	}
-	shell_print(sh, "accel  %d %d %d mg", (int)(ax * (1000.0f / 9.80665f)), (int)(ay * (1000.0f / 9.80665f)),
-		    (int)(az * (1000.0f / 9.80665f)));
+	shell_print(sh, "accel  %d %d %d mg", (int)(ax * (1000.0f / 9.80665f)),
+	            (int)(ay * (1000.0f / 9.80665f)), (int)(az * (1000.0f / 9.80665f)));
 	shell_print(sh, "gyro   %d %d %d mdps", (int)(gx * 57295.7795f), (int)(gy * 57295.7795f),
-		    (int)(gz * 57295.7795f));
+	            (int)(gz * 57295.7795f));
 	return 0;
 }
 
@@ -587,9 +610,9 @@ static int cmd_cam_capture(const struct shell *sh, size_t argc, char **argv)
 }
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_cam,
-	SHELL_CMD_ARG(capture, NULL, "single frame to file", cmd_cam_capture, 2, 0),
-	SHELL_SUBCMD_SET_END
-);
+                               SHELL_CMD_ARG(capture, NULL, "single frame to file", cmd_cam_capture,
+                                             2, 0),
+                               SHELL_SUBCMD_SET_END);
 #endif
 
 /* ---------- audio ---------- */
@@ -676,9 +699,8 @@ static int cmd_audio_info(const struct shell *sh, size_t argc, char **argv)
 	ARG_UNUSED(argv);
 	uint8_t dac = 0, adc = 0;
 	int err = aster_plat_audio_probe(&dac, &adc);
-	shell_print(sh, "audio: %u Hz %u-bit stereo frame=%u  vol=%d",
-		    CONFIG_ASTER_AUDIO_RATE, CONFIG_ASTER_AUDIO_BITS, ASTER_PLAT_AUDIO_FRAME,
-		    aster_plat_audio_get_volume());
+	shell_print(sh, "audio: %u Hz %u-bit stereo frame=%u  vol=%d", CONFIG_ASTER_AUDIO_RATE,
+	            CONFIG_ASTER_AUDIO_BITS, ASTER_PLAT_AUDIO_FRAME, aster_plat_audio_get_volume());
 	shell_print(sh, "dac id=0x%02x  adc id=0x%02x  probe=%d", dac, adc, err);
 	return 0;
 }
@@ -710,9 +732,8 @@ static int cmd_audio_state(const struct shell *sh, size_t argc, char **argv)
 		return 0;
 	}
 	(void)aster_plat_audio_get_clock(&ms, &tot_ms);
-	shell_print(sh, "state=%s bytes=%u/%u msec=%u/%u vol=%u",
-		    audio_state_name(st), (unsigned)done, (unsigned)total,
-		    (unsigned)ms, (unsigned)tot_ms, (unsigned)vol);
+	shell_print(sh, "state=%s bytes=%u/%u msec=%u/%u vol=%u", audio_state_name(st),
+	            (unsigned)done, (unsigned)total, (unsigned)ms, (unsigned)tot_ms, (unsigned)vol);
 	return 0;
 }
 
@@ -805,8 +826,8 @@ static int cmd_audio_rec(const struct shell *sh, size_t argc, char **argv)
 		return -ENOMEM;
 	}
 	shell_print(sh, "recording %u ms (%u bytes) -> %s ...",
-		    nbytes * 1000u / (CONFIG_ASTER_AUDIO_RATE * ASTER_PLAT_AUDIO_FRAME),
-		    nbytes, argv[1]);
+	            nbytes * 1000u / (CONFIG_ASTER_AUDIO_RATE * ASTER_PLAT_AUDIO_FRAME), nbytes,
+	            argv[1]);
 	int err = aster_plat_audio_record(pcm, nbytes);
 	if (err) {
 		aster_psram_free(pcm);
@@ -829,7 +850,7 @@ static int cmd_audio_rec(const struct shell *sh, size_t argc, char **argv)
 	int32_t peak = pcm_peak(pcm, nbytes);
 	aster_psram_free(pcm);
 	shell_print(sh, "recorded peak=%d/32767%s", (int)peak,
-		    peak == 0 ? " (silence — speak near the mics and retry)" : "");
+	            peak == 0 ? " (silence — speak near the mics and retry)" : "");
 	return 0;
 }
 
@@ -888,7 +909,7 @@ static int cmd_audio_loop(const struct shell *sh, size_t argc, char **argv)
 	}
 	int32_t peak = pcm_peak(pcm, nbytes);
 	shell_print(sh, "recorded peak=%d/32767%s", (int)peak,
-		    peak == 0 ? " (silence — playback will be quiet)" : "");
+	            peak == 0 ? " (silence — playback will be quiet)" : "");
 	err = aster_plat_audio_play(pcm, nbytes);
 	aster_psram_free(pcm);
 	shell_print(sh, err ? "play failed (%d)" : "loop done", err);
@@ -896,71 +917,96 @@ static int cmd_audio_loop(const struct shell *sh, size_t argc, char **argv)
 }
 
 /* Explicit effect commands: no APP-frame timer is used to repeat cues. */
-static bool fx_number(const char *text,uint32_t *value)
+static bool fx_number(const char *text, uint32_t *value)
 {
- char *end;errno=0;
- unsigned long long n=strtoull(text,&end,0);
- if(!*text || *text=='-' || *end || errno || n>UINT32_MAX) return false;
- *value=(uint32_t)n;return true;
-}
-static int cmd_audio_fxload(const struct shell *sh,size_t argc,char **argv)
-{
- ARG_UNUSED(argc);
- int h=aster_plat_audio_effect_load(argv[1]);shell_print(sh,"fxload handle=%d",h);
- return h<0?h:0;
-}
-static int cmd_audio_fx(const struct shell *sh,size_t argc,char **argv)
-{
- uint32_t a[6]={0};
- for(size_t i=1;i<argc;i++) if(i>6 || !fx_number(argv[i],&a[i-1])) return -EINVAL;
- int rc;
- if(!strcmp(argv[0],"fxfree")) rc=aster_plat_audio_effect_unload(a[0]);
- else if(!strcmp(argv[0],"fxstop")) rc=aster_plat_audio_effect_stop(a[0],a[1]);
- else if(!strcmp(argv[0],"fxparams")) {
-  aster_audio_effect_params_t p={sizeof(p),1,a[1],a[2],a[3]};
-  rc=aster_plat_audio_effect_set_params(a[0],&p);
- } else {
-  aster_audio_effect_play_desc_t d={.size=sizeof(d),.version=1,
-   .flags=!strcmp(argv[0],"fxloop")?ASTER_AUDIO_EFFECT_F_LOOP:0,
-   .loop_start_frame=a[1],.loop_end_frame=a[2],.crossfade_frames=a[3],
-   .pitch_q16=65536,.gain_q16=65536};
-  rc=aster_plat_audio_effect_play_ex(a[0],&d);
- }
- shell_print(sh,"%s result=%d",argv[0],rc);return rc;
-}
-static int cmd_audio_fxstate(const struct shell *sh,size_t argc,char **argv)
-{
- ARG_UNUSED(argc);ARG_UNUSED(argv);
- aster_audio_effect_debug_t d;aster_plat_audio_effect_debug(&d);
- shell_print(sh,"effects output_hz=%u loaded=0x%x playing=0x%x suspended=%u pcm_bytes=%u mixed_peak=%u",
-  d.rate,d.loaded_mask,d.playing_mask,d.suspended,d.pcm_bytes,d.mixed_peak);
- for(unsigned i=0;i<4;i++) shell_print(sh,"slot=%u rendered_source_frame=%u fraction_q16=%u",i+1,
-  (uint32_t)(d.phase_q16[i]>>16),(uint32_t)(d.phase_q16[i]&65535));
- shell_print(sh,"DMA live depth=unknown; hardware underruns=unknown");return 0;
+	char *end;
+	errno = 0;
+	unsigned long long n = strtoull(text, &end, 0);
+	if (!*text || *text == '-' || *end || errno || n > UINT32_MAX)
+		return false;
+	*value = (uint32_t)n;
+	return true;
 }
 
-SHELL_STATIC_SUBCMD_SET_CREATE(sub_audio,
-	SHELL_CMD_ARG(fxload, NULL, "preload PCM16 WAV <path>", cmd_audio_fxload, 2, 0),
-	SHELL_CMD_ARG(fxplay, NULL, "one-shot <handle>", cmd_audio_fx, 2, 0),
-	SHELL_CMD_ARG(fxloop, NULL, "loop <handle> [start end crossfade] (source frames)", cmd_audio_fx, 2, 3),
-	SHELL_CMD_ARG(fxparams, NULL, "<handle> <pitch_q16> <gain_q16> <ramp_ms>", cmd_audio_fx, 5, 0),
-	SHELL_CMD_ARG(fxstop, NULL, "<handle> [fade_ms]", cmd_audio_fx, 2, 1),
-	SHELL_CMD_ARG(fxfree, NULL, "unload <handle>", cmd_audio_fx, 2, 0),
-	SHELL_CMD(fxstate, NULL, "effect phase/cache snapshot (not DMA telemetry)", cmd_audio_fxstate),
-	SHELL_CMD(info, NULL, "codec / format info", cmd_audio_info),
-	SHELL_CMD_ARG(vol, NULL, "get/set volume [0-100]", cmd_audio_vol, 1, 1),
-	SHELL_CMD_ARG(beep, NULL, "sine [ms] [hz]", cmd_audio_beep, 1, 2),
-	SHELL_CMD_ARG(rec, NULL, "record wav <path> [ms]", cmd_audio_rec, 2, 1),
-	SHELL_CMD_ARG(play, NULL, "blocking play wav/mp3 <path>", cmd_audio_play, 2, 0),
-	SHELL_CMD_ARG(start, NULL, "background play wav/mp3 <path>", cmd_audio_start, 2, 0),
-	SHELL_CMD(pause, NULL, "pause background play", cmd_audio_pause),
-	SHELL_CMD(resume, NULL, "resume background play", cmd_audio_resume),
-	SHELL_CMD(stop, NULL, "stop background play", cmd_audio_stop),
-	SHELL_CMD(state, NULL, "session state", cmd_audio_state),
-	SHELL_CMD_ARG(seek, NULL, "seek background play <msec>", cmd_audio_seek, 2, 0),
-	SHELL_CMD_ARG(loop, NULL, "record then play [ms]", cmd_audio_loop, 1, 1),
-	SHELL_SUBCMD_SET_END
-);
+static int cmd_audio_fxload(const struct shell *sh, size_t argc, char **argv)
+{
+	ARG_UNUSED(argc);
+	int h = aster_plat_audio_effect_load(argv[1]);
+	shell_print(sh, "fxload handle=%d", h);
+	return h < 0 ? h : 0;
+}
+
+static int cmd_audio_fx(const struct shell *sh, size_t argc, char **argv)
+{
+	uint32_t a[6] = {0};
+	for (size_t i = 1; i < argc; i++)
+		if (i > 6 || !fx_number(argv[i], &a[i - 1]))
+			return -EINVAL;
+	int rc;
+	if (!strcmp(argv[0], "fxfree"))
+		rc = aster_plat_audio_effect_unload(a[0]);
+	else if (!strcmp(argv[0], "fxstop"))
+		rc = aster_plat_audio_effect_stop(a[0], a[1]);
+	else if (!strcmp(argv[0], "fxparams")) {
+		aster_audio_effect_params_t p = {sizeof(p), 1, a[1], a[2], a[3]};
+		rc = aster_plat_audio_effect_set_params(a[0], &p);
+	} else {
+		aster_audio_effect_play_desc_t d = {
+		        .size = sizeof(d),
+		        .version = 1,
+		        .flags = !strcmp(argv[0], "fxloop") ? ASTER_AUDIO_EFFECT_F_LOOP : 0,
+		        .loop_start_frame = a[1],
+		        .loop_end_frame = a[2],
+		        .crossfade_frames = a[3],
+		        .pitch_q16 = 65536,
+		        .gain_q16 = 65536};
+		rc = aster_plat_audio_effect_play_ex(a[0], &d);
+	}
+	shell_print(sh, "%s result=%d", argv[0], rc);
+	return rc;
+}
+
+static int cmd_audio_fxstate(const struct shell *sh, size_t argc, char **argv)
+{
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+	aster_audio_effect_debug_t d;
+	aster_plat_audio_effect_debug(&d);
+	shell_print(
+	        sh,
+	        "effects output_hz=%u loaded=0x%x playing=0x%x suspended=%u pcm_bytes=%u mixed_peak=%u",
+	        d.rate, d.loaded_mask, d.playing_mask, d.suspended, d.pcm_bytes, d.mixed_peak);
+	for (unsigned i = 0; i < 4; i++)
+		shell_print(sh, "slot=%u rendered_source_frame=%u fraction_q16=%u", i + 1,
+		            (uint32_t)(d.phase_q16[i] >> 16), (uint32_t)(d.phase_q16[i] & 65535));
+	shell_print(sh, "DMA live depth=unknown; hardware underruns=unknown");
+	return 0;
+}
+
+SHELL_STATIC_SUBCMD_SET_CREATE(
+        sub_audio, SHELL_CMD_ARG(fxload, NULL, "preload PCM16 WAV <path>", cmd_audio_fxload, 2, 0),
+        SHELL_CMD_ARG(fxplay, NULL, "one-shot <handle>", cmd_audio_fx, 2, 0),
+        SHELL_CMD_ARG(fxloop, NULL, "loop <handle> [start end crossfade] (source frames)",
+                      cmd_audio_fx, 2, 3),
+        SHELL_CMD_ARG(fxparams, NULL, "<handle> <pitch_q16> <gain_q16> <ramp_ms>", cmd_audio_fx, 5,
+                      0),
+        SHELL_CMD_ARG(fxstop, NULL, "<handle> [fade_ms]", cmd_audio_fx, 2, 1),
+        SHELL_CMD_ARG(fxfree, NULL, "unload <handle>", cmd_audio_fx, 2, 0),
+        SHELL_CMD(fxstate, NULL, "effect phase/cache snapshot (not DMA telemetry)",
+                  cmd_audio_fxstate),
+        SHELL_CMD(info, NULL, "codec / format info", cmd_audio_info),
+        SHELL_CMD_ARG(vol, NULL, "get/set volume [0-100]", cmd_audio_vol, 1, 1),
+        SHELL_CMD_ARG(beep, NULL, "sine [ms] [hz]", cmd_audio_beep, 1, 2),
+        SHELL_CMD_ARG(rec, NULL, "record wav <path> [ms]", cmd_audio_rec, 2, 1),
+        SHELL_CMD_ARG(play, NULL, "blocking play wav/mp3 <path>", cmd_audio_play, 2, 0),
+        SHELL_CMD_ARG(start, NULL, "background play wav/mp3 <path>", cmd_audio_start, 2, 0),
+        SHELL_CMD(pause, NULL, "pause background play", cmd_audio_pause),
+        SHELL_CMD(resume, NULL, "resume background play", cmd_audio_resume),
+        SHELL_CMD(stop, NULL, "stop background play", cmd_audio_stop),
+        SHELL_CMD(state, NULL, "session state", cmd_audio_state),
+        SHELL_CMD_ARG(seek, NULL, "seek background play <msec>", cmd_audio_seek, 2, 0),
+        SHELL_CMD_ARG(loop, NULL, "record then play [ms]", cmd_audio_loop, 1, 1),
+        SHELL_SUBCMD_SET_END);
 #endif
 
 /* ---------- wifi ---------- */
@@ -987,10 +1033,8 @@ static int cmd_wifi_scan(const struct shell *sh, size_t argc, char **argv)
 	}
 	shell_print(sh, "  ch  rssi  sec              ssid");
 	for (i = 0; i < n; i++) {
-		shell_print(sh, "  %2u  %4d  %-16s %s",
-			    (unsigned)aps[i].channel, (int)aps[i].rssi,
-			    aster_plat_wifi_sec_txt(aps[i].security),
-			    aps[i].ssid);
+		shell_print(sh, "  %2u  %4d  %-16s %s", (unsigned)aps[i].channel, (int)aps[i].rssi,
+		            aster_plat_wifi_sec_txt(aps[i].security), aps[i].ssid);
 	}
 	shell_print(sh, "%d AP%s", n, n == 1 ? "" : "s");
 	return 0;
@@ -1016,10 +1060,8 @@ static int cmd_wifi_connect(const struct shell *sh, size_t argc, char **argv)
 
 		if (aster_plat_wifi_status(&st) == 0) {
 			shell_print(sh, "connected ssid=%s ip=%s rssi=%d %s",
-				    st.ssid[0] ? st.ssid : argv[1],
-				    st.ip[0] ? st.ip : "-",
-				    (int)st.rssi,
-				    st.state_txt ? st.state_txt : "");
+			            st.ssid[0] ? st.ssid : argv[1], st.ip[0] ? st.ip : "-",
+			            (int)st.rssi, st.state_txt ? st.state_txt : "");
 		} else {
 			shell_print(sh, "connected");
 		}
@@ -1048,19 +1090,17 @@ static int cmd_wifi_status(const struct shell *sh, size_t argc, char **argv)
 	err = aster_plat_wifi_status(&st);
 	if (err) {
 		shell_print(sh, "status failed (%d) state=%s", err,
-			    st.state_txt ? st.state_txt : "-");
+		            st.state_txt ? st.state_txt : "-");
 		return 0;
 	}
-	shell_print(sh, "state=%s ssid=%s ip=%s rssi=%d sec=%s",
-		    st.state_txt ? st.state_txt : "-",
-		    st.ssid[0] ? st.ssid : "-",
-		    st.ip[0] ? st.ip : "-",
-		    (int)st.rssi,
-		    st.sec_txt ? st.sec_txt : "-");
-    uint32_t operation, last_operation;
-    int result;
-    aster_plat_wifi_operation(&operation, &last_operation, &result);
-    shell_print(sh, "operation=%u last_operation=%u last_result=%d", operation, last_operation, result);
+	shell_print(sh, "state=%s ssid=%s ip=%s rssi=%d sec=%s", st.state_txt ? st.state_txt : "-",
+	            st.ssid[0] ? st.ssid : "-", st.ip[0] ? st.ip : "-", (int)st.rssi,
+	            st.sec_txt ? st.sec_txt : "-");
+	uint32_t operation, last_operation;
+	int result;
+	aster_plat_wifi_operation(&operation, &last_operation, &result);
+	shell_print(sh, "operation=%u last_operation=%u last_result=%d", operation, last_operation,
+	            result);
 	return 0;
 }
 
@@ -1111,16 +1151,16 @@ static int cmd_wifi_saved(const struct shell *sh, size_t argc, char **argv)
 	return 0;
 }
 
-SHELL_STATIC_SUBCMD_SET_CREATE(sub_wifi,
-	SHELL_CMD(scan, NULL, "scan nearby APs", cmd_wifi_scan),
-	SHELL_CMD_ARG(connect, NULL, "join <ssid> [psk]", cmd_wifi_connect, 2, 1),
-	SHELL_CMD(disconnect, NULL, "leave current AP", cmd_wifi_disconnect),
-	SHELL_CMD(status, NULL, "station status", cmd_wifi_status),
-	SHELL_CMD(reconnect, NULL, "rejoin saved AP", cmd_wifi_reconnect),
-	SHELL_CMD(saved, NULL, "show saved AP name", cmd_wifi_saved),
-	SHELL_CMD(forget, NULL, "erase saved AP credentials", cmd_wifi_forget),
-	SHELL_SUBCMD_SET_END
-);
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_wifi, SHELL_CMD(scan, NULL, "scan nearby APs", cmd_wifi_scan),
+                               SHELL_CMD_ARG(connect, NULL, "join <ssid> [psk]", cmd_wifi_connect,
+                                             2, 1),
+                               SHELL_CMD(disconnect, NULL, "leave current AP", cmd_wifi_disconnect),
+                               SHELL_CMD(status, NULL, "station status", cmd_wifi_status),
+                               SHELL_CMD(reconnect, NULL, "rejoin saved AP", cmd_wifi_reconnect),
+                               SHELL_CMD(saved, NULL, "show saved AP name", cmd_wifi_saved),
+                               SHELL_CMD(forget, NULL, "erase saved AP credentials",
+                                         cmd_wifi_forget),
+                               SHELL_SUBCMD_SET_END);
 #endif
 
 /* ---------- image viewer (imgdec) ---------- */
@@ -1138,7 +1178,10 @@ static bool img_nn_arg(size_t argc, char **argv, size_t path_idx)
 
 static int cmd_img_info(const struct shell *sh, size_t argc, char **argv)
 {
-	if (!aster_storage_mounted()) { shell_error(sh, "SD not mounted"); return -ENODEV; }
+	if (!aster_storage_mounted()) {
+		shell_error(sh, "SD not mounted");
+		return -ENODEV;
+	}
 	aster_display_info_t d;
 	/* No fabricated fallback geometry: whatever is written here would be a
 	 * portrait literal baked into a tool that has to work in both
@@ -1150,10 +1193,12 @@ static int cmd_img_info(const struct shell *sh, size_t argc, char **argv)
 	aster_imgdec_info_t in;
 	aster_error_t rc = aster_imgdec_probe(argv[1], &in, d.width, d.height);
 	shell_print(sh, "%s fmt=%s src=%ux%u file=%u B -> preview %ux%u",
-		    rc == ASTER_OK ? "ok" : "note", aster_imgdec_fmt_name(in.fmt),
-		    in.src_w, in.src_h, in.file_size, in.out_w, in.out_h);
-	if (in.unsupported) shell_warn(sh, "decode unsupported: %s", in.why);
-	else if (in.too_big) shell_warn(sh, "too big: %s", in.why);
+	            rc == ASTER_OK ? "ok" : "note", aster_imgdec_fmt_name(in.fmt), in.src_w,
+	            in.src_h, in.file_size, in.out_w, in.out_h);
+	if (in.unsupported)
+		shell_warn(sh, "decode unsupported: %s", in.why);
+	else if (in.too_big)
+		shell_warn(sh, "too big: %s", in.why);
 	if (!in.unsupported && !in.too_big)
 		shell_print(sh, "ready: hw img show %s", argv[1]);
 	return 0;
@@ -1161,22 +1206,32 @@ static int cmd_img_info(const struct shell *sh, size_t argc, char **argv)
 
 static int cmd_img_show(const struct shell *sh, size_t argc, char **argv)
 {
-	if (!aster_storage_mounted()) { shell_error(sh, "SD not mounted"); return -ENODEV; }
+	if (!aster_storage_mounted()) {
+		shell_error(sh, "SD not mounted");
+		return -ENODEV;
+	}
 	bool nn = img_nn_arg(argc, argv, 1);
 	int64_t t0 = k_uptime_get();
 	aster_error_t rc = aster_imgdec_show(argv[1], nn);
 	int64_t dt = k_uptime_get() - t0;
-	if (rc == ASTER_ENOTSUP) shell_error(sh, "format not decodable yet (%s)", argv[1]);
-	else if (rc == ASTER_ENOMEM) shell_error(sh, "image too large to decode");
-	else if (rc != ASTER_OK) shell_error(sh, "show failed (%d)", (int)rc);
-	else shell_print(sh, "shown in %lld ms (%s)", dt, nn ? "nearest" : "bilinear");
+	if (rc == ASTER_ENOTSUP)
+		shell_error(sh, "format not decodable yet (%s)", argv[1]);
+	else if (rc == ASTER_ENOMEM)
+		shell_error(sh, "image too large to decode");
+	else if (rc != ASTER_OK)
+		shell_error(sh, "show failed (%d)", (int)rc);
+	else
+		shell_print(sh, "shown in %lld ms (%s)", dt, nn ? "nearest" : "bilinear");
 	return 0;
 }
 
 /* Segment the work: probe / render (seek+read+scale) / present (blit). */
 static int cmd_img_bench(const struct shell *sh, size_t argc, char **argv)
 {
-	if (!aster_storage_mounted()) { shell_error(sh, "SD not mounted"); return -ENODEV; }
+	if (!aster_storage_mounted()) {
+		shell_error(sh, "SD not mounted");
+		return -ENODEV;
+	}
 	bool nn = img_nn_arg(argc, argv, 1);
 	aster_display_info_t d;
 	/* No fabricated fallback geometry: whatever is written here would be a
@@ -1191,29 +1246,39 @@ static int cmd_img_bench(const struct shell *sh, size_t argc, char **argv)
 	int64_t t0 = k_uptime_get();
 	aster_error_t rc = aster_imgdec_probe(argv[1], &in, d.width, d.height);
 	int64_t t_probe = k_uptime_get() - t0;
-	if (in.unsupported || in.too_big) { shell_error(sh, "not decodable: %s", in.why); return 0; }
+	if (in.unsupported || in.too_big) {
+		shell_error(sh, "not decodable: %s", in.why);
+		return 0;
+	}
 
 	uint8_t *canvas = aster_psram_alloc((size_t)in.out_w * in.out_h * 2);
-	if (!canvas) { shell_error(sh, "no PSRAM for canvas"); return -ENOMEM; }
+	if (!canvas) {
+		shell_error(sh, "no PSRAM for canvas");
+		return -ENOMEM;
+	}
 	uint32_t ow, oh;
 	t0 = k_uptime_get();
 	rc = aster_imgdec_render(argv[1], canvas, in.out_w, in.out_h, &ow, &oh, nn);
 	int64_t t_render = k_uptime_get() - t0;
-	if (rc != ASTER_OK) { aster_psram_free(canvas); shell_error(sh, "render %d", (int)rc); return 0; }
+	if (rc != ASTER_OK) {
+		aster_psram_free(canvas);
+		shell_error(sh, "render %d", (int)rc);
+		return 0;
+	}
 
 	t0 = k_uptime_get();
 	aster_plat_display_clear(0x0000);
 	uint32_t x = (d.width > ow) ? (d.width - ow) / 2 : 0;
 	uint32_t y = (d.height > oh) ? (d.height - oh) / 2 : 0;
 	aster_plat_display_write_at(canvas, x, y, ow, oh, ow);
-	aster_plat_display_flush_drain();   /* must finish before free (async UAF) */
+	aster_plat_display_flush_drain(); /* must finish before free (async UAF) */
 	int64_t t_present = k_uptime_get() - t0;
 	aster_psram_free(canvas);
 
-	shell_print(sh, "%s %ux%u -> %ux%u (%s)", aster_imgdec_fmt_name(in.fmt),
-		    in.src_w, in.src_h, ow, oh, nn ? "nearest" : "bilinear");
-	shell_print(sh, "probe=%lld ms  render=%lld ms  present=%lld ms  total=%lld ms",
-		    t_probe, t_render, t_present, t_probe + t_render + t_present);
+	shell_print(sh, "%s %ux%u -> %ux%u (%s)", aster_imgdec_fmt_name(in.fmt), in.src_w, in.src_h,
+	            ow, oh, nn ? "nearest" : "bilinear");
+	shell_print(sh, "probe=%lld ms  render=%lld ms  present=%lld ms  total=%lld ms", t_probe,
+	            t_render, t_present, t_probe + t_render + t_present);
 	return 0;
 }
 
@@ -1221,7 +1286,10 @@ static int cmd_img_bench(const struct shell *sh, size_t argc, char **argv)
  * host can diff the device decoder against a reference without a camera. */
 static int cmd_img_dump(const struct shell *sh, size_t argc, char **argv)
 {
-	if (!aster_storage_mounted()) { shell_error(sh, "SD not mounted"); return -ENODEV; }
+	if (!aster_storage_mounted()) {
+		shell_error(sh, "SD not mounted");
+		return -ENODEV;
+	}
 	aster_display_info_t d;
 	/* No fabricated fallback geometry: whatever is written here would be a
 	 * portrait literal baked into a tool that has to work in both
@@ -1232,16 +1300,30 @@ static int cmd_img_dump(const struct shell *sh, size_t argc, char **argv)
 	}
 	aster_imgdec_info_t in;
 	aster_error_t rc = aster_imgdec_probe(argv[1], &in, d.width, d.height);
-	if (in.unsupported || in.too_big) { shell_error(sh, "not decodable: %s", in.why); return 0; }
+	if (in.unsupported || in.too_big) {
+		shell_error(sh, "not decodable: %s", in.why);
+		return 0;
+	}
 	uint32_t oy = (uint32_t)strtoul(argv[2], NULL, 10);
 	bool nn = argc > 3 && strcmp(argv[3], "--nn") == 0;
 
 	uint8_t *canvas = aster_psram_alloc((size_t)in.out_w * in.out_h * 2);
-	if (!canvas) { shell_error(sh, "no PSRAM"); return -ENOMEM; }
+	if (!canvas) {
+		shell_error(sh, "no PSRAM");
+		return -ENOMEM;
+	}
 	uint32_t ow, oh;
 	rc = aster_imgdec_render(argv[1], canvas, in.out_w, in.out_h, &ow, &oh, nn);
-	if (rc != ASTER_OK) { aster_psram_free(canvas); shell_error(sh, "render %d", (int)rc); return 0; }
-	if (oy >= oh) { shell_error(sh, "row %u >= oh %u", oy, oh); aster_psram_free(canvas); return 0; }
+	if (rc != ASTER_OK) {
+		aster_psram_free(canvas);
+		shell_error(sh, "render %d", (int)rc);
+		return 0;
+	}
+	if (oy >= oh) {
+		shell_error(sh, "row %u >= oh %u", oy, oh);
+		aster_psram_free(canvas);
+		return 0;
+	}
 
 	const uint16_t *row = (const uint16_t *)canvas + (size_t)oy * ow;
 	shell_print(sh, "dump %s oy=%u ow=%u oh=%u", aster_imgdec_fmt_name(in.fmt), oy, ow, oh);
@@ -1262,23 +1344,37 @@ static int cmd_img_dump(const struct shell *sh, size_t argc, char **argv)
  * on the exact bytes. `hw img hex <path> <off> <len>`. */
 static int cmd_img_hex(const struct shell *sh, size_t argc, char **argv)
 {
-	if (!aster_storage_mounted()) { shell_error(sh, "SD not mounted"); return -ENODEV; }
+	if (!aster_storage_mounted()) {
+		shell_error(sh, "SD not mounted");
+		return -ENODEV;
+	}
 	off_t off = (off_t)strtoull(argv[2], NULL, 0);
 	size_t len = strtoull(argv[3], NULL, 0);
-	if (len > 0x400000) len = 0x400000;
-	struct fs_file_t f; fs_file_t_init(&f);
-	if (fs_open(&f, argv[1], FS_O_READ) != 0) { shell_error(sh, "open"); return -ENOENT; }
-	if (fs_seek(&f, off, FS_SEEK_SET) != 0) { fs_close(&f); shell_error(sh, "seek"); return -EIO; }
+	if (len > 0x400000)
+		len = 0x400000;
+	struct fs_file_t f;
+	fs_file_t_init(&f);
+	if (fs_open(&f, argv[1], FS_O_READ) != 0) {
+		shell_error(sh, "open");
+		return -ENOENT;
+	}
+	if (fs_seek(&f, off, FS_SEEK_SET) != 0) {
+		fs_close(&f);
+		shell_error(sh, "seek");
+		return -EIO;
+	}
 	uint8_t buf[256];
 	shell_print(sh, "#HEX %s %lld %u", argv[1], (long long)off, (unsigned)len);
 	size_t done = 0;
 	while (done < len) {
 		size_t want = len - done < sizeof(buf) ? len - done : sizeof(buf);
 		int r = aster_fs_read_safe(&f, buf, want);
-		if (r <= 0) break;
+		if (r <= 0)
+			break;
 		for (int i = 0; i < r; i++) {
 			shell_fprintf(sh, SHELL_NORMAL, "%02x", buf[i]);
-			if ((i & 15) == 15) shell_fprintf(sh, SHELL_NORMAL, "\n");
+			if ((i & 15) == 15)
+				shell_fprintf(sh, SHELL_NORMAL, "\n");
 		}
 		shell_fprintf(sh, SHELL_NORMAL, "\n");
 		done += (size_t)r;
@@ -1293,17 +1389,19 @@ static int cmd_img_hex(const struct shell *sh, size_t argc, char **argv)
  * aster_imgdec_show (fit-to-screen, streaming decoder). This blocks the shell
  * thread until BOOT; nothing else should be driving input meanwhile.
  * Note: FAT readdir order is directory order, not alphabetical. */
-#define VIEW_MAX   64
-#define VIEW_PATH  128
-#define VIEW_SWIPE 30   /* min |dx| logical px to call a horizontal swipe */
+#define VIEW_MAX 64
+#define VIEW_PATH 128
+#define VIEW_SWIPE 30 /* min |dx| logical px to call a horizontal swipe */
 
 static bool ci_eq(const char *a, const char *b)
 {
 	while (*a && *b) {
 		char ca = (*a >= 'A' && *a <= 'Z') ? (char)(*a + 32) : *a;
 		char cb = (*b >= 'A' && *b <= 'Z') ? (char)(*b + 32) : *b;
-		if (ca != cb) return false;
-		a++; b++;
+		if (ca != cb)
+			return false;
+		a++;
+		b++;
 	}
 	return !*a && !*b;
 }
@@ -1311,28 +1409,41 @@ static bool ci_eq(const char *a, const char *b)
 static bool img_is_image(const char *name)
 {
 	const char *dot = strrchr(name, '.');
-	if (!dot) return false;
+	if (!dot)
+		return false;
 	dot++;
-	return ci_eq(dot, "bmp") || ci_eq(dot, "jpg") ||
-	       ci_eq(dot, "jpeg") || ci_eq(dot, "png");
+	return ci_eq(dot, "bmp") || ci_eq(dot, "jpg") || ci_eq(dot, "jpeg") || ci_eq(dot, "png");
 }
 
 static int cmd_img_view(const struct shell *sh, size_t argc, char **argv)
 {
-	if (!aster_storage_mounted()) { shell_error(sh, "SD not mounted"); return -ENODEV; }
+	if (!aster_storage_mounted()) {
+		shell_error(sh, "SD not mounted");
+		return -ENODEV;
+	}
 	const char *dir = argv[1];
 	bool nn = img_nn_arg(argc, argv, 1);
 
 	/* shell-thread command; 8 KB static beats blowing the stack */
-	static char names[VIEW_MAX][VIEW_PATH] __attribute__((section(".ext_ram.bss.hw_cmd_names")));
+	static char names[VIEW_MAX][VIEW_PATH]
+	        __attribute__((section(".ext_ram.bss.hw_cmd_names")));
 	int cnt = 0, skipped = 0;
-	struct fs_dir_t dp; fs_dir_t_init(&dp);
-	if (fs_opendir(&dp, dir) != 0) { shell_error(sh, "opendir %s", dir); return -ENOENT; }
+	struct fs_dir_t dp;
+	fs_dir_t_init(&dp);
+	if (fs_opendir(&dp, dir) != 0) {
+		shell_error(sh, "opendir %s", dir);
+		return -ENOENT;
+	}
 	for (;;) {
 		struct fs_dirent de;
-		if (fs_readdir(&dp, &de) != 0 || de.name[0] == '\0') break;
-		if (de.type != FS_DIR_ENTRY_FILE || !img_is_image(de.name)) continue;
-		if (cnt == VIEW_MAX) { skipped++; continue; }
+		if (fs_readdir(&dp, &de) != 0 || de.name[0] == '\0')
+			break;
+		if (de.type != FS_DIR_ENTRY_FILE || !img_is_image(de.name))
+			continue;
+		if (cnt == VIEW_MAX) {
+			skipped++;
+			continue;
+		}
 		char leaf[VIEW_PATH - 8];
 		strncpy(leaf, de.name, sizeof(leaf) - 1);
 		leaf[sizeof(leaf) - 1] = 0;
@@ -1340,18 +1451,25 @@ static int cmd_img_view(const struct shell *sh, size_t argc, char **argv)
 		cnt++;
 	}
 	fs_closedir(&dp);
-	if (cnt == 0) { shell_error(sh, "no images in %s", dir); return -ENOENT; }
-	if (skipped) shell_warn(sh, "only first %d of %d images", VIEW_MAX, VIEW_MAX + skipped);
+	if (cnt == 0) {
+		shell_error(sh, "no images in %s", dir);
+		return -ENOENT;
+	}
+	if (skipped)
+		shell_warn(sh, "only first %d of %d images", VIEW_MAX, VIEW_MAX + skipped);
 
-	if (!aster_plat_input_touch_available()) shell_warn(sh, "no touch: BOOT only");
+	if (!aster_plat_input_touch_available())
+		shell_warn(sh, "no touch: BOOT only");
 	shell_print(sh, "view %s: %d images -- swipe L/R switch, BOOT quit", dir, cnt);
 	int idx = 0;
 	for (;;) {
-		const char *base = strrchr(names[idx], '/') ;
+		const char *base = strrchr(names[idx], '/');
 		base = base ? base + 1 : names[idx];
 		aster_error_t rc = aster_imgdec_show(names[idx], nn);
-		if (rc == ASTER_OK) shell_print(sh, "[%d/%d] %s shown", idx + 1, cnt, base);
-		else shell_print(sh, "[%d/%d] %s failed (%d)", idx + 1, cnt, base, (int)rc);
+		if (rc == ASTER_OK)
+			shell_print(sh, "[%d/%d] %s shown", idx + 1, cnt, base);
+		else
+			shell_print(sh, "[%d/%d] %s failed (%d)", idx + 1, cnt, base, (int)rc);
 
 		/* drop edges that accumulated during the (slow) render */
 		aster_touch_evt_t tev[ASTER_PLAT_MAX_TOUCH];
@@ -1363,16 +1481,20 @@ static int cmd_img_view(const struct shell *sh, size_t argc, char **argv)
 
 		bool pressed = false;
 		uint32_t px = 0;
-		for (;;) {   /* input loop until swipe or BOOT */
+		for (;;) { /* input loop until swipe or BOOT */
 			int n = aster_plat_input_poll(tev, ASTER_PLAT_MAX_TOUCH);
 			for (int i = 0; i < n; i++) {
 				if (tev[i].action == ASTER_TOUCH_DOWN) {
-					px = tev[i].x; pressed = true;
+					px = tev[i].x;
+					pressed = true;
 				} else if (tev[i].action == ASTER_TOUCH_UP && pressed) {
 					int32_t dx = (int32_t)tev[i].x - (int32_t)px;
-					if (dx >= VIEW_SWIPE)  idx = (idx + cnt - 1) % cnt;
-					else if (dx <= -VIEW_SWIPE) idx = (idx + 1) % cnt;
-					else continue;
+					if (dx >= VIEW_SWIPE)
+						idx = (idx + cnt - 1) % cnt;
+					else if (dx <= -VIEW_SWIPE)
+						idx = (idx + 1) % cnt;
+					else
+						continue;
 					goto next_image;
 				}
 			}
@@ -1385,46 +1507,45 @@ static int cmd_img_view(const struct shell *sh, size_t argc, char **argv)
 			}
 			k_msleep(10);
 		}
-next_image:;
+	next_image:;
 	}
 }
 
-SHELL_STATIC_SUBCMD_SET_CREATE(sub_img,
-	SHELL_CMD_ARG(info, NULL, "probe <path>", cmd_img_info, 2, 0),
-	SHELL_CMD_ARG(show, NULL, "show <path> [--nn]", cmd_img_show, 2, 1),
-	SHELL_CMD_ARG(view, NULL, "view <dir> [--nn]", cmd_img_view, 2, 1),
-	SHELL_CMD_ARG(bench, NULL, "bench <path> [--nn]", cmd_img_bench, 2, 1),
-	SHELL_CMD_ARG(dump, NULL, "dump <path> <row> [--nn]", cmd_img_dump, 3, 1),
-	SHELL_CMD_ARG(hex, NULL, "hex <path> <off> <len>", cmd_img_hex, 4, 0),
-	SHELL_SUBCMD_SET_END
-);
+SHELL_STATIC_SUBCMD_SET_CREATE(
+        sub_img, SHELL_CMD_ARG(info, NULL, "probe <path>", cmd_img_info, 2, 0),
+        SHELL_CMD_ARG(show, NULL, "show <path> [--nn]", cmd_img_show, 2, 1),
+        SHELL_CMD_ARG(view, NULL, "view <dir> [--nn]", cmd_img_view, 2, 1),
+        SHELL_CMD_ARG(bench, NULL, "bench <path> [--nn]", cmd_img_bench, 2, 1),
+        SHELL_CMD_ARG(dump, NULL, "dump <path> <row> [--nn]", cmd_img_dump, 3, 1),
+        SHELL_CMD_ARG(hex, NULL, "hex <path> <off> <len>", cmd_img_hex, 4, 0),
+        SHELL_SUBCMD_SET_END);
 #endif /* CONFIG_ASTER_IMGDEC_SHELL */
 
 /* ---------- tree ---------- */
 
-SHELL_STATIC_SUBCMD_SET_CREATE(hw_cmds,
-	SHELL_CMD(backlight, NULL, "on|off", cmd_bl),
-	SHELL_CMD(blpulse, NULL, "blink test", cmd_bl_pulse),
-	SHELL_CMD(display, &sub_disp, "display ops", NULL),
-	SHELL_CMD_ARG(touch, NULL, "poll/inject touch [n | tap <x> <y> | down|move <x> <y>"
-		      " | up | slot <0|1> <down|move|up> <x> <y> | state"
-		      " | drag <x1> <y1> <x2> <y2> [steps] [step_ms]]",
-		      cmd_touch, 1, 7),
-	SHELL_CMD_ARG(key, NULL, "poll/inject keys [inject <code> down|up]", cmd_key, 1, 3),
-	SHELL_CMD(imu, NULL, "read IMU", cmd_imu),
+SHELL_STATIC_SUBCMD_SET_CREATE(
+        hw_cmds, SHELL_CMD(backlight, NULL, "on|off", cmd_bl),
+        SHELL_CMD(blpulse, NULL, "blink test", cmd_bl_pulse),
+        SHELL_CMD(display, &sub_disp, "display ops", NULL),
+        SHELL_CMD_ARG(touch, NULL,
+                      "poll/inject touch [n | tap <x> <y> | down|move <x> <y>"
+                      " | up | slot <0|1> <down|move|up> <x> <y> | state"
+                      " | drag <x1> <y1> <x2> <y2> [steps] [step_ms]]",
+                      cmd_touch, 1, 7),
+        SHELL_CMD_ARG(key, NULL, "poll/inject keys [inject <code> down|up]", cmd_key, 1, 3),
+        SHELL_CMD(imu, NULL, "read IMU", cmd_imu),
 #if IS_ENABLED(CONFIG_ASTER_CAMERA)
-	SHELL_CMD(cam, &sub_cam, "camera", NULL),
+        SHELL_CMD(cam, &sub_cam, "camera", NULL),
 #endif
 #if IS_ENABLED(CONFIG_ASTER_AUDIO)
-	SHELL_CMD(audio, &sub_audio, "audio play/record/volume", NULL),
+        SHELL_CMD(audio, &sub_audio, "audio play/record/volume", NULL),
 #endif
 #if IS_ENABLED(CONFIG_ASTER_WIFI)
-	SHELL_CMD(wifi, &sub_wifi, "wifi scan/join/status", NULL),
+        SHELL_CMD(wifi, &sub_wifi, "wifi scan/join/status", NULL),
 #endif
 #if IS_ENABLED(CONFIG_ASTER_IMGDEC_SHELL)
-	SHELL_CMD(img, &sub_img, "image decode/preview (BMP/JPG/PNG)", NULL),
+        SHELL_CMD(img, &sub_img, "image decode/preview (BMP/JPG/PNG)", NULL),
 #endif
-	SHELL_SUBCMD_SET_END
-);
+        SHELL_SUBCMD_SET_END);
 
 SHELL_CMD_REGISTER(hw, &hw_cmds, "raw hardware control", NULL);

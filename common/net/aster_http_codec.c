@@ -7,25 +7,32 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+
 void aster_http_redirect_headers(char *headers)
 {
     char *read = headers, *write = headers;
     while (*read) {
         char *end = strstr(read, "\r\n");
-        if (!end) { headers[0] = 0; return; }
+        if (!end) {
+            headers[0] = 0;
+            return;
+        }
         size_t length = (size_t)(end + 2 - read);
         if (!strncasecmp(read, "Range:", 6) || !strncasecmp(read, "If-Range:", 9)) {
-            memmove(write, read, length); write += length;
+            memmove(write, read, length);
+            write += length;
         }
         read = end + 2;
     }
     *write = 0;
 }
+
 static bool token(unsigned char c)
 {
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-           (c >= '0' && c <= '9') || (c && strchr("!#$%&'*+-.^_`|~", c));
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+           (c && strchr("!#$%&'*+-.^_`|~", c));
 }
+
 static int hex_digit(unsigned char c)
 {
     if (c >= '0' && c <= '9')
@@ -36,22 +43,22 @@ static int hex_digit(unsigned char c)
         return c - 'A' + 10;
     return -1;
 }
+
 static int integer(const char *s, size_t n, unsigned base, uint64_t *out)
 {
     if (!n)
         return -EPROTO;
     uint64_t v = 0;
     for (size_t i = 0; i < n; ++i) {
-        int d = base == 16 ? hex_digit(s[i])
-                           : (s[i] >= '0' && s[i] <= '9' ? s[i] - '0' : -1);
-        if (d < 0 || (unsigned)d >= base ||
-            v > (UINT64_MAX - (unsigned)d) / base)
+        int d = base == 16 ? hex_digit(s[i]) : (s[i] >= '0' && s[i] <= '9' ? s[i] - '0' : -1);
+        if (d < 0 || (unsigned)d >= base || v > (UINT64_MAX - (unsigned)d) / base)
             return -EPROTO;
         v = v * base + d;
     }
     *out = v;
     return 0;
 }
+
 int aster_http_url_parse(const char *text, struct aster_http_url *out)
 {
     if (!text || !out)
@@ -81,15 +88,14 @@ int aster_http_url_parse(const char *text, struct aster_http_url *out)
         return -EINVAL;
     for (size_t i = 0; i < host_len; ++i) {
         unsigned char ch = s[i];
-        if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
-              (ch >= '0' && ch <= '9') || ch == '-' || ch == '.'))
+        if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') ||
+              ch == '-' || ch == '.'))
             return -EINVAL;
         out->host[i] = ch >= 'A' && ch <= 'Z' ? ch + 32 : ch;
     }
     if (colon) {
         uint64_t port;
-        if (integer(colon + 1, end - colon - 1, 10, &port) || !port ||
-            port > 65535)
+        if (integer(colon + 1, end - colon - 1, 10, &port) || !port || port > 65535)
             return -EINVAL;
         out->port = port;
     }
@@ -104,12 +110,12 @@ int aster_http_url_parse(const char *text, struct aster_http_url *out)
     out->path[path_len + prefix] = 0;
     return 0;
 }
-bool aster_http_same_origin(const struct aster_http_url *a,
-                            const struct aster_http_url *b)
+
+bool aster_http_same_origin(const struct aster_http_url *a, const struct aster_http_url *b)
 {
-    return a->tls == b->tls && a->port == b->port &&
-           !strcasecmp(a->host, b->host);
+    return a->tls == b->tls && a->port == b->port && !strcasecmp(a->host, b->host);
 }
+
 static int normalize(struct aster_http_url *url)
 {
     char path[ASTER_HTTP_URL_MAX + 1];
@@ -148,6 +154,7 @@ static int normalize(struct aster_http_url *url)
     strcpy(url->path, path);
     return 0;
 }
+
 int aster_http_redirect(const struct aster_http_url *from, const char *location,
                         struct aster_http_url *out)
 {
@@ -155,8 +162,7 @@ int aster_http_redirect(const struct aster_http_url *from, const char *location,
         return -EINVAL;
     char text[ASTER_HTTP_URL_MAX + 1];
     int n;
-    if (!strncasecmp(location, "http://", 7) ||
-        !strncasecmp(location, "https://", 8)) {
+    if (!strncasecmp(location, "http://", 7) || !strncasecmp(location, "https://", 8)) {
         int rc = aster_http_url_parse(location, out);
         return rc ? rc : normalize(out);
     }
@@ -164,8 +170,7 @@ int aster_http_redirect(const struct aster_http_url *from, const char *location,
     if (memchr(location, ':', first))
         return -ENOTSUP;
     if (location[0] == '/' && location[1] == '/')
-        n = snprintf(text, sizeof(text), "%s:%s", from->tls ? "https" : "http",
-                     location);
+        n = snprintf(text, sizeof(text), "%s:%s", from->tls ? "https" : "http", location);
     else {
         size_t prefix_length = strlen(from->path);
         if (location[0] == '/')
@@ -174,30 +179,30 @@ int aster_http_redirect(const struct aster_http_url *from, const char *location,
             const char *q = strchr(from->path, '?');
             if (q)
                 prefix_length = (size_t)(q - from->path);
-        } else if (location[0] ==
-                   '#') { /* Retain the existing query; fragment is not sent. */
+        } else if (location[0] == '#') { /* Retain the existing query; fragment is not sent. */
         } else {
             const char *q = strchr(from->path, '?');
             size_t length = q ? (size_t)(q - from->path) : prefix_length;
             prefix_length = 1; /* Parsed HTTP paths always begin with '/'. */
             for (size_t i = 0; i < length; i++)
-                if (from->path[i] == '/') prefix_length = i + 1;
+                if (from->path[i] == '/')
+                    prefix_length = i + 1;
         }
-        n = snprintf(text, sizeof(text), "%s://%s:%u%.*s%s",
-                     from->tls ? "https" : "http", from->host, from->port,
-                     (int)prefix_length, from->path, location);
+        n = snprintf(text, sizeof(text), "%s://%s:%u%.*s%s", from->tls ? "https" : "http",
+                     from->host, from->port, (int)prefix_length, from->path, location);
     }
     if (n < 0 || (size_t)n >= sizeof(text))
         return -EMSGSIZE;
     int rc = aster_http_url_parse(text, out);
     return rc ? rc : normalize(out);
 }
+
 static bool eq(const char *s, size_t n, const char *word)
 {
     return strlen(word) == n && !strncasecmp(s, word, n);
 }
-static int header_parts(const char *s, size_t n, size_t *name, size_t *value,
-                        size_t *length)
+
+static int header_parts(const char *s, size_t n, size_t *name, size_t *value, size_t *length)
 {
     const char *colon = memchr(s, ':', n);
     if (!colon || colon == s)
@@ -212,13 +217,13 @@ static int header_parts(const char *s, size_t n, size_t *name, size_t *value,
     while (end > v && (s[end - 1] == ' ' || s[end - 1] == '\t'))
         --end;
     for (size_t i = v; i < end; ++i)
-        if (((unsigned char)s[i] < 32 && s[i] != '\t') ||
-            (unsigned char)s[i] >= 127)
+        if (((unsigned char)s[i] < 32 && s[i] != '\t') || (unsigned char)s[i] >= 127)
             return -EPROTO;
     *value = v;
     *length = end - v;
     return 0;
 }
+
 int aster_http_validate_headers(const char *text, size_t length)
 {
     if ((!text && length) || length > ASTER_HTTP_HEADERS_MAX)
@@ -235,32 +240,30 @@ int aster_http_validate_headers(const char *text, size_t length)
         const char *s = text + pos;
         if (eq(s, name, "Host") || eq(s, name, "Content-Length") ||
             eq(s, name, "Transfer-Encoding") || eq(s, name, "Connection") ||
-            eq(s, name, "Accept-Encoding") || eq(s, name, "Expect") ||
-            eq(s, name, "Upgrade"))
+            eq(s, name, "Accept-Encoding") || eq(s, name, "Expect") || eq(s, name, "Upgrade"))
             return -EINVAL;
         pos = end + 2;
     }
     return 0;
 }
-void aster_http_codec_init(struct aster_http_codec *c, bool head,
-                           uint64_t limit)
+
+void aster_http_codec_init(struct aster_http_codec *c, bool head, uint64_t limit)
 {
     memset(c, 0, sizeof(*c));
     c->state = HC_STATUS;
     c->head = head;
     c->body_limit = limit;
 }
+
 static int field_line(struct aster_http_codec *c, bool trailer)
 {
     size_t name, v, n;
     int rc = header_parts(c->line, c->line_len, &name, &v, &n);
     if (rc)
         return rc;
-    bool cl = eq(c->line, name, "Content-Length"),
-         te = eq(c->line, name, "Transfer-Encoding");
-    if (trailer &&
-        (cl || te || eq(c->line, name, "Host") ||
-         eq(c->line, name, "Connection") || eq(c->line, name, "Trailer")))
+    bool cl = eq(c->line, name, "Content-Length"), te = eq(c->line, name, "Transfer-Encoding");
+    if (trailer && (cl || te || eq(c->line, name, "Host") || eq(c->line, name, "Connection") ||
+                    eq(c->line, name, "Trailer")))
         return -EPROTO;
     if (cl) {
         if (c->has_length || c->chunked)
@@ -276,8 +279,7 @@ static int field_line(struct aster_http_codec *c, bool trailer)
         c->chunked = true;
     }
     struct aster_http_headers *h = &c->headers;
-    if (h->count == ASTER_HTTP_HEADER_COUNT ||
-        name + n > sizeof(h->data) - h->used)
+    if (h->count == ASTER_HTTP_HEADER_COUNT || name + n > sizeof(h->data) - h->used)
         return -EMSGSIZE;
     struct aster_http_field *f = &h->fields[h->count++];
     *f = (struct aster_http_field){h->used, name, h->used + name, n};
@@ -286,6 +288,7 @@ static int field_line(struct aster_http_codec *c, bool trailer)
     h->used += name + n;
     return 0;
 }
+
 static int line_done(struct aster_http_codec *c)
 {
     char *s = c->line;
@@ -293,10 +296,9 @@ static int line_done(struct aster_http_codec *c)
     s[n] = 0;
     switch (c->state) {
     case HC_STATUS:
-        if (n < 12 ||
-            (memcmp(s, "HTTP/1.0 ", 9) && memcmp(s, "HTTP/1.1 ", 9)) ||
-            s[9] < '1' || s[9] > '5' || s[10] < '0' || s[10] > '9' ||
-            s[11] < '0' || s[11] > '9' || (n > 12 && s[12] != ' '))
+        if (n < 12 || (memcmp(s, "HTTP/1.0 ", 9) && memcmp(s, "HTTP/1.1 ", 9)) || s[9] < '1' ||
+            s[9] > '5' || s[10] < '0' || s[10] > '9' || s[11] < '0' || s[11] > '9' ||
+            (n > 12 && s[12] != ' '))
             return -EPROTO;
         c->status = (s[9] - '0') * 100 + (s[10] - '0') * 10 + s[11] - '0';
         c->state = HC_HEADERS;
@@ -352,9 +354,9 @@ static int line_done(struct aster_http_codec *c)
     }
     return 0;
 }
-int aster_http_codec_feed(struct aster_http_codec *c, const uint8_t *data,
-                          size_t length, size_t *consumed, uint8_t *body,
-                          size_t capacity, size_t *written)
+
+int aster_http_codec_feed(struct aster_http_codec *c, const uint8_t *data, size_t length,
+                          size_t *consumed, uint8_t *body, size_t capacity, size_t *written)
 {
     if (!c || (!data && length) || (!body && capacity) || !consumed || !written)
         return -EINVAL;
@@ -362,8 +364,7 @@ int aster_http_codec_feed(struct aster_http_codec *c, const uint8_t *data,
     if (c->error)
         return c->error;
     while (*consumed < length && c->state != HC_DONE) {
-        if (c->state == HC_FIXED || c->state == HC_EOF ||
-            c->state == HC_CHUNK_DATA) {
+        if (c->state == HC_FIXED || c->state == HC_EOF || c->state == HC_CHUNK_DATA) {
             size_t n = length - *consumed;
             if (n > capacity - *written)
                 n = capacity - *written;
@@ -417,8 +418,7 @@ int aster_http_codec_feed(struct aster_http_codec *c, const uint8_t *data,
                 }
             } else if (ch == '\r')
                 c->cr = true;
-            else if (ch == '\n' || ch == 0 || (ch < 32 && ch != '\t') ||
-                     ch >= 127)
+            else if (ch == '\n' || ch == 0 || (ch < 32 && ch != '\t') || ch >= 127)
                 c->error = -EPROTO;
             else if (c->line_len == sizeof(c->line) - 1)
                 c->error = -EMSGSIZE;
@@ -430,6 +430,7 @@ int aster_http_codec_feed(struct aster_http_codec *c, const uint8_t *data,
     }
     return c->error;
 }
+
 int aster_http_codec_eof(struct aster_http_codec *c)
 {
     if (!c)
@@ -440,9 +441,9 @@ int aster_http_codec_eof(struct aster_http_codec *c)
         c->state = HC_DONE;
     return c->state == HC_DONE ? 0 : (c->error = -EPROTO);
 }
-int aster_http_field_get(const struct aster_http_headers *h, const char *name,
-                         unsigned index, char *out, size_t capacity,
-                         size_t *length)
+
+int aster_http_field_get(const struct aster_http_headers *h, const char *name, unsigned index,
+                         char *out, size_t capacity, size_t *length)
 {
     if (!h || !name || (!out && capacity) || !length)
         return -EINVAL;

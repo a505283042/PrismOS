@@ -46,10 +46,14 @@ LOG_MODULE_REGISTER(aster_cmd, LOG_LEVEL_INF);
 static const char *state_str(aster_app_state_t s)
 {
 	switch (s) {
-	case ASTER_APP_STATE_RUNNING: return "RUNNING";
-	case ASTER_APP_STATE_PAUSED:  return "PAUSED";
-	case ASTER_APP_STATE_CRASHED: return "CRASHED";
-	default:                    return "STOPPED";
+	case ASTER_APP_STATE_RUNNING:
+		return "RUNNING";
+	case ASTER_APP_STATE_PAUSED:
+		return "PAUSED";
+	case ASTER_APP_STATE_CRASHED:
+		return "CRASHED";
+	default:
+		return "STOPPED";
 	}
 }
 
@@ -58,25 +62,44 @@ static const char *state_str(aster_app_state_t s)
 static const char *aster_err_str(int err)
 {
 	switch (err) {
-	case ASTER_EINVAL:    return "invalid arg";
-	case ASTER_ENOMEM:    return "out of memory";
-	case ASTER_ENOTSUP:   return "not supported on this build";
-	case ASTER_EPERM:     return "permission denied";
-	case ASTER_EBUSY:     return "busy, stop the running app first";
-	case ASTER_ENOENT:    return "no such app id (see `aster app list`)";
-	case ASTER_EIO:       return "SD I/O error (reseat card?)";
-	case ASTER_ETIMEDOUT: return "app wedged, timeout";
-	case ASTER_EEXIST:    return "already exists";
-	case ASTER_EBADF:     return "bad handle";
-	case ASTER_ENOSPC:    return "out of space";
-	case ASTER_ESTATE:    return "lifecycle state conflict (double pause/resume? init refused?)";
-	case ASTER_EABI:      return "ABI incompatible: 需用新 SDK 重编";
-	case ASTER_ECORRUPT:  return "corrupt package";
-	case ASTER_EAGAIN:    return "try again";
-	case ASTER_ENODEV:    return "no such device";
-	case ASTER_ESIGN:     return "bad signature (wrong key / tampered)";
-	case ASTER_EUNSIGNED: return "unsigned package (policy requires a signature)";
-	default:            return "error";
+	case ASTER_EINVAL:
+		return "invalid arg";
+	case ASTER_ENOMEM:
+		return "out of memory";
+	case ASTER_ENOTSUP:
+		return "not supported on this build";
+	case ASTER_EPERM:
+		return "permission denied";
+	case ASTER_EBUSY:
+		return "busy, stop the running app first";
+	case ASTER_ENOENT:
+		return "no such app id (see `aster app list`)";
+	case ASTER_EIO:
+		return "SD I/O error (reseat card?)";
+	case ASTER_ETIMEDOUT:
+		return "app wedged, timeout";
+	case ASTER_EEXIST:
+		return "already exists";
+	case ASTER_EBADF:
+		return "bad handle";
+	case ASTER_ENOSPC:
+		return "out of space";
+	case ASTER_ESTATE:
+		return "lifecycle state conflict (double pause/resume? init refused?)";
+	case ASTER_EABI:
+		return "ABI incompatible: 需用新 SDK 重编";
+	case ASTER_ECORRUPT:
+		return "corrupt package";
+	case ASTER_EAGAIN:
+		return "try again";
+	case ASTER_ENODEV:
+		return "no such device";
+	case ASTER_ESIGN:
+		return "bad signature (wrong key / tampered)";
+	case ASTER_EUNSIGNED:
+		return "unsigned package (policy requires a signature)";
+	default:
+		return "error";
 	}
 }
 
@@ -104,31 +127,36 @@ static int cmd_sys_lvgl(const struct shell *sh, size_t argc, char **argv)
 	lv_mem_monitor_t m;
 	uint8_t px[ASTER_FONT_BAKED_N] = ASTER_FONT_BAKED_PX;
 
-	ARG_UNUSED(argc); ARG_UNUSED(argv);
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
 	lv_mem_monitor(&m);
-	shell_print(sh, "lvgl pool:  size=%zu used=%zu (%u%%) peak=%zu free=%zu",
-		    m.total_size, m.total_size - m.free_size,
-		    (unsigned)m.used_pct, m.max_used, m.free_size);
-	shell_print(sh, "            largest free block=%zu B  frag=%u%%  "
-		    "blocks=%zu in use", m.free_biggest_size,
-		    (unsigned)m.frag_pct, m.used_cnt);
+	shell_print(sh, "lvgl pool:  size=%zu used=%zu (%u%%) peak=%zu free=%zu", m.total_size,
+	            m.total_size - m.free_size, (unsigned)m.used_pct, m.max_used, m.free_size);
+	shell_print(sh,
+	            "            largest free block=%zu B  frag=%u%%  "
+	            "blocks=%zu in use",
+	            m.free_biggest_size, (unsigned)m.frag_pct, m.used_cnt);
 	for (uint32_t k = 0; k < ARRAY_SIZE(px); k++) {
 		const lv_font_t *f = aster_font_sd_get(px[k]);
 
 		if (f) {
-			shell_print(sh, "font %2u px: loaded (line_h=%d, "
-				    "base_line=%d)", (unsigned)px[k],
-				    (int)f->line_height, (int)f->base_line);
+			shell_print(sh,
+			            "font %2u px: loaded (line_h=%d, "
+			            "base_line=%d)",
+			            (unsigned)px[k], (int)f->line_height, (int)f->base_line);
 		} else {
-			shell_print(sh, "font %2u px: MISSING -- labels draw "
-				    "placeholder boxes; /SD:/aster/fonts/ui_%u.cpfont "
-				    "unreadable or still streaming",
-				    (unsigned)px[k], (unsigned)px[k]);
+			shell_print(sh,
+			            "font %2u px: MISSING -- labels draw "
+			            "placeholder boxes; /SD:/aster/fonts/ui_%u.cpfont "
+			            "unreadable or still streaming",
+			            (unsigned)px[k], (unsigned)px[k]);
 		}
 	}
 	if (aster_font_sd_streaming()) {
-		shell_print(sh, "            (a metric table is still "
-			    "streaming: %u%%)", (unsigned)aster_font_sd_progress());
+		shell_print(sh,
+		            "            (a metric table is still "
+		            "streaming: %u%%)",
+		            (unsigned)aster_font_sd_progress());
 	}
 	return 0;
 }
@@ -136,18 +164,18 @@ static int cmd_sys_lvgl(const struct shell *sh, size_t argc, char **argv)
 
 static int cmd_sys_info(const struct shell *sh, size_t argc, char **argv)
 {
-	ARG_UNUSED(argc); ARG_UNUSED(argv);
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
 	aster_system_info_t i;
 	aster_sysinfo_get(&i);
 	shell_print(sh, "ASTER %s", ASTER_SYSVER);
-	shell_print(sh, "platform=%s board=%s soc=%s arch=%s abi=%u.%u.%u",
-		    i.platform, i.board, i.soc, aster_arch_name(i.cpu_arch),
-		    ASTER_ABI_MAJOR, ASTER_ABI_MINOR, ASTER_ABI_PATCH);
+	shell_print(sh, "platform=%s board=%s soc=%s arch=%s abi=%u.%u.%u", i.platform, i.board,
+	            i.soc, aster_arch_name(i.cpu_arch), ASTER_ABI_MAJOR, ASTER_ABI_MINOR,
+	            ASTER_ABI_PATCH);
 	shell_print(sh, "cpu=%u hz cores=%u", i.cpu_freq_hz, i.cpu_count);
-	shell_print(sh, "ram int=%u ext=%u flash=%u", i.ram_internal, i.ram_external,
-		    i.flash_size);
+	shell_print(sh, "ram int=%u ext=%u flash=%u", i.ram_internal, i.ram_external, i.flash_size);
 	shell_print(sh, "sd_mounted=%s apps=%d", aster_storage_mounted() ? "yes" : "no",
-		    aster_app_mgr_count());
+	            aster_app_mgr_count());
 	const char *sigpol = "off";
 	if (IS_ENABLED(CONFIG_ASTER_SIGNATURE_REQUIRE)) {
 		sigpol = "require";
@@ -160,14 +188,15 @@ static int cmd_sys_info(const struct shell *sh, size_t argc, char **argv)
 
 static int cmd_sys_features(const struct shell *sh, size_t argc, char **argv)
 {
-	ARG_UNUSED(argc); ARG_UNUSED(argv);
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
 	aster_system_info_t i;
 	aster_sysinfo_get(&i);
-	static const char *names[] = {
-		"display", "touch", "mouse", "keyboard", "camera", "audio-in",
-		"audio-out", "wifi", "bluetooth", "accelerometer", "gyroscope",
-		"filesystem", "rtc", "psram", "framebuffer", "network", "http",
-        "tls", "audio-stream" };
+	static const char *names[] = {"display",   "touch",         "mouse",       "keyboard",
+	                              "camera",    "audio-in",      "audio-out",   "wifi",
+	                              "bluetooth", "accelerometer", "gyroscope",   "filesystem",
+	                              "rtc",       "psram",         "framebuffer", "network",
+	                              "http",      "tls",           "audio-stream"};
 	shell_print(sh, "features:");
 	for (size_t b = 0; b < ARRAY_SIZE(names); b++) {
 		if (i.feature_flags & (1ull << b)) {
@@ -179,7 +208,8 @@ static int cmd_sys_features(const struct shell *sh, size_t argc, char **argv)
 
 static int cmd_sys_abi(const struct shell *sh, size_t argc, char **argv)
 {
-	ARG_UNUSED(argc); ARG_UNUSED(argv);
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
 	shell_print(sh, "ASTER ABI %u.%u.%u", ASTER_ABI_MAJOR, ASTER_ABI_MINOR, ASTER_ABI_PATCH);
 	return 0;
 }
@@ -193,66 +223,77 @@ static int cmd_sys_abi(const struct shell *sh, size_t argc, char **argv)
 extern struct k_heap _system_heap;
 
 #if IS_ENABLED(CONFIG_ASTER_LVGL)
-static int cmd_sys_fonts(const struct shell *sh,size_t argc,char **argv)
+static int cmd_sys_fonts(const struct shell *sh, size_t argc, char **argv)
 {
- ARG_UNUSED(argc);ARG_UNUSED(argv);
- unsigned total=0;
- for(uint32_t i=0;i<aster_font_sd_face_n();i++) {
-  aster_font_cache_status_t st;
-  if(!aster_font_sd_cache_status(i,&st)) continue;
-  shell_print(sh,"%upx: %s coverage=%u cached=%u bitmap=%u alloc=%u B",
-    st.px,st.available?"SD":"missing",st.coverage,st.glyphs,st.used,st.bytes);
-  total+=st.bytes;
- }
- shell_print(sh,"glyph cache total=%u B (interval metadata separate)",total);
- aster_font_sd_stats_t counters;
- aster_font_sd_stats(&counters);
- shell_print(sh,"glyph stats hits=%u misses=%u filled=%u evictions=%u reads=%u bytes=%u",
-   counters.hits,counters.misses,counters.miss_filled,counters.evictions,counters.reads,counters.read_bytes);
- shell_print(sh,"glyph time load_us=%u max_load_us=%u warm_us=%u warm_calls=%u (synchronous, no queue)",
-   counters.load_us,counters.max_load_us,counters.warm_us,counters.warm_bursts);
- shell_print(sh,"glyph IO open_us=%u record_us=%u bitmap_us=%u close_us=%u failures=%u (close includes scope cleanup)",
-   counters.open_us,counters.record_us,counters.bitmap_us,counters.close_us,counters.load_failures);
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+	unsigned total = 0;
+	for (uint32_t i = 0; i < aster_font_sd_face_n(); i++) {
+		aster_font_cache_status_t st;
+		if (!aster_font_sd_cache_status(i, &st))
+			continue;
+		shell_print(sh, "%upx: %s coverage=%u cached=%u bitmap=%u alloc=%u B", st.px,
+		            st.available ? "SD" : "missing", st.coverage, st.glyphs, st.used,
+		            st.bytes);
+		total += st.bytes;
+	}
+	shell_print(sh, "glyph cache total=%u B (interval metadata separate)", total);
+	aster_font_sd_stats_t counters;
+	aster_font_sd_stats(&counters);
+	shell_print(sh, "glyph stats hits=%u misses=%u filled=%u evictions=%u reads=%u bytes=%u",
+	            counters.hits, counters.misses, counters.miss_filled, counters.evictions,
+	            counters.reads, counters.read_bytes);
+	shell_print(
+	        sh,
+	        "glyph time load_us=%u max_load_us=%u warm_us=%u warm_calls=%u (synchronous, no queue)",
+	        counters.load_us, counters.max_load_us, counters.warm_us, counters.warm_bursts);
+	shell_print(
+	        sh,
+	        "glyph IO open_us=%u record_us=%u bitmap_us=%u close_us=%u failures=%u (close includes scope cleanup)",
+	        counters.open_us, counters.record_us, counters.bitmap_us, counters.close_us,
+	        counters.load_failures);
 
- return 0;
+	return 0;
 }
 #endif
 
 static int cmd_sys_mem(const struct shell *sh, size_t argc, char **argv)
 {
-	ARG_UNUSED(argc); ARG_UNUSED(argv);
-	struct sys_memory_stats st = { 0 };
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+	struct sys_memory_stats st = {0};
 
 	if (sys_heap_runtime_stats_get(&_system_heap.heap, &st) == 0) {
 		shell_print(sh, "dram heap:  size=%u peak=%u used=%u free=%u",
-			    (unsigned)CONFIG_HEAP_MEM_POOL_SIZE,
-			    (unsigned)st.max_allocated_bytes,
-			    (unsigned)st.allocated_bytes,
-			    (unsigned)st.free_bytes);
-		shell_print(sh, "            (kernel allocations; libc worker stacks reported separately)");
+		            (unsigned)CONFIG_HEAP_MEM_POOL_SIZE, (unsigned)st.max_allocated_bytes,
+		            (unsigned)st.allocated_bytes, (unsigned)st.free_bytes);
+		shell_print(
+		        sh,
+		        "            (kernel allocations; libc worker stacks reported separately)");
 	} else {
 		shell_print(sh, "dram heap:  size=%u (no runtime stats)",
-			    (unsigned)CONFIG_HEAP_MEM_POOL_SIZE);
+		            (unsigned)CONFIG_HEAP_MEM_POOL_SIZE);
 	}
 #if defined(CONFIG_COMMON_LIBC_MALLOC) && defined(CONFIG_SYS_HEAP_RUNTIME_STATS)
 	/* This pool shares the SRAM tail with the kernel heap. Report its own
 	 * statistics: _heap_sentry - _end includes the kernel reservation and
 	 * must not be mistaken for the libc arena. Size excludes heap metadata. */
-	struct sys_memory_stats libc_st = { 0 };
+	struct sys_memory_stats libc_st = {0};
 	if (malloc_runtime_stats_get(&libc_st) == 0) {
 		shell_print(sh, "libc heap:  usable=%u peak=%u used=%u free=%u",
-			    (unsigned)(libc_st.allocated_bytes + libc_st.free_bytes),
-			    (unsigned)libc_st.max_allocated_bytes,
-			    (unsigned)libc_st.allocated_bytes,
-			    (unsigned)libc_st.free_bytes);
-		shell_print(sh, "            (malloc/calloc; APP, Wi-Fi, audio and service worker stacks)");
+		            (unsigned)(libc_st.allocated_bytes + libc_st.free_bytes),
+		            (unsigned)libc_st.max_allocated_bytes,
+		            (unsigned)libc_st.allocated_bytes, (unsigned)libc_st.free_bytes);
+		shell_print(
+		        sh,
+		        "            (malloc/calloc; APP, Wi-Fi, audio and service worker stacks)");
 	}
 #endif
 	aster_system_info_t i;
 
 	aster_sysinfo_get(&i);
 	shell_print(sh, "ext ram:    %u total, wamr_cap=%u", i.ram_external,
-		    (unsigned)CONFIG_ASTER_WAMR_HEAP_SIZE);
+	            (unsigned)CONFIG_ASTER_WAMR_HEAP_SIZE);
 	{
 		/* The declared size above is a Kconfig number; this is what the
 		 * image was actually linked against. Both are printed so a port
@@ -264,11 +305,13 @@ static int cmd_sys_mem(const struct shell *sh, size_t argc, char **argv)
 
 		if (aster_psram_geom_get(&g)) {
 			shell_print(sh, "psram:      static=%zu heap=%zu used=%zu of %zu (%u%%)",
-				    g.static_sz, g.heap, g.total, g.chip,
-				    (unsigned)(g.chip ? 100u * g.total / g.chip : 0u));
+			            g.static_sz, g.heap, g.total, g.chip,
+			            (unsigned)(g.chip ? 100u * g.total / g.chip : 0u));
 			if (g.chip && g.total > g.chip) {
-				shell_print(sh, "            MISMATCH: linked %zu B over the "
-					    "declared %zu B part", g.total, g.chip);
+				shell_print(sh,
+				            "            MISMATCH: linked %zu B over the "
+				            "declared %zu B part",
+				            g.total, g.chip);
 			}
 		} else {
 			shell_print(sh, "psram:      no linker geometry on this port");
@@ -282,15 +325,15 @@ static int cmd_sys_mem(const struct shell *sh, size_t argc, char **argv)
 		 * camera / decoder / a second full-screen buffer will come up
 		 * or fail with -ENOMEM. */
 		static const size_t probe[] = {
-			7864320u, 7340032u, 6291456u, 5242880u, 4194304u,
-			2097152u, 1048576u, 524288u, 393216u,
-			307200u, 262144u, 204800u, 153600u, 131072u, 65536u,
+		        7864320u, 7340032u, 6291456u, 5242880u, 4194304u,
+		        2097152u, 1048576u, 524288u,  393216u,  307200u,
+		        262144u,  204800u,  153600u,  131072u,  65536u,
 		};
 		size_t best = 0;
 
 		for (size_t k = 0; k < ARRAY_SIZE(probe); k++) {
-			void *p = shared_multi_heap_aligned_alloc(
-				SMH_REG_ATTR_EXTERNAL, 32, probe[k]);
+			void *p = shared_multi_heap_aligned_alloc(SMH_REG_ATTR_EXTERNAL, 32,
+			                                          probe[k]);
 
 			if (p) {
 				shared_multi_heap_free(p);
@@ -305,12 +348,13 @@ static int cmd_sys_mem(const struct shell *sh, size_t argc, char **argv)
 		 * double buffer (2 x 150 KB) compete for. */
 		{
 			enum { HOLD_MAX = 8 };
+
 			void *hold[HOLD_MAX];
 			int n = 0;
 
 			while (n < HOLD_MAX) {
-				void *p = shared_multi_heap_aligned_alloc(
-					SMH_REG_ATTR_EXTERNAL, 32, 153600u);
+				void *p = shared_multi_heap_aligned_alloc(SMH_REG_ATTR_EXTERNAL, 32,
+				                                          153600u);
 
 				if (!p) {
 					break;
@@ -330,7 +374,8 @@ static int cmd_sys_mem(const struct shell *sh, size_t argc, char **argv)
 
 static int cmd_app_list(const struct shell *sh, size_t argc, char **argv)
 {
-	ARG_UNUSED(argc); ARG_UNUSED(argv);
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
 	int n = aster_app_mgr_count();
 	if (n == 0) {
 		shell_print(sh, "no apps installed");
@@ -344,8 +389,8 @@ static int cmd_app_list(const struct shell *sh, size_t argc, char **argv)
 		 * runs interpreted and much slower. `aster app info <id>` says
 		 * which target it wanted. */
 		shell_print(sh, "%-28s %-16s %-8s %s%s", r->id, r->name, r->version,
-			    state_str(r->state),
-			    r->has_aot ? " [AOT]" : (r->aot_skip ? " [AOT!]" : ""));
+		            state_str(r->state),
+		            r->has_aot ? " [AOT]" : (r->aot_skip ? " [AOT!]" : ""));
 	}
 	return 0;
 }
@@ -354,10 +399,15 @@ static int cmd_app_list(const struct shell *sh, size_t argc, char **argv)
 static int cmd_app_fault(const struct shell *sh, size_t argc, char **argv)
 {
 	if (argc == 2 && !strcmp(argv[1], "clear")) {
-		aster_pkg_fault_clear(); shell_print(sh, "fault cleared"); return 0;
+		aster_pkg_fault_clear();
+		shell_print(sh, "fault cleared");
+		return 0;
 	}
-	if (argc != 5 || (strcmp(argv[4], "error") && strcmp(argv[4], "reboot") && strcmp(argv[4], "hold"))) {
-		shell_error(sh, "fault <test.p0.ID> <stage> <open|write|sync|close|verify> <error|reboot|hold>");
+	if (argc != 5 ||
+	    (strcmp(argv[4], "error") && strcmp(argv[4], "reboot") && strcmp(argv[4], "hold"))) {
+		shell_error(
+		        sh,
+		        "fault <test.p0.ID> <stage> <open|write|sync|close|verify> <error|reboot|hold>");
 		return -EINVAL;
 	}
 	unsigned action = !strcmp(argv[4], "hold") ? 2u : !strcmp(argv[4], "reboot") ? 1u : 0u;
@@ -414,8 +464,7 @@ static int cmd_app_start(const struct shell *sh, size_t argc, char **argv)
 
 /* ENOENT from stop/pause/resume means "id != the running app", not "id
  * unknown" — the generic hint would be misleading there. */
-static int do_ctrl(const struct shell *sh, char **argv, size_t argc,
-		   int (*fn)(const char *))
+static int do_ctrl(const struct shell *sh, char **argv, size_t argc, int (*fn)(const char *))
 {
 	if (argc < 2) {
 		shell_error(sh, "usage: <id>");
@@ -436,10 +485,12 @@ static int cmd_app_stop(const struct shell *sh, size_t argc, char **argv)
 {
 	return do_ctrl(sh, argv, argc, aster_app_stop);
 }
+
 static int cmd_app_pause(const struct shell *sh, size_t argc, char **argv)
 {
 	return do_ctrl(sh, argv, argc, aster_app_pause);
 }
+
 static int cmd_app_resume(const struct shell *sh, size_t argc, char **argv)
 {
 	return do_ctrl(sh, argv, argc, aster_app_resume);
@@ -456,8 +507,8 @@ static int cmd_app_state(const struct shell *sh, size_t argc, char **argv)
 		shell_error(sh, "no such app");
 		return -EINVAL;
 	}
-	shell_print(sh, "%s: %s (err=%u starts=%u)", r->id, state_str(r->state),
-		    r->last_error, r->start_count);
+	shell_print(sh, "%s: %s (err=%u starts=%u)", r->id, state_str(r->state), r->last_error,
+	            r->start_count);
 	return 0;
 }
 
@@ -473,12 +524,12 @@ static int cmd_app_stats(const struct shell *sh, size_t argc, char **argv)
 		return -EINVAL;
 	}
 	shell_print(sh, "id=%s state=%s", r->id, state_str(r->state));
-	shell_print(sh, "mem: initial=%u max=%u stack=%u heap=%u peak=%u",
-		    r->mem_initial, r->mem_max, r->mem_stack, r->mem_heap, r->peak_mem);
+	shell_print(sh, "mem: initial=%u max=%u stack=%u heap=%u peak=%u", r->mem_initial,
+	            r->mem_max, r->mem_stack, r->mem_heap, r->peak_mem);
 	aster_app_ctx_t *c = aster_app_current();
 	if (c && strcmp(c->id, r->id) == 0) {
 		shell_print(sh, "frames=%u fps=%u uptime=%lldms", c->frame_no, c->framerate,
-			    (long long)(k_uptime_get() - (int64_t)c->start_ms));
+		            (long long)(k_uptime_get() - (int64_t)c->start_ms));
 	}
 	return 0;
 }
@@ -499,18 +550,19 @@ static int cmd_app_info(const struct shell *sh, size_t argc, char **argv)
 	shell_print(sh, "version:  %s", r->version);
 	shell_print(sh, "state:    %s", state_str(r->state));
 	shell_print(sh, "entry:    %s", r->entry);
-	shell_print(sh, "mem:      initial=%u max=%u stack=%u heap=%u",
-		    r->mem_initial, r->mem_max, r->mem_stack, r->mem_heap);
+	shell_print(sh, "mem:      initial=%u max=%u stack=%u heap=%u", r->mem_initial, r->mem_max,
+	            r->mem_stack, r->mem_heap);
 	shell_print(sh, "image:    %s", r->has_aot ? "wasm + aot" : "wasm");
 	if (r->aot_skip) {
 		/* Name both ids, not just "mismatch": the fix is to rebuild the
 		 * package for this device, and that needs the wanted id. */
-		shell_print(sh, "aot:      DROPPED -- package is target %u, this "
-			    "device runs target %u; app is interpreted",
-			    r->aot_skip, (unsigned)CONFIG_ASTER_AOT_TARGET_ID);
+		shell_print(sh,
+		            "aot:      DROPPED -- package is target %u, this "
+		            "device runs target %u; app is interpreted",
+		            r->aot_skip, (unsigned)CONFIG_ASTER_AOT_TARGET_ID);
 	}
-	shell_print(sh, "starts:   %u  last_err=%u  peak=%u", r->start_count,
-		    r->last_error, r->peak_mem);
+	shell_print(sh, "starts:   %u  last_err=%u  peak=%u", r->start_count, r->last_error,
+	            r->peak_mem);
 	/* shell thread is single-user; static avoids ~900B on its 8K stack */
 	static aster_manifest_t m;
 	if (aster_app_mgr_read_manifest(r->id, &m) == ASTER_OK) {
@@ -539,7 +591,8 @@ static int cmd_app_info(const struct shell *sh, size_t argc, char **argv)
 
 static int cmd_app_scan(const struct shell *sh, size_t argc, char **argv)
 {
-	ARG_UNUSED(argc); ARG_UNUSED(argv);
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
 	int n = aster_app_mgr_scan();
 	shell_print(sh, "scan: %d apps", n);
 	return 0;
@@ -555,20 +608,19 @@ struct log_ctx {
 static bool log_print_cb(uint64_t ts, const char *app, uint32_t level, const char *msg, void *u)
 {
 	struct log_ctx *lc = u;
-	static const char *lvl[] = { "dbg", "inf", "wrn", "err", "ftl" };
+	static const char *lvl[] = {"dbg", "inf", "wrn", "err", "ftl"};
 	if (lc->grep && strcmp(lc->grep, app) != 0) {
 		return true;
 	}
-	shell_print(lc->sh, "[%8llu.%03llu] %-5s %-16s %s",
-		    (unsigned long long)(ts / 1000), (unsigned long long)(ts % 1000),
-		    lvl[level > 4 ? 4 : level], app, msg);
+	shell_print(lc->sh, "[%8llu.%03llu] %-5s %-16s %s", (unsigned long long)(ts / 1000),
+	            (unsigned long long)(ts % 1000), lvl[level > 4 ? 4 : level], app, msg);
 	lc->shown++;
 	return true;
 }
 
 static int cmd_log(const struct shell *sh, size_t argc, char **argv)
 {
-	struct log_ctx lc = { .sh = sh, .grep = NULL };
+	struct log_ctx lc = {.sh = sh, .grep = NULL};
 	int limit = 20;
 
 	if (argc >= 2 && strcmp(argv[1], "clear") == 0) {
@@ -605,8 +657,8 @@ static int cmd_log(const struct shell *sh, size_t argc, char **argv)
 /* ---- aster fs : unique SD file-management entry (no cd/pwd) ---- */
 
 #define ASTER_FS_PATH_MAX 192
-#define ASTER_FS_CAT_MAX  4096
-#define ASTER_FS_HEX_MAX  1024
+#define ASTER_FS_CAT_MAX 4096
+#define ASTER_FS_HEX_MAX 1024
 
 static int fs_need_sd(const struct shell *sh)
 {
@@ -628,8 +680,7 @@ static int fs_resolve(const char *in, char *out, size_t n)
 	}
 	if (src[0] != '/') {
 		w = snprintf(out, n, "%s/%s", ASTER_MOUNT_POINT, src);
-	} else if (strncmp(src, ASTER_MOUNT_POINT, 4) == 0 &&
-		   (src[4] == '\0' || src[4] == '/')) {
+	} else if (strncmp(src, ASTER_MOUNT_POINT, 4) == 0 && (src[4] == '\0' || src[4] == '/')) {
 		w = snprintf(out, n, "%s", src);
 	} else {
 		return -EINVAL;
@@ -669,11 +720,9 @@ static int cmd_fs_ls(const struct shell *sh, size_t argc, char **argv)
 			skipped++;
 			continue;
 		}
-		shell_print(sh, "%c %8llu  %s",
-			    ent.type == FS_DIR_ENTRY_DIR ? 'd' : '-',
-			    ent.type == FS_DIR_ENTRY_DIR ? 0ULL :
-				    (unsigned long long)ent.size,
-			    ent.name);
+		shell_print(sh, "%c %8llu  %s", ent.type == FS_DIR_ENTRY_DIR ? 'd' : '-',
+		            ent.type == FS_DIR_ENTRY_DIR ? 0ULL : (unsigned long long)ent.size,
+		            ent.name);
 	}
 	fs_closedir(&dir);
 	if (skipped) {
@@ -698,9 +747,8 @@ static int cmd_fs_stat(const struct shell *sh, size_t argc, char **argv)
 		shell_error(sh, "stat %s failed", path);
 		return 0;
 	}
-	shell_print(sh, "%s %s %llu",
-		    st.type == FS_DIR_ENTRY_DIR ? "dir" : "file", path,
-		    (unsigned long long)st.size);
+	shell_print(sh, "%s %s %llu", st.type == FS_DIR_ENTRY_DIR ? "dir" : "file", path,
+	            (unsigned long long)st.size);
 	return 0;
 }
 
@@ -737,8 +785,7 @@ static int cmd_fs_cat(const struct shell *sh, size_t argc, char **argv)
 		for (int i = 0; i < r; i++) {
 			unsigned char c = (unsigned char)buf[i];
 
-			if (c == '\n' || c == '\r' || c == '\t' ||
-			    (c >= 32 && c < 127)) {
+			if (c == '\n' || c == '\r' || c == '\t' || (c >= 32 && c < 127)) {
 				shell_fprintf(sh, SHELL_NORMAL, "%c", c);
 			} else {
 				shell_fprintf(sh, SHELL_NORMAL, ".");
@@ -918,9 +965,8 @@ static int cmd_fs_df(const struct shell *sh, size_t argc, char **argv)
 	}
 	total = (uint64_t)st.f_blocks * st.f_frsize;
 	freeb = (uint64_t)st.f_bfree * st.f_frsize;
-	shell_print(sh, "SD: total %llu MB, free %llu MB",
-		    (unsigned long long)(total >> 20),
-		    (unsigned long long)(freeb >> 20));
+	shell_print(sh, "SD: total %llu MB, free %llu MB", (unsigned long long)(total >> 20),
+	            (unsigned long long)(freeb >> 20));
 	return 0;
 }
 
@@ -938,90 +984,103 @@ static int cmd_fs_mount(const struct shell *sh, size_t argc, char **argv)
 /* ---- command tree ---- */
 #if defined(CONFIG_ASTER_FIRST_BOOT)
 #include "aster_setup.h"
-static int cmd_sys_setup(const struct shell *sh,size_t argc,char **argv)
+
+static int cmd_sys_setup(const struct shell *sh, size_t argc, char **argv)
 {
-    ARG_UNUSED(sh);ARG_UNUSED(argc);ARG_UNUSED(argv);
-    return aster_setup_repair();
+	ARG_UNUSED(sh);
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+	return aster_setup_repair();
 }
-static int cmd_sys_setup_source(const struct shell *sh,size_t argc,char **argv)
+
+static int cmd_sys_setup_source(const struct shell *sh, size_t argc, char **argv)
 {
-    ARG_UNUSED(sh);ARG_UNUSED(argc);
-    return aster_setup_repair_source(argv[1]);
+	ARG_UNUSED(sh);
+	ARG_UNUSED(argc);
+	return aster_setup_repair_source(argv[1]);
 }
-static int cmd_sys_setup_status(const struct shell *sh,size_t argc,char **argv)
+
+static int cmd_sys_setup_status(const struct shell *sh, size_t argc, char **argv)
 {
-    ARG_UNUSED(argc);ARG_UNUSED(argv);
-    aster_setup_snapshot s;aster_setup_get(&s);
-    shell_print(sh,"SETUP phase=%u error=%d hotspot=%u bytes=%llu/%llu",
-                (unsigned)s.state.phase,s.state.error,s.hotspot,
-                (unsigned long long)s.state.bytes,(unsigned long long)s.state.total);
-    return 0;
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+	aster_setup_snapshot s;
+	aster_setup_get(&s);
+	shell_print(sh, "SETUP phase=%u error=%d hotspot=%u bytes=%llu/%llu",
+	            (unsigned)s.state.phase, s.state.error, s.hotspot,
+	            (unsigned long long)s.state.bytes, (unsigned long long)s.state.total);
+	return 0;
 }
-static int cmd_sd_format(const struct shell *sh,size_t argc,char **argv)
+
+static int cmd_sd_format(const struct shell *sh, size_t argc, char **argv)
 {
-    if(argc!=2 || strcmp(argv[1],"--confirm")) {
-        shell_print(sh,"Erase mounted SD card: aster sd format --confirm");return -EINVAL;
-    }
-    int rc=aster_setup_request_format();
-    if(!rc)shell_print(sh,"SD format queued: all card contents will be erased; device will reboot.");
-    return rc;
+	if (argc != 2 || strcmp(argv[1], "--confirm")) {
+		shell_print(sh, "Erase mounted SD card: aster sd format --confirm");
+		return -EINVAL;
+	}
+	int rc = aster_setup_request_format();
+	if (!rc)
+		shell_print(
+		        sh,
+		        "SD format queued: all card contents will be erased; device will reboot.");
+	return rc;
 }
+
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_sd,
-    SHELL_CMD(format,NULL,"erase mounted SD card and reboot; requires --confirm",cmd_sd_format),
-    SHELL_SUBCMD_SET_END);
+                               SHELL_CMD(format, NULL,
+                                         "erase mounted SD card and reboot; requires --confirm",
+                                         cmd_sd_format),
+                               SHELL_SUBCMD_SET_END);
 #endif
 
-SHELL_STATIC_SUBCMD_SET_CREATE(sub_sys,
+SHELL_STATIC_SUBCMD_SET_CREATE(
+        sub_sys,
 #if defined(CONFIG_ASTER_FIRST_BOOT)
-    SHELL_CMD(setup,NULL,"reopen Web provisioning; preserve apps and data",cmd_sys_setup),
-    SHELL_CMD_ARG(setup-source,NULL,"verify/install from URL using saved Wi-Fi",cmd_sys_setup_source,2,0),
-    SHELL_CMD(setup-status,NULL,"resource setup progress/error",cmd_sys_setup_status),
+        SHELL_CMD(setup, NULL, "reopen Web provisioning; preserve apps and data", cmd_sys_setup),
+        SHELL_CMD_ARG(setup - source, NULL, "verify/install from URL using saved Wi-Fi",
+                      cmd_sys_setup_source, 2, 0),
+        SHELL_CMD(setup - status, NULL, "resource setup progress/error", cmd_sys_setup_status),
 #endif
-	SHELL_CMD(info, NULL, "device profile", cmd_sys_info),
-	SHELL_CMD(features, NULL, "capability list", cmd_sys_features),
-	SHELL_CMD(abi, NULL, "ABI version", cmd_sys_abi),
-	SHELL_CMD(mem, NULL, "memory budget (heap peak / ext ram)", cmd_sys_mem),
+        SHELL_CMD(info, NULL, "device profile", cmd_sys_info),
+        SHELL_CMD(features, NULL, "capability list", cmd_sys_features),
+        SHELL_CMD(abi, NULL, "ABI version", cmd_sys_abi),
+        SHELL_CMD(mem, NULL, "memory budget (heap peak / ext ram)", cmd_sys_mem),
 #if IS_ENABLED(CONFIG_ASTER_LVGL)
-    SHELL_CMD(fonts, NULL, "native font sizes and glyph cache allocations", cmd_sys_fonts),
+        SHELL_CMD(fonts, NULL, "native font sizes and glyph cache allocations", cmd_sys_fonts),
 #endif
 #if IS_ENABLED(CONFIG_ASTER_LVGL)
-	SHELL_CMD(lvgl, NULL, "LVGL heap pool + baked font face state",
-		  cmd_sys_lvgl),
+        SHELL_CMD(lvgl, NULL, "LVGL heap pool + baked font face state", cmd_sys_lvgl),
 #endif
-	SHELL_SUBCMD_SET_END
-);
+        SHELL_SUBCMD_SET_END);
 
-SHELL_STATIC_SUBCMD_SET_CREATE(sub_app,
-	SHELL_CMD(list, NULL, "installed apps", cmd_app_list),
+SHELL_STATIC_SUBCMD_SET_CREATE(
+        sub_app, SHELL_CMD(list, NULL, "installed apps", cmd_app_list),
 #ifdef CONFIG_ASTER_PKG_FAULT_INJECTION
-	SHELL_CMD(fault, NULL, "one-shot test.p0.* install fault (diagnostic build)", cmd_app_fault),
+        SHELL_CMD(fault, NULL, "one-shot test.p0.* install fault (diagnostic build)",
+                  cmd_app_fault),
 #endif
-	SHELL_CMD_ARG(install, NULL, "install <path.ast>", cmd_app_install, 2, 0),
-	SHELL_CMD_ARG(uninstall, NULL, "uninstall <id>", cmd_app_uninstall, 2, 0),
-	SHELL_CMD_ARG(start, NULL, "start <id>", cmd_app_start, 2, 0),
-	SHELL_CMD_ARG(stop, NULL, "stop <id>", cmd_app_stop, 2, 0),
-	SHELL_CMD_ARG(pause, NULL, "pause <id>", cmd_app_pause, 2, 0),
-	SHELL_CMD_ARG(resume, NULL, "resume <id>", cmd_app_resume, 2, 0),
-	SHELL_CMD_ARG(state, NULL, "state <id>", cmd_app_state, 2, 0),
-	SHELL_CMD_ARG(stats, NULL, "runtime stats <id>", cmd_app_stats, 2, 0),
-	SHELL_CMD_ARG(info, NULL, "app details <id>", cmd_app_info, 2, 0),
-	SHELL_CMD(scan, NULL, "rescan /SD:/aster/apps", cmd_app_scan),
-	SHELL_SUBCMD_SET_END
-);
+        SHELL_CMD_ARG(install, NULL, "install <path.ast>", cmd_app_install, 2, 0),
+        SHELL_CMD_ARG(uninstall, NULL, "uninstall <id>", cmd_app_uninstall, 2, 0),
+        SHELL_CMD_ARG(start, NULL, "start <id>", cmd_app_start, 2, 0),
+        SHELL_CMD_ARG(stop, NULL, "stop <id>", cmd_app_stop, 2, 0),
+        SHELL_CMD_ARG(pause, NULL, "pause <id>", cmd_app_pause, 2, 0),
+        SHELL_CMD_ARG(resume, NULL, "resume <id>", cmd_app_resume, 2, 0),
+        SHELL_CMD_ARG(state, NULL, "state <id>", cmd_app_state, 2, 0),
+        SHELL_CMD_ARG(stats, NULL, "runtime stats <id>", cmd_app_stats, 2, 0),
+        SHELL_CMD_ARG(info, NULL, "app details <id>", cmd_app_info, 2, 0),
+        SHELL_CMD(scan, NULL, "rescan /SD:/aster/apps", cmd_app_scan), SHELL_SUBCMD_SET_END);
 
-SHELL_STATIC_SUBCMD_SET_CREATE(sub_fs,
-	SHELL_CMD_ARG(ls, NULL, "list [path]", cmd_fs_ls, 1, 1),
-	SHELL_CMD_ARG(stat, NULL, "stat <path>", cmd_fs_stat, 2, 0),
-	SHELL_CMD_ARG(cat, NULL, "text dump <path> (4K)", cmd_fs_cat, 2, 0),
-	SHELL_CMD_ARG(hex, NULL, "hexdump <path> (1K)", cmd_fs_hex, 2, 0),
-	SHELL_CMD_ARG(mkdir, NULL, "mkdir <path>", cmd_fs_mkdir, 2, 0),
-	SHELL_CMD_ARG(rm, NULL, "remove file or empty dir", cmd_fs_rm, 2, 0),
-	SHELL_CMD_ARG(cp, NULL, "copy <src> <dst>", cmd_fs_cp, 3, 0),
-	SHELL_CMD_ARG(mv, NULL, "rename <src> <dst>", cmd_fs_mv, 3, 0),
-	SHELL_CMD(df, NULL, "free space", cmd_fs_df),
-	SHELL_CMD(mount, NULL, "mount/retry SD", cmd_fs_mount),
-	SHELL_SUBCMD_SET_END
-);
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_fs, SHELL_CMD_ARG(ls, NULL, "list [path]", cmd_fs_ls, 1, 1),
+                               SHELL_CMD_ARG(stat, NULL, "stat <path>", cmd_fs_stat, 2, 0),
+                               SHELL_CMD_ARG(cat, NULL, "text dump <path> (4K)", cmd_fs_cat, 2, 0),
+                               SHELL_CMD_ARG(hex, NULL, "hexdump <path> (1K)", cmd_fs_hex, 2, 0),
+                               SHELL_CMD_ARG(mkdir, NULL, "mkdir <path>", cmd_fs_mkdir, 2, 0),
+                               SHELL_CMD_ARG(rm, NULL, "remove file or empty dir", cmd_fs_rm, 2, 0),
+                               SHELL_CMD_ARG(cp, NULL, "copy <src> <dst>", cmd_fs_cp, 3, 0),
+                               SHELL_CMD_ARG(mv, NULL, "rename <src> <dst>", cmd_fs_mv, 3, 0),
+                               SHELL_CMD(df, NULL, "free space", cmd_fs_df),
+                               SHELL_CMD(mount, NULL, "mount/retry SD", cmd_fs_mount),
+                               SHELL_SUBCMD_SET_END);
 
 #if IS_ENABLED(CONFIG_ASTER_SCREENSHOT)
 static int cmd_ui_screenshot(const struct shell *sh, size_t argc, char **argv)
@@ -1055,73 +1114,99 @@ static int cmd_ui_screenshot(const struct shell *sh, size_t argc, char **argv)
 }
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_ui,
-	SHELL_CMD_ARG(screenshot, NULL, "grab screen -> zlib base64 (host: screenshot.py)",
-		      cmd_ui_screenshot, 1, 1),
-	SHELL_SUBCMD_SET_END
-);
+                               SHELL_CMD_ARG(screenshot, NULL,
+                                             "grab screen -> zlib base64 (host: screenshot.py)",
+                                             cmd_ui_screenshot, 1, 1),
+                               SHELL_SUBCMD_SET_END);
 #endif
 
 #if IS_ENABLED(CONFIG_ASTER_WAMR)
 static int cmd_display_mode(const struct shell *sh, size_t argc, char **argv)
 {
-    ARG_UNUSED(argc);
-    enum aster_display_mode mode;
-    if (!strcmp(argv[1], "headless")) mode = ASTER_DISPLAY_MODE_HEADLESS;
-    else if (!strcmp(argv[1], "portrait")) mode = ASTER_DISPLAY_MODE_PORTRAIT;
-    else if (!strcmp(argv[1], "landscape")) mode = ASTER_DISPLAY_MODE_LANDSCAPE;
-    else { shell_error(sh, "display headless|portrait|landscape"); return -EINVAL; }
-    int err = aster_runtime_display_mode_request(mode);
-    if (err) shell_error(sh, "display mode refused: %d (stop the active APP first)", err);
-    else shell_print(sh, "display mode queued: %s", argv[1]);
-    return err;
+	ARG_UNUSED(argc);
+	enum aster_display_mode mode;
+	if (!strcmp(argv[1], "headless"))
+		mode = ASTER_DISPLAY_MODE_HEADLESS;
+	else if (!strcmp(argv[1], "portrait"))
+		mode = ASTER_DISPLAY_MODE_PORTRAIT;
+	else if (!strcmp(argv[1], "landscape"))
+		mode = ASTER_DISPLAY_MODE_LANDSCAPE;
+	else {
+		shell_error(sh, "display headless|portrait|landscape");
+		return -EINVAL;
+	}
+	int err = aster_runtime_display_mode_request(mode);
+	if (err)
+		shell_error(sh, "display mode refused: %d (stop the active APP first)", err);
+	else
+		shell_print(sh, "display mode queued: %s", argv[1]);
+	return err;
 }
 #endif
 
-static int cmd_port(const struct shell *sh,size_t argc,char **argv)
+static int cmd_port(const struct shell *sh, size_t argc, char **argv)
 {
-    if(argc!=2 || strcmp(argv[1],"selftest"))return -EINVAL;
-    if(aster_app_mgr_is_live(NULL))return -EBUSY;
-    aster_port_check_t result;int error=aster_port_check(&result);
-    shell_print(sh,"PORT device=%s os=%s passed=0x%x stage=%s error=%d",
-                aster_device_ops()->name,aster_os_ops()->name,result.passed,result.stage,error);
-    return error;
+	if (argc != 2 || strcmp(argv[1], "selftest"))
+		return -EINVAL;
+	if (aster_app_mgr_is_live(NULL))
+		return -EBUSY;
+	aster_port_check_t result;
+	int error = aster_port_check(&result);
+	shell_print(sh, "PORT device=%s os=%s passed=0x%x stage=%s error=%d",
+	            aster_device_ops()->name, aster_os_ops()->name, result.passed, result.stage,
+	            error);
+	return error;
 }
-static int cmd_power(const struct shell *sh,size_t argc,char **argv)
+
+static int cmd_power(const struct shell *sh, size_t argc, char **argv)
 {
- if(argc!=2)return -EINVAL;
- if(!strcmp(argv[1],"status")){
-  aster_power_caps_t caps={0};int r=aster_power_caps(&caps);
-  shell_print(sh,"POWER modes=%u pending=%d result=%d active=%u closing=%d",caps.modes,aster_power_pending(),aster_power_last_result(),aster_power_activity_count(),aster_power_activity_closing());return r;
- }
- aster_power_request_t request={.size=sizeof(request),.version=ASTER_POWER_API_VERSION};
- if(!strcmp(argv[1],"restart"))request.mode=ASTER_POWER_RESTART;
- else if(!strcmp(argv[1],"off"))request.mode=ASTER_POWER_SHUTDOWN;
- else if(!strcmp(argv[1],"sleep")){
-  aster_power_caps_t caps;int r=aster_power_caps(&caps);if(r)return r;
-  request.mode=ASTER_POWER_LIGHT_SLEEP;request.wake_sources=caps.light_wake&(ASTER_WAKE_KEY|ASTER_WAKE_TOUCH);
- }else return -EINVAL;
- return aster_power_schedule(&request);
+	if (argc != 2)
+		return -EINVAL;
+	if (!strcmp(argv[1], "status")) {
+		aster_power_caps_t caps = {0};
+		int r = aster_power_caps(&caps);
+		shell_print(sh, "POWER modes=%u pending=%d result=%d active=%u closing=%d",
+		            caps.modes, aster_power_pending(), aster_power_last_result(),
+		            aster_power_activity_count(), aster_power_activity_closing());
+		return r;
+	}
+	aster_power_request_t request = {.size = sizeof(request),
+	                                 .version = ASTER_POWER_API_VERSION};
+	if (!strcmp(argv[1], "restart"))
+		request.mode = ASTER_POWER_RESTART;
+	else if (!strcmp(argv[1], "off"))
+		request.mode = ASTER_POWER_SHUTDOWN;
+	else if (!strcmp(argv[1], "sleep")) {
+		aster_power_caps_t caps;
+		int r = aster_power_caps(&caps);
+		if (r)
+			return r;
+		request.mode = ASTER_POWER_LIGHT_SLEEP;
+		request.wake_sources = caps.light_wake & (ASTER_WAKE_KEY | ASTER_WAKE_TOUCH);
+	} else
+		return -EINVAL;
+	return aster_power_schedule(&request);
 }
-SHELL_STATIC_SUBCMD_SET_CREATE(aster_cmds,
-    SHELL_CMD_ARG(power,NULL,"status|restart|off|sleep",cmd_power,2,0),
-    SHELL_CMD_ARG(port,NULL,"selftest: platform adapter contract",cmd_port,2,0),
+
+SHELL_STATIC_SUBCMD_SET_CREATE(
+        aster_cmds, SHELL_CMD_ARG(power, NULL, "status|restart|off|sleep", cmd_power, 2, 0),
+        SHELL_CMD_ARG(port, NULL, "selftest: platform adapter contract", cmd_port, 2, 0),
 #if defined(CONFIG_ASTER_FIRST_BOOT)
-    SHELL_CMD(sd,&sub_sd,"explicit SD maintenance",NULL),
+        SHELL_CMD(sd, &sub_sd, "explicit SD maintenance", NULL),
 #endif
 #if defined(CONFIG_ASTER_NET)
-    SHELL_CMD(net, &aster_net_cmds, "async transport diagnostics", NULL),
+        SHELL_CMD(net, &aster_net_cmds, "async transport diagnostics", NULL),
 #endif
 #if IS_ENABLED(CONFIG_ASTER_WAMR)
-    SHELL_CMD_ARG(display, NULL, "headless|portrait|landscape (same firmware)", cmd_display_mode, 2, 0),
+        SHELL_CMD_ARG(display, NULL, "headless|portrait|landscape (same firmware)",
+                      cmd_display_mode, 2, 0),
 #endif
-	SHELL_CMD(sys, &sub_sys, "system", NULL),
-	SHELL_CMD(app, &sub_app, "apps", NULL),
-	SHELL_CMD(fs, &sub_fs, "SD files", NULL),
+        SHELL_CMD(sys, &sub_sys, "system", NULL), SHELL_CMD(app, &sub_app, "apps", NULL),
+        SHELL_CMD(fs, &sub_fs, "SD files", NULL),
 #if IS_ENABLED(CONFIG_ASTER_SCREENSHOT)
-	SHELL_CMD(ui, &sub_ui, "UI debug", NULL),
+        SHELL_CMD(ui, &sub_ui, "UI debug", NULL),
 #endif
-	SHELL_CMD_ARG(log, NULL, "log [limit] | grep <id> [limit] | clear", cmd_log, 1, 3),
-	SHELL_SUBCMD_SET_END
-);
+        SHELL_CMD_ARG(log, NULL, "log [limit] | grep <id> [limit] | clear", cmd_log, 1, 3),
+        SHELL_SUBCMD_SET_END);
 
 SHELL_CMD_REGISTER(aster, &aster_cmds, "ASTER dynamic app platform", NULL);

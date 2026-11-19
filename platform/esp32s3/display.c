@@ -21,7 +21,12 @@ LOG_MODULE_REGISTER(aster_plat, LOG_LEVEL_INF);
 static const struct device *disp_dev;
 static atomic_t display_enabled = ATOMIC_INIT(1);
 static atomic_t display_generation;
-uint32_t aster_plat_display_generation(void) { return (uint32_t)atomic_get(&display_generation); }
+
+uint32_t aster_plat_display_generation(void)
+{
+	return (uint32_t)atomic_get(&display_generation);
+}
+
 /* Written with disp_lock held, successful payloads only; failures may send
  * an unknown prefix and still invalidate the retained-frame generation. */
 static uint64_t s_completed_bytes, s_completed_windows;
@@ -51,16 +56,15 @@ static uint16_t bl_last; /* led index within the LED device (single-backlight bo
  * The alias points at the LED *child* node; the device is its gpio-leds
  * parent, which is what the port binds. */
 #if IS_ENABLED(CONFIG_LED)
-BUILD_ASSERT(DT_HAS_ALIAS(lcd_bl),
-	     "CONFIG_LED is on, so the port reaches the backlight through "
-	     "`aliases { lcd-bl = &<led child node>; }` -- the board overlay "
-	     "declares no such alias");
+BUILD_ASSERT(DT_HAS_ALIAS(lcd_bl), "CONFIG_LED is on, so the port reaches the backlight through "
+                                   "`aliases { lcd-bl = &<led child node>; }` -- the board overlay "
+                                   "declares no such alias");
 BUILD_ASSERT(DT_NODE_HAS_COMPAT(DT_PARENT(DT_ALIAS(lcd_bl)), gpio_leds) ||
-             DT_NODE_HAS_COMPAT(DT_PARENT(DT_ALIAS(lcd_bl)), pwm_leds),
-	     "`lcd-bl` must point at a child of a `gpio-leds` node; aimed "
-	     "anywhere else it resolves to a device that is not an LED "
-	     "controller, so every backlight call would report success while "
-	     "the glass stays dark");
+                     DT_NODE_HAS_COMPAT(DT_PARENT(DT_ALIAS(lcd_bl)), pwm_leds),
+             "`lcd-bl` must point at a child of a `gpio-leds` node; aimed "
+             "anywhere else it resolves to a device that is not an LED "
+             "controller, so every backlight call would report success while "
+             "the glass stays dark");
 #endif
 
 /* ---------- panel: the devicetree and the menuconfig choice must agree ----
@@ -101,14 +105,14 @@ BUILD_ASSERT(DT_NODE_HAS_COMPAT(DT_PARENT(DT_ALIAS(lcd_bl)), gpio_leds) ||
  * shape this whole block exists to remove. */
 #if DT_HAS_CHOSEN(zephyr_display)
 BUILD_ASSERT(!IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B) ||
-             DT_NODE_HAS_COMPAT(DT_CHOSEN(zephyr_display), waveshare_axs15231b),
+                     DT_NODE_HAS_COMPAT(DT_CHOSEN(zephyr_display), waveshare_axs15231b),
              "AXS15231B panel selection must match chosen zephyr,display");
 BUILD_ASSERT(!IS_ENABLED(CONFIG_ASTER_PANEL_ST7789V) ||
-	     DT_NODE_HAS_COMPAT(DT_CHOSEN(zephyr_display), sitronix_st7789v),
-	     "CONFIG_ASTER_PANEL_ST7789V selects the sitronix,st7789v driver, but "
-	     "the chosen zephyr,display node is not a sitronix,st7789v: the "
-	     "panel overlay and the menuconfig panel choice disagree "
-	     "(firmware/boards/<board>.overlay vs the ASTER_ESP32S3_PANEL choice)");
+                     DT_NODE_HAS_COMPAT(DT_CHOSEN(zephyr_display), sitronix_st7789v),
+             "CONFIG_ASTER_PANEL_ST7789V selects the sitronix,st7789v driver, but "
+             "the chosen zephyr,display node is not a sitronix,st7789v: the "
+             "panel overlay and the menuconfig panel choice disagree "
+             "(firmware/boards/<board>.overlay vs the ASTER_ESP32S3_PANEL choice)");
 
 /* A selected panel with no geometry is the same silent failure one step in.
  * The driver reads width/height straight out of the devicetree and an
@@ -116,17 +120,16 @@ BUILD_ASSERT(!IS_ENABLED(CONFIG_ASTER_PANEL_ST7789V) ||
  * consumer a 0x0 panel. The ASTER_DISP_APP_MAX check below cannot see it --
  * zero fits in 320. */
 BUILD_ASSERT(!IS_ENABLED(CONFIG_ASTER_PANEL_ST7789V) ||
-	     (DT_PROP(DT_CHOSEN(zephyr_display), width) > 0 &&
-	      DT_PROP(DT_CHOSEN(zephyr_display), height) > 0),
-	     "the devicetree panel node declares no width/height, so the port "
-	     "would see a 0x0 display");
-
+                     (DT_PROP(DT_CHOSEN(zephyr_display), width) > 0 &&
+                      DT_PROP(DT_CHOSEN(zephyr_display), height) > 0),
+             "the devicetree panel node declares no width/height, so the port "
+             "would see a 0x0 display");
 
 #else
 BUILD_ASSERT(!IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B), "AXS15231B needs chosen display");
 BUILD_ASSERT(!IS_ENABLED(CONFIG_ASTER_PANEL_ST7789V),
-	     "CONFIG_ASTER_PANEL_ST7789V is on but the devicetree has no chosen "
-	     "zephyr,display node for it to drive");
+             "CONFIG_ASTER_PANEL_ST7789V is on but the devicetree has no chosen "
+             "zephyr,display node for it to drive");
 #endif
 
 /* The format the panel itself takes. Named once and read by get_info() below
@@ -142,8 +145,8 @@ BUILD_ASSERT(!IS_ENABLED(CONFIG_ASTER_PANEL_ST7789V),
  * per-board choice (the multi-hardware direction), the tautology stops being
  * one and this starts doing real work. */
 BUILD_ASSERT((ASTER_FORMATS_CONVERTIBLE & ASTER_FMT_BIT(ASTER_DISP_NATIVE_FORMAT)) != 0,
-	     "ASTER_DISP_NATIVE_FORMAT is not a row of ASTER_FORMAT_TABLE, so the "
-	     "port would report a native format it cannot itself produce");
+             "ASTER_DISP_NATIVE_FORMAT is not a row of ASTER_FORMAT_TABLE, so the "
+             "port would report a native format it cannot itself produce");
 
 /* ---------- direct-send pipeline ----------
  * One in-flight direct-send job is enough: LVGL's double-buffer protocol
@@ -159,40 +162,43 @@ BUILD_ASSERT((ASTER_FORMATS_CONVERTIBLE & ASTER_FMT_BIT(ASTER_DISP_NATIVE_FORMAT
  * first and run synchronously. */
 #if IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B)
 extern int aster_axs15231b_write_persistent(const struct device *dev,
- const struct display_buffer_descriptor *desc,const void *buffer);
+                                            const struct display_buffer_descriptor *desc,
+                                            const void *buffer);
 extern void aster_axs15231b_release_persistent(const struct device *dev);
 /* shadow_begin holds the driver lock until shadow_present. */
 extern void aster_axs15231b_shadow_end(const struct device *dev);
 extern size_t aster_axs15231b_last_tx_bytes(const struct device *dev);
 extern uint8_t *aster_axs15231b_shadow_begin(const struct device *dev, bool replacing_all);
-extern int aster_axs15231b_shadow_present(const struct device *dev,
-	uint16_t x, uint16_t y, uint16_t w, uint16_t h);
+extern int aster_axs15231b_shadow_present(const struct device *dev, uint16_t x, uint16_t y,
+                                          uint16_t w, uint16_t h);
 /* Wire ground truth for the timing lines below: the byte count the last
  * pixel stream actually sent (never inferred from the dirty rect). */
-extern int aster_axs15231b_shadow_present_counted(const struct device *dev,
- uint16_t x,uint16_t y,uint16_t w,uint16_t h,size_t *completed);
+extern int aster_axs15231b_shadow_present_counted(const struct device *dev, uint16_t x, uint16_t y,
+                                                  uint16_t w, uint16_t h, size_t *completed);
 #endif
 #if IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B) && IS_ENABLED(CONFIG_ASTER_DISP_TIMING)
 /* Bounded snapshots: no console output while holding the display mutex. */
 static struct k_spinlock axs_timing_lock;
 static uint32_t axs_timing_snapshot[7];
+
 static void axs_timing_log(struct k_work *work)
 {
- uint32_t v[7];
- ARG_UNUSED(work);
- k_spinlock_key_t key = k_spin_lock(&axs_timing_lock);
- memcpy(v, axs_timing_snapshot, sizeof(v));
- k_spin_unlock(&axs_timing_lock, key);
- LOG_INF("axs tim: n=64 avg_rect=%u B avg_completed_panel=%u B totals wait=%u us gather=%u us cache=%u us write=%u us errors=%u",
-         v[0],v[1],v[2],v[3],v[4],v[5],v[6]);
+	uint32_t v[7];
+	ARG_UNUSED(work);
+	k_spinlock_key_t key = k_spin_lock(&axs_timing_lock);
+	memcpy(v, axs_timing_snapshot, sizeof(v));
+	k_spin_unlock(&axs_timing_lock, key);
+	LOG_INF("axs tim: n=64 avg_rect=%u B avg_completed_panel=%u B totals wait=%u us gather=%u us cache=%u us write=%u us errors=%u",
+	        v[0], v[1], v[2], v[3], v[4], v[5], v[6]);
 }
+
 K_WORK_DEFINE(axs_timing_work, axs_timing_log);
 #endif
 struct aster_disp_job {
 	const uint8_t *buf;
 	struct display_buffer_descriptor desc;
 	uint32_t px, py;
- bool persistent_ui;
+	bool persistent_ui;
 };
 
 /* Direct-send core: one CASET/RASET window + the packed BE pixel stream.
@@ -204,20 +210,21 @@ static int disp_direct_send(const struct aster_disp_job *job)
 #endif
 	k_mutex_lock(&disp_lock, K_FOREVER);
 	int err;
- atomic_inc(&display_generation);
+	atomic_inc(&display_generation);
 #if IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B)
- if(job->persistent_ui) err=aster_axs15231b_write_persistent(disp_dev,&job->desc,job->buf);
- else
+	if (job->persistent_ui)
+		err = aster_axs15231b_write_persistent(disp_dev, &job->desc, job->buf);
+	else
 #endif
- err = display_write(disp_dev, job->px, job->py, &job->desc, job->buf);
- if(!err) {
+		err = display_write(disp_dev, job->px, job->py, &job->desc, job->buf);
+	if (!err) {
 #if IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B)
-  s_completed_bytes+=aster_axs15231b_last_tx_bytes(disp_dev);
+		s_completed_bytes += aster_axs15231b_last_tx_bytes(disp_dev);
 #else
-  s_completed_bytes+=(uint64_t)job->desc.width*job->desc.height*2u;
+		s_completed_bytes += (uint64_t)job->desc.width * job->desc.height * 2u;
 #endif
-  s_completed_windows++;
- }
+		s_completed_windows++;
+	}
 	k_mutex_unlock(&disp_lock);
 #if IS_ENABLED(CONFIG_ASTER_DISP_TIMING)
 	static uint32_t s_dtim_n, s_dtim_wr, s_dtim_bytes;
@@ -227,8 +234,9 @@ static int disp_direct_send(const struct aster_disp_job *job)
 	if (s_dtim_n >= 64) {
 		uint32_t wr_us = k_cyc_to_us_floor32(s_dtim_wr);
 		LOG_INF("disp tim: n=64 avg_rect=%u B direct send (no gather) write=%u us (MB/s w=%u)",
-			s_dtim_bytes / 64, wr_us,
-			(unsigned)((uint64_t)s_dtim_bytes * 1000000 / 1048576 / (wr_us ? wr_us : 1)));
+		        s_dtim_bytes / 64, wr_us,
+		        (unsigned)((uint64_t)s_dtim_bytes * 1000000 / 1048576 /
+		                   (wr_us ? wr_us : 1)));
 		s_dtim_n = s_dtim_wr = s_dtim_bytes = 0;
 	}
 #endif
@@ -254,13 +262,14 @@ static int disp_direct_send(const struct aster_disp_job *job)
  * interleave on the same thread, and sharing would make whichever came
  * second wait on the other's wire time for no reason. */
 #define ASTER_DISP_JOB_SLOTS 3
-#define ASTER_DISP_SHARED_SLOT 0    /* LVGL bands / generic rects */
-#define ASTER_DISP_FLIP_SLOT0 1     /* flip front buffer 0 */
+#define ASTER_DISP_SHARED_SLOT 0 /* LVGL bands / generic rects */
+#define ASTER_DISP_FLIP_SLOT0 1  /* flip front buffer 0 */
+
 /* flip front buffer 1 == ASTER_DISP_FLIP_SLOT0 + 1 == slots - 1 */
 struct aster_disp_slot {
 	struct aster_disp_job job;
 	int result;
-	struct k_sem free;   /* taken: a send for this slot is in flight */
+	struct k_sem free; /* taken: a send for this slot is in flight */
 };
 static struct aster_disp_slot s_slots[ASTER_DISP_JOB_SLOTS];
 /* Poster -> worker hand-off, one entry per armed slot. The ring can never
@@ -275,7 +284,9 @@ static volatile uint8_t s_arm_head, s_arm_tail; /* SPSC ring, poster -> worker *
 
 static void disp_worker_fn(void *p1, void *p2, void *p3)
 {
-	ARG_UNUSED(p1); ARG_UNUSED(p2); ARG_UNUSED(p3);
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
 	for (;;) {
 		k_sem_take(&s_job_ready, K_FOREVER);
 		uint8_t slot = s_armed[s_arm_tail];
@@ -296,12 +307,12 @@ static int disp_worker_start(void)
 		return -ENOMEM;
 	}
 	k_thread_create(&disp_worker_thread, stack,
-			K_KERNEL_STACK_LEN(2048) - K_KERNEL_STACK_RESERVED,
-			disp_worker_fn, NULL, NULL, NULL,
-			CONFIG_ASTER_DISP_WORKER_PRIO, 0, K_NO_WAIT);
+	                K_KERNEL_STACK_LEN(2048) - K_KERNEL_STACK_RESERVED, disp_worker_fn, NULL,
+	                NULL, NULL, CONFIG_ASTER_DISP_WORKER_PRIO, 0, K_NO_WAIT);
 	k_thread_name_set(&disp_worker_thread, "disp_worker");
 	return 0;
 }
+
 /* After malloc_prepare (POST_KERNEL, LIBC priority 35), before the panel
  * device (POST_KERNEL, application priority). */
 SYS_INIT(disp_worker_start, POST_KERNEL, 41);
@@ -360,16 +371,17 @@ void aster_plat_display_flush_drain(void)
  * errors; BEGIN clears earlier completions before arming a new frame. */
 int aster_plat_display_flush_drain_checked(void)
 {
- int result=0;
+	int result = 0;
 #if IS_ENABLED(CONFIG_ASTER_DISP_ASYNC)
- for(int i=0;i<ASTER_DISP_JOB_SLOTS;i++) {
-  k_sem_take(&s_slots[i].free,K_FOREVER);
-  if(s_slots[i].result && !result) result=ASTER_EIO;
-  s_slots[i].result=0;
-  k_sem_give(&s_slots[i].free);
- }
+	for (int i = 0; i < ASTER_DISP_JOB_SLOTS; i++) {
+		k_sem_take(&s_slots[i].free, K_FOREVER);
+		if (s_slots[i].result && !result)
+			result = ASTER_EIO;
+		s_slots[i].result = 0;
+		k_sem_give(&s_slots[i].free);
+	}
 #endif
- return result;
+	return result;
 }
 
 int aster_plat_display_count(void)
@@ -378,20 +390,24 @@ int aster_plat_display_count(void)
 	 * devicetree still describes one. This is the third enforcement layer
 	 * (install-time capability refusal, abi_min launch refusal, and here
 	 * runtime ENOTSUP/ENOENT for already-installed apps). */
-	return IS_ENABLED(CONFIG_ASTER_HAS_DISPLAY) && disp_dev &&
-               device_is_ready(disp_dev) && atomic_get(&display_enabled) ? 1 : 0;
+	return IS_ENABLED(CONFIG_ASTER_HAS_DISPLAY) && disp_dev && device_is_ready(disp_dev) &&
+	                       atomic_get(&display_enabled)
+	               ? 1
+	               : 0;
 }
 
 int aster_plat_display_set_enabled(bool enabled)
 {
-    if (enabled && (!disp_dev || !device_is_ready(disp_dev))) {
-        return ASTER_ENODEV;
-    }
-    aster_plat_display_flush_drain();
-    atomic_set(&display_enabled, enabled ? 1 : 0);
-    atomic_inc(&display_generation);
-    if (bl_dev) { (void)aster_plat_backlight_set(enabled, 255); }
-    return ASTER_OK;
+	if (enabled && (!disp_dev || !device_is_ready(disp_dev))) {
+		return ASTER_ENODEV;
+	}
+	aster_plat_display_flush_drain();
+	atomic_set(&display_enabled, enabled ? 1 : 0);
+	atomic_inc(&display_generation);
+	if (bl_dev) {
+		(void)aster_plat_backlight_set(enabled, 255);
+	}
+	return ASTER_OK;
 }
 
 /* ---------- logical rotation (software transpose in the swap band) ----------
@@ -450,10 +466,20 @@ static void panel_to_logical(uint32_t *x, uint32_t *y)
 	lh = (s_rot % 180) ? pw : ph;
 	uint32_t u = *x, v = *y;
 	switch (s_rot) {
-	case 90:  *x = lw - 1 - v; *y = u;             break;
-	case 180: *x = pw - 1 - u; *y = ph - 1 - v;    break;
-	case 270: *x = v;          *y = lh - 1 - u;    break;
-	default:  break;
+	case 90:
+		*x = lw - 1 - v;
+		*y = u;
+		break;
+	case 180:
+		*x = pw - 1 - u;
+		*y = ph - 1 - v;
+		break;
+	case 270:
+		*x = v;
+		*y = lh - 1 - u;
+		break;
+	default:
+		break;
 	}
 }
 
@@ -483,9 +509,9 @@ static void panel_to_logical(uint32_t *x, uint32_t *y)
  * one order, stated, is the point of owning this locally.
  */
 struct touch_map {
-	uint8_t  swap;
-	uint8_t  inv_x;
-	uint8_t  inv_y;
+	uint8_t swap;
+	uint8_t inv_x;
+	uint8_t inv_y;
 	uint16_t w;
 	uint16_t h;
 };
@@ -504,14 +530,14 @@ struct touch_map {
  * portrait's logical X is the digitizer's short axis, so the pair swaps. */
 static const struct touch_map s_touch_maps[2] = {
 #if IS_ENABLED(CONFIG_ASTER_AXS15231B_TOUCH)
-	/* AXS touch reports native portrait; display rotation follows below. */
-	{ .swap = 0, .inv_x = 0, .inv_y = 0, .w = 320, .h = 480 },
-	{ .swap = 0, .inv_x = 0, .inv_y = 0, .w = 320, .h = 480 },
+        /* AXS touch reports native portrait; display rotation follows below. */
+        {.swap = 0, .inv_x = 0, .inv_y = 0, .w = 320, .h = 480},
+        {.swap = 0, .inv_x = 0, .inv_y = 0, .w = 320, .h = 480},
 #else
-	/* [0] landscape: panel wider than tall */
-	{ .swap = 0, .inv_x = 0, .inv_y = 1, .w = 320, .h = 240 },
-	/* [1] portrait */
-	{ .swap = 1, .inv_x = 0, .inv_y = 0, .w = 240, .h = 320 },
+        /* [0] landscape: panel wider than tall */
+        {.swap = 0, .inv_x = 0, .inv_y = 1, .w = 320, .h = 240},
+        /* [1] portrait */
+        {.swap = 1, .inv_x = 0, .inv_y = 0, .w = 240, .h = 320},
 #endif
 };
 
@@ -529,7 +555,8 @@ static const struct touch_map *touch_map_get(void)
 	panel_geom(&pw, &ph);
 	if (pw == ph || pw == 0 || ph == 0) {
 		LOG_WRN("touch: panel %ux%u cannot pick a digitizer map (square "
-			"or degenerate); touch will not be corrected", pw, ph);
+		        "or degenerate); touch will not be corrected",
+		        pw, ph);
 		return NULL;
 	}
 	return &s_touch_maps[pw > ph ? 0 : 1];
@@ -613,10 +640,20 @@ void aster_plat_display_touch_unmap(uint32_t *x, uint32_t *y)
 		 * which of lw/lh appears where -- they are not equal for the
 		 * quarter turns, and swapping them yields a plausible-looking
 		 * inverse that is off by (ph-pw) on one axis. */
-		case 90:  *x = b;          *y = lw - 1 - a; break;
-		case 180: *x = pw - 1 - a; *y = ph - 1 - b; break;
-		case 270: *x = lh - 1 - b; *y = a;          break;
-		default:  break;
+		case 90:
+			*x = b;
+			*y = lw - 1 - a;
+			break;
+		case 180:
+			*x = pw - 1 - a;
+			*y = ph - 1 - b;
+			break;
+		case 270:
+			*x = lh - 1 - b;
+			*y = a;
+			break;
+		default:
+			break;
 		}
 	}
 	touch_map_unapply(touch_map_get(), x, y);
@@ -635,12 +672,14 @@ int aster_plat_display_rotation_set(int deg)
 	 * refuse the combination. */
 	if (deg != 0) {
 		LOG_ERR("software rotation unavailable with app-space scaling "
-			"(ASTER_APP_SPACE_DIV=%d): rotate the panel, not the "
-			"pixels", CONFIG_ASTER_APP_SPACE_DIV);
+		        "(ASTER_APP_SPACE_DIV=%d): rotate the panel, not the "
+		        "pixels",
+		        CONFIG_ASTER_APP_SPACE_DIV);
 		return ASTER_ENOTSUP;
 	}
 #endif
-	if(s_rot!=(uint16_t)deg) atomic_inc(&display_generation);
+	if (s_rot != (uint16_t)deg)
+		atomic_inc(&display_generation);
 	s_rot = (uint16_t)deg;
 	return ASTER_OK;
 }
@@ -693,8 +732,7 @@ static void glass_rearm_window(void);
  *
  * Pure integers on purpose, so it can be sliced and composed with the
  * driver's half of the same decision on the host. */
-static uint8_t orientation_request(uint32_t cur_w, uint32_t cur_h,
-				   int cur_orient, int want)
+static uint8_t orientation_request(uint32_t cur_w, uint32_t cur_h, int cur_orient, int want)
 {
 	bool want_wide = (want == ASTER_ORIENT_LANDSCAPE);
 	bool cur_wide = (cur_w > cur_h);
@@ -705,8 +743,7 @@ static uint8_t orientation_request(uint32_t cur_w, uint32_t cur_h,
 	if (cur_wide == want_wide) {
 		return ASTER_ORIENT_REQ_NONE;
 	}
-	return (want_wide == dt_wide) ? DISPLAY_ORIENTATION_NORMAL
-				      : DISPLAY_ORIENTATION_ROTATED_90;
+	return (want_wide == dt_wide) ? DISPLAY_ORIENTATION_NORMAL : DISPLAY_ORIENTATION_ROTATED_90;
 }
 
 int aster_plat_display_orientation_set(int orient)
@@ -726,7 +763,8 @@ int aster_plat_display_orientation_set(int orient)
 	panel_geom(&pw, &ph);
 	if (pw == ph) {
 		LOG_WRN("orientation: panel %ux%u is square; there is no "
-			"portrait or landscape to ask for", pw, ph);
+		        "portrait or landscape to ask for",
+		        pw, ph);
 		return ASTER_ENOTSUP;
 	}
 	/* With a software-rotated panel, its reported orientation still names
@@ -738,8 +776,8 @@ int aster_plat_display_orientation_set(int orient)
 	}
 
 	display_get_capabilities(disp_dev, &cap);
-	req = orientation_request(cap.x_resolution, cap.y_resolution,
-				  (int)cap.current_orientation, orient);
+	req = orientation_request(cap.x_resolution, cap.y_resolution, (int)cap.current_orientation,
+	                          orient);
 	if (req == ASTER_ORIENT_REQ_NONE) {
 		return ASTER_OK; /* already showing it */
 	}
@@ -760,8 +798,9 @@ int aster_plat_display_orientation_set(int orient)
 			 * a port that starts with ASTER_DISPLAY_ROTATION=90 and
 			 * then switches the window would land here. */
 			LOG_WRN("orientation: window switched while software "
-				"rotation is %u; clearing it so the two cannot "
-				"compose", (unsigned)s_rot);
+			        "rotation is %u; clearing it so the two cannot "
+			        "compose",
+			        (unsigned)s_rot);
 			s_rot = 0;
 		}
 		return ASTER_OK;
@@ -898,7 +937,7 @@ static void glass_forget(void)
 #if IS_ENABLED(CONFIG_ASTER_SCREENSHOT)
 static uint8_t *s_glass_buf; /* owned full-panel shadow, PSRAM */
 static size_t s_glass_buf_bytes;
-static bool s_glass_pinned; /* s_glass aliases a buffer we do not own */
+static bool s_glass_pinned;    /* s_glass aliases a buffer we do not own */
 static bool s_glass_ephemeral; /* shadow exists only for the current grab */
 
 /* The record is about to be invalidated by a partial write, or a buffer is
@@ -914,8 +953,8 @@ static void glass_materialize(void)
 		return;
 	}
 	__ASSERT((size_t)s_glass_h * s_glass_pitch * 2u <= s_glass_buf_bytes,
-		 "glass record %ux%u pitch %u overflows the %zu B shadow",
-		 s_glass_w, s_glass_h, s_glass_pitch, s_glass_buf_bytes);
+	         "glass record %ux%u pitch %u overflows the %zu B shadow", s_glass_w, s_glass_h,
+	         s_glass_pitch, s_glass_buf_bytes);
 	memcpy(s_glass_buf, s_glass, (size_t)s_glass_h * s_glass_pitch * 2u);
 	s_glass = s_glass_buf;
 	s_glass_pinned = false;
@@ -927,9 +966,9 @@ static void glass_materialize(void)
  * One PSRAM frame is retained and reused; screenshot drop must not release it. */
 static void glass_prepare_write(uint32_t w, uint32_t h, bool whole)
 {
-	if (IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B)) return;
-	if (!whole && (!s_glass || s_glass_w != w || s_glass_h != h ||
-		       s_glass_pitch != w)) {
+	if (IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B))
+		return;
+	if (!whole && (!s_glass || s_glass_w != w || s_glass_h != h || s_glass_pitch != w)) {
 		glass_forget();
 		return; /* Partial pixels cannot reconstruct an unknown old frame. */
 	}
@@ -940,7 +979,8 @@ static void glass_prepare_write(uint32_t w, uint32_t h, bool whole)
 			glass_forget();
 			return; /* Drawing remains available, snapshot must fail honestly. */
 		}
-		if (s_glass_buf) shared_multi_heap_free(s_glass_buf);
+		if (s_glass_buf)
+			shared_multi_heap_free(s_glass_buf);
 		s_glass_buf = buffer;
 		s_glass_buf_bytes = bytes;
 	}
@@ -974,8 +1014,8 @@ static void glass_rebase_full(void)
 
 /* Composite one panel-order, packed rect (pitch px per row) onto the
  * record. Every partial write goes through here. */
-static void glass_blit(const uint8_t *src, uint32_t px, uint32_t py,
-		       uint32_t w, uint32_t h, uint32_t pitch)
+static void glass_blit(const uint8_t *src, uint32_t px, uint32_t py, uint32_t w, uint32_t h,
+                       uint32_t pitch)
 {
 	if (!s_glass) {
 		return;
@@ -987,10 +1027,8 @@ static void glass_blit(const uint8_t *src, uint32_t px, uint32_t py,
 	glass_materialize();
 	/* Full-width rows at the record's own stride are one contiguous run
 	 * -- the LVGL band case, and every full-panel write. */
-	if (px == 0 && pitch == s_glass_pitch && w == s_glass_pitch &&
-	    py + h <= s_glass_h) {
-		memcpy(s_glass_buf + (size_t)py * s_glass_pitch * 2u, src,
-		       (size_t)w * h * 2u);
+	if (px == 0 && pitch == s_glass_pitch && w == s_glass_pitch && py + h <= s_glass_h) {
+		memcpy(s_glass_buf + (size_t)py * s_glass_pitch * 2u, src, (size_t)w * h * 2u);
 		return;
 	}
 	for (uint32_t j = 0; j < h; j++) {
@@ -1002,12 +1040,13 @@ static void glass_blit(const uint8_t *src, uint32_t px, uint32_t py,
 /* Single entry point for every write that reaches the wire, so a new write
  * path cannot silently stop maintaining the record. `whole` means the rect
  * covers the panel. */
-static void glass_track(const uint8_t *src, uint32_t px, uint32_t py,
-			uint32_t w, uint32_t h, uint32_t pitch, bool whole)
+static void glass_track(const uint8_t *src, uint32_t px, uint32_t py, uint32_t w, uint32_t h,
+                        uint32_t pitch, bool whole)
 {
 	s_glass_ui = false;
 	/* AXS already owns a persistent wire-order shadow; grab it after drain. */
-	if (IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B)) return;
+	if (IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B))
+		return;
 	if (!s_glass) {
 		return;
 	}
@@ -1020,16 +1059,16 @@ static void glass_track(const uint8_t *src, uint32_t px, uint32_t py,
 /* Record a WHOLE panel frame, panel byte order already applied. `alias_ok`
  * means the caller's buffer stays untouched until the next write through
  * write_at_ex(), so the record may point at it instead of copying it. */
-static void glass_note_full(const uint8_t *buf, uint32_t w, uint32_t h,
-			    uint32_t pitch, bool alias_ok)
+static void glass_note_full(const uint8_t *buf, uint32_t w, uint32_t h, uint32_t pitch,
+                            bool alias_ok)
 {
 	s_glass_ui = false;
-	if (IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B)) return;
+	if (IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B))
+		return;
 	if (alias_ok) {
 		s_glass = buf;
 		s_glass_pinned = true;
-	} else if (s_glass_buf && pitch == w &&
-		   (size_t)w * h * 2u <= s_glass_buf_bytes) {
+	} else if (s_glass_buf && pitch == w && (size_t)w * h * 2u <= s_glass_buf_bytes) {
 		/* Someone else owns the buffer and may recycle it (an LVGL
 		 * band, an app surface): take the copy. */
 		memcpy(s_glass_buf, buf, (size_t)w * h * 2u);
@@ -1105,15 +1144,16 @@ static void glass_rearm_window(void)
 	 * produces looks like a coherent picture, just the wrong one -- so the
 	 * only cheap evidence that this ran is the line itself. Once per turn,
 	 * on a path that already logs the turn. */
-	LOG_INF("screen-grab record: window is now %ux%u, awaiting repaint",
-		pw, ph);
+	LOG_INF("screen-grab record: window is now %ux%u, awaiting repaint", pw, ph);
 }
 
-#else /* !CONFIG_ASTER_SCREENSHOT */
+#else  /* !CONFIG_ASTER_SCREENSHOT */
 
 static inline void glass_prepare_write(uint32_t w, uint32_t h, bool whole)
 {
-	ARG_UNUSED(w); ARG_UNUSED(h); ARG_UNUSED(whole);
+	ARG_UNUSED(w);
+	ARG_UNUSED(h);
+	ARG_UNUSED(whole);
 }
 
 static inline void glass_rebase_full(void)
@@ -1127,8 +1167,8 @@ static inline void glass_rearm_window(void)
 {
 }
 
-static inline void glass_track(const uint8_t *src, uint32_t px, uint32_t py,
-			       uint32_t w, uint32_t h, uint32_t pitch, bool whole)
+static inline void glass_track(const uint8_t *src, uint32_t px, uint32_t py, uint32_t w, uint32_t h,
+                               uint32_t pitch, bool whole)
 {
 	ARG_UNUSED(src);
 	ARG_UNUSED(px);
@@ -1140,8 +1180,8 @@ static inline void glass_track(const uint8_t *src, uint32_t px, uint32_t py,
 	glass_forget();
 }
 
-static inline void glass_note_full(const uint8_t *buf, uint32_t w, uint32_t h,
-				   uint32_t pitch, bool alias_ok)
+static inline void glass_note_full(const uint8_t *buf, uint32_t w, uint32_t h, uint32_t pitch,
+                                   bool alias_ok)
 {
 	ARG_UNUSED(alias_ok);
 	s_glass = buf;
@@ -1205,16 +1245,18 @@ void aster_plat_display_glass_drop(void)
 #endif
 }
 
-bool aster_plat_display_glass_frame(const uint8_t **buf, uint32_t *w, uint32_t *h,
-				  uint32_t *pitch)
+bool aster_plat_display_glass_frame(const uint8_t **buf, uint32_t *w, uint32_t *h, uint32_t *pitch)
 {
 	/* Both the AXS driver shadow and the ST7789 persistent UI alias can
 	 * still be in flight. Snapshot only after the transfer completes. */
 	aster_plat_display_flush_drain();
 	if (IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B) && disp_dev) {
-		const uint8_t *frame=display_get_framebuffer(disp_dev);
+		const uint8_t *frame = display_get_framebuffer(disp_dev);
 		if (frame) {
-			panel_geom(w,h);*pitch=*w;*buf=frame;return true;
+			panel_geom(w, h);
+			*pitch = *w;
+			*buf = frame;
+			return true;
 		}
 	}
 	/* The UI and screenshot run on one worker; after drain its persistent
@@ -1275,16 +1317,16 @@ static bool s_app_scaled;
  * A board that gets either wrong fails to compile, naming the property. */
 #if CONFIG_ASTER_APP_SPACE_DIV > 1
 BUILD_ASSERT(DT_PROP(DT_CHOSEN(zephyr_display), width) % CONFIG_ASTER_APP_SPACE_DIV == 0 &&
-	     DT_PROP(DT_CHOSEN(zephyr_display), height) % CONFIG_ASTER_APP_SPACE_DIV == 0,
-	     "ASTER_APP_SPACE_DIV must divide both panel edges: a fractional "
-	     "divisor makes the pixel map non-uniform and the touch inverse "
-	     "ambiguous");
+                     DT_PROP(DT_CHOSEN(zephyr_display), height) % CONFIG_ASTER_APP_SPACE_DIV == 0,
+             "ASTER_APP_SPACE_DIV must divide both panel edges: a fractional "
+             "divisor makes the pixel map non-uniform and the touch inverse "
+             "ambiguous");
 BUILD_ASSERT(DT_PROP(DT_CHOSEN(zephyr_display), width) <=
-		     CONFIG_ASTER_APP_SPACE_MAX * CONFIG_ASTER_APP_SPACE_DIV &&
-	     DT_PROP(DT_CHOSEN(zephyr_display), height) <=
-		     CONFIG_ASTER_APP_SPACE_MAX * CONFIG_ASTER_APP_SPACE_DIV,
-	     "app space (panel / ASTER_APP_SPACE_DIV) exceeds "
-	     "ASTER_APP_SPACE_MAX, which bounds the port's app-space scratch");
+                             CONFIG_ASTER_APP_SPACE_MAX * CONFIG_ASTER_APP_SPACE_DIV &&
+                     DT_PROP(DT_CHOSEN(zephyr_display), height) <=
+                             CONFIG_ASTER_APP_SPACE_MAX * CONFIG_ASTER_APP_SPACE_DIV,
+             "app space (panel / ASTER_APP_SPACE_DIV) exceeds "
+             "ASTER_APP_SPACE_MAX, which bounds the port's app-space scratch");
 #endif
 
 #if IS_ENABLED(CONFIG_ASTER_DISP_FLIP_DBUF)
@@ -1330,12 +1372,12 @@ int aster_plat_display_flip_acquire(void)
 		front_bytes = (size_t)fw * (size_t)fh * 2u;
 	}
 	for (int i = 0; i < ASTER_DISP_FRONT_N; i++) {
-		s_front[i] = shared_multi_heap_aligned_alloc(SMH_REG_ATTR_EXTERNAL, 32,
-							     front_bytes);
+		s_front[i] =
+		        shared_multi_heap_aligned_alloc(SMH_REG_ATTR_EXTERNAL, 32, front_bytes);
 		if (!s_front[i]) {
 			LOG_ERR("flip front buffer %d (%zu B) failed; "
-				"panel canvas falls back to an ordinary surface",
-				i, front_bytes);
+			        "panel canvas falls back to an ordinary surface",
+			        i, front_bytes);
 			while (i-- > 0) {
 				shared_multi_heap_free(s_front[i]);
 				s_front[i] = NULL;
@@ -1345,25 +1387,23 @@ int aster_plat_display_flip_acquire(void)
 		}
 	}
 	{
-		const uint16_t probe[2] = { 0x0863u, 0xF800u };
+		const uint16_t probe[2] = {0x0863u, 0xF800u};
 		const uint32_t v = (uint32_t)probe[0] | ((uint32_t)probe[1] << 16);
-		const uint32_t sw = ((v & 0x00FF00FFu) << 8) |
-				    ((v & 0xFF00FF00u) >> 8);
-		const bool swar_ok =
-			(uint16_t)sw == sys_cpu_to_be16(probe[0]) &&
-			(uint16_t)(sw >> 16) == sys_cpu_to_be16(probe[1]);
+		const uint32_t sw = ((v & 0x00FF00FFu) << 8) | ((v & 0xFF00FF00u) >> 8);
+		const bool swar_ok = (uint16_t)sw == sys_cpu_to_be16(probe[0]) &&
+		                     (uint16_t)(sw >> 16) == sys_cpu_to_be16(probe[1]);
 
 		__ASSERT(swar_ok, "flip SWAR 0x%08x != sys_cpu_to_be16", sw);
 		if (!swar_ok) {
 			LOG_ERR("flip byte-swap 0x%08x disagrees with "
-				"sys_cpu_to_be16; full-screen presents "
-				"would ship wrong colours", sw);
+			        "sys_cpu_to_be16; full-screen presents "
+			        "would ship wrong colours",
+			        sw);
 		}
 	}
 	s_front_ok = true;
 	s_front_refs = 1;
-	LOG_INF("display flip: %d front buffers x %zu B in PSRAM",
-		ASTER_DISP_FRONT_N, front_bytes);
+	LOG_INF("display flip: %d front buffers x %zu B in PSRAM", ASTER_DISP_FRONT_N, front_bytes);
 	return 0;
 }
 
@@ -1380,14 +1420,16 @@ void aster_plat_display_flip_release(void)
 	/* A native front can be borrowed by the panel driver. Materialize its
 	 * last image before releasing that buffer, so screenshots and later
 	 * partial writes never read freed memory. */
-	if (disp_dev) aster_axs15231b_release_persistent(disp_dev);
+	if (disp_dev)
+		aster_axs15231b_release_persistent(disp_dev);
 #endif
 	for (int i = 0; i < ASTER_DISP_FRONT_N; i++) {
 		if (s_front[i]) {
 #if IS_ENABLED(CONFIG_ASTER_SCREENSHOT)
-            /* A completed canvas frame can be the screenshot alias. Do
+			/* A completed canvas frame can be the screenshot alias. Do
              * not retain a pointer after the last owner releases it. */
-            if(s_glass==s_front[i]) glass_forget();
+			if (s_glass == s_front[i])
+				glass_forget();
 #endif
 			shared_multi_heap_free(s_front[i]);
 			s_front[i] = NULL;
@@ -1464,27 +1506,29 @@ int aster_plat_display_canvas_present(void)
 
 #if IS_ENABLED(CONFIG_ASTER_DISP_ASYNC)
 	s_slots[slot].job = (struct aster_disp_job){
-		.buf = s_front[fi],
-		.desc = {
-			.buf_size = (size_t)pw * ph * 2u,
-			.width = pw,
-			.height = ph,
-			.pitch = pw,
-		},
-		.px = 0,
-		.py = 0,
+	        .buf = s_front[fi],
+	        .desc =
+	                {
+	                        .buf_size = (size_t)pw * ph * 2u,
+	                        .width = pw,
+	                        .height = ph,
+	                        .pitch = pw,
+	                },
+	        .px = 0,
+	        .py = 0,
 	};
 	disp_slot_arm(slot);
 #else
 	if (disp_direct_send(&(struct aster_disp_job){
-			.buf = s_front[fi],
-			.desc = {
-				.buf_size = (size_t)pw * ph * 2u,
-				.width = pw,
-				.height = ph,
-				.pitch = pw,
-			},
-		})) {
+	            .buf = s_front[fi],
+	            .desc =
+	                    {
+	                            .buf_size = (size_t)pw * ph * 2u,
+	                            .width = pw,
+	                            .height = ph,
+	                            .pitch = pw,
+	                    },
+	    })) {
 		return ASTER_EIO;
 	}
 #endif
@@ -1492,10 +1536,10 @@ int aster_plat_display_canvas_present(void)
 	return ASTER_OK;
 }
 
-int aster_plat_display_flip_rgb565(const uint8_t *src_le, uint32_t w, uint32_t h,
-				 uint32_t pitch)
+int aster_plat_display_flip_rgb565(const uint8_t *src_le, uint32_t w, uint32_t h, uint32_t pitch)
 {
-    if (!aster_plat_display_count()) return ASTER_ENODEV;
+	if (!aster_plat_display_count())
+		return ASTER_ENODEV;
 	uint32_t pw, ph, lw, lh;
 
 	if (!disp_dev || !s_front_ok) {
@@ -1514,7 +1558,7 @@ int aster_plat_display_flip_rgb565(const uint8_t *src_le, uint32_t w, uint32_t h
 	}
 
 	uint8_t fi = s_flip;                                  /* front buffer 0/1 */
-	uint8_t slot = (uint8_t)(ASTER_DISP_FLIP_SLOT0 + fi);    /* job slot */
+	uint8_t slot = (uint8_t)(ASTER_DISP_FLIP_SLOT0 + fi); /* job slot */
 	uint16_t *dst = (uint16_t *)s_front[fi];
 
 #if IS_ENABLED(CONFIG_ASTER_DISP_TIMING)
@@ -1554,8 +1598,7 @@ int aster_plat_display_flip_rgb565(const uint8_t *src_le, uint32_t w, uint32_t h
 		for (size_t i = 0; i < n / 2u; i++) {
 			uint32_t v = src[i];
 
-			dst32[i] = ((v & 0x00FF00FFu) << 8) |
-				   ((v & 0xFF00FF00u) >> 8);
+			dst32[i] = ((v & 0x00FF00FFu) << 8) | ((v & 0xFF00FF00u) >> 8);
 		}
 		if (n & 1u) { /* panel is 240x320 = even, but keep it total */
 			dst[n - 1u] = sys_cpu_to_be16(((const uint16_t *)src_le)[n - 1u]);
@@ -1584,8 +1627,8 @@ int aster_plat_display_flip_rgb565(const uint8_t *src_le, uint32_t w, uint32_t h
 		s_fcopy += k_cycle_get_32() - t_copy0;
 		if (s_fn >= 64u) {
 			LOG_INF("flip tim: acquire=%u us copy+sync=%u us",
-				(unsigned)(k_cyc_to_us_floor32(s_facq) / 64u),
-				(unsigned)(k_cyc_to_us_floor32(s_fcopy) / 64u));
+			        (unsigned)(k_cyc_to_us_floor32(s_facq) / 64u),
+			        (unsigned)(k_cyc_to_us_floor32(s_fcopy) / 64u));
 			s_fn = s_facq = s_fcopy = 0;
 		}
 	}
@@ -1593,28 +1636,30 @@ int aster_plat_display_flip_rgb565(const uint8_t *src_le, uint32_t w, uint32_t h
 
 #if IS_ENABLED(CONFIG_ASTER_DISP_ASYNC)
 	s_slots[slot].job = (struct aster_disp_job){
-		.buf = s_front[fi],
-		.desc = {
-			.buf_size = (size_t)w * h * 2u,
-			.width = w,
-			.height = h,
-			.pitch = w,
-		},
-		.px = 0,
-		.py = 0,
+	        .buf = s_front[fi],
+	        .desc =
+	                {
+	                        .buf_size = (size_t)w * h * 2u,
+	                        .width = w,
+	                        .height = h,
+	                        .pitch = w,
+	                },
+	        .px = 0,
+	        .py = 0,
 	};
 	disp_slot_arm(slot);
 #else
 	/* No worker thread: send synchronously through the direct path. */
 	if (disp_direct_send(&(struct aster_disp_job){
-			.buf = s_front[fi],
-			.desc = {
-				.buf_size = (size_t)w * h * 2u,
-				.width = w,
-				.height = h,
-				.pitch = w,
-			},
-		})) {
+	            .buf = s_front[fi],
+	            .desc =
+	                    {
+	                            .buf_size = (size_t)w * h * 2u,
+	                            .width = w,
+	                            .height = h,
+	                            .pitch = w,
+	                    },
+	    })) {
 		return ASTER_EIO;
 	}
 #endif
@@ -1775,17 +1820,16 @@ static void app_geom_init(void)
 	 * (CONFIG_ASTER_DISPLAY_ROTATION), so it is re-checked here rather than
 	 * assumed. */
 	s_app_scaled = (s_rot == 0) && (aw * CONFIG_ASTER_APP_SPACE_DIV == lw) &&
-		       (ah * CONFIG_ASTER_APP_SPACE_DIV == lh);
+	               (ah * CONFIG_ASTER_APP_SPACE_DIV == lh);
 	if (!s_app_scaled) {
 		LOG_WRN("app-space scaling off: rot %d, app %ux%u x %d does "
-			"not cover logical %ux%u; presents stay 1:1",
-			(int)s_rot, (unsigned)aw, (unsigned)ah,
-			CONFIG_ASTER_APP_SPACE_DIV, (unsigned)lw, (unsigned)lh);
+		        "not cover logical %ux%u; presents stay 1:1",
+		        (int)s_rot, (unsigned)aw, (unsigned)ah, CONFIG_ASTER_APP_SPACE_DIV,
+		        (unsigned)lw, (unsigned)lh);
 		return;
 	}
-	LOG_INF("app space: %ux%u (logical %ux%u / %d)",
-		(unsigned)aw, (unsigned)ah, (unsigned)lw, (unsigned)lh,
-		CONFIG_ASTER_APP_SPACE_DIV);
+	LOG_INF("app space: %ux%u (logical %ux%u / %d)", (unsigned)aw, (unsigned)ah, (unsigned)lw,
+	        (unsigned)lh, CONFIG_ASTER_APP_SPACE_DIV);
 }
 
 /* Scale the whole app frame into a front buffer and hand it to the wire.
@@ -1800,8 +1844,7 @@ static void app_geom_init(void)
  * Source-driven rather than destination-driven because the map is affine --
  * the destination index is a product, not a lookup, so walking the source is
  * the cheapest way to visit every destination exactly once. */
-static int app_present_full(const uint8_t *src_le, uint32_t aw, uint32_t ah,
-			    uint32_t pitch)
+static int app_present_full(const uint8_t *src_le, uint32_t aw, uint32_t ah, uint32_t pitch)
 {
 	if (!IS_ENABLED(CONFIG_ASTER_DISP_FLIP_DBUF) || !s_front_ok || !s_front[0]) {
 		return ASTER_ENOTSUP;
@@ -1826,16 +1869,14 @@ static int app_present_full(const uint8_t *src_le, uint32_t aw, uint32_t ah,
 	uint16_t *dst = (uint16_t *)s_front[fi];
 
 	for (uint32_t sy = 0; sy < ah; sy++) {
-		const uint16_t *srow =
-			(const uint16_t *)(src_le + (size_t)sy * pitch * 2u);
+		const uint16_t *srow = (const uint16_t *)(src_le + (size_t)sy * pitch * 2u);
 		uint16_t *drow = dst + (size_t)sy * CONFIG_ASTER_APP_SPACE_DIV * pw;
 
 		for (uint32_t r = 0; r < CONFIG_ASTER_APP_SPACE_DIV; r++) {
 			for (uint32_t dx = 0; dx < aw; dx++) {
 				const uint16_t v = sys_cpu_to_be16(srow[dx]);
 
-				for (uint32_t k = 0; k < CONFIG_ASTER_APP_SPACE_DIV;
-				     k++) {
+				for (uint32_t k = 0; k < CONFIG_ASTER_APP_SPACE_DIV; k++) {
 					drow[dx * CONFIG_ASTER_APP_SPACE_DIV + k] = v;
 				}
 			}
@@ -1846,27 +1887,29 @@ static int app_present_full(const uint8_t *src_le, uint32_t aw, uint32_t ah,
 	glass_note_full(s_front[fi], pw, ph, pw, true);
 #if IS_ENABLED(CONFIG_ASTER_DISP_ASYNC)
 	s_slots[slot].job = (struct aster_disp_job){
-		.buf = s_front[fi],
-		.desc = {
-			.buf_size = (size_t)pw * ph * 2u,
-			.width = pw,
-			.height = ph,
-			.pitch = pw,
-		},
-		.px = 0,
-		.py = 0,
+	        .buf = s_front[fi],
+	        .desc =
+	                {
+	                        .buf_size = (size_t)pw * ph * 2u,
+	                        .width = pw,
+	                        .height = ph,
+	                        .pitch = pw,
+	                },
+	        .px = 0,
+	        .py = 0,
 	};
 	disp_slot_arm(slot);
 #else
 	if (disp_direct_send(&(struct aster_disp_job){
-			.buf = s_front[fi],
-			.desc = {
-				.buf_size = (size_t)pw * ph * 2u,
-				.width = pw,
-				.height = ph,
-				.pitch = pw,
-			},
-		})) {
+	            .buf = s_front[fi],
+	            .desc =
+	                    {
+	                            .buf_size = (size_t)pw * ph * 2u,
+	                            .width = pw,
+	                            .height = ph,
+	                            .pitch = pw,
+	                    },
+	    })) {
 		return ASTER_EIO;
 	}
 #endif
@@ -1884,8 +1927,8 @@ static int app_present_full(const uint8_t *src_le, uint32_t aw, uint32_t ah,
  * The rect arrives in APP pixels and is expanded by the divisor before
  * anything else happens, so the rest of the body thinks in glass pixels
  * exactly as the 1:1 path does. */
-static int app_present_rect(const uint8_t *src_le, uint32_t x, uint32_t y,
-			    uint32_t w, uint32_t h, uint32_t pitch)
+static int app_present_rect(const uint8_t *src_le, uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                            uint32_t pitch)
 {
 	const uint32_t div = CONFIG_ASTER_APP_SPACE_DIV;
 	uint32_t dx0 = x * div, dx1 = (x + w) * div;
@@ -1912,13 +1955,12 @@ static int app_present_rect(const uint8_t *src_le, uint32_t x, uint32_t y,
 		if (swap_buf) {
 			for (uint32_t r = 0; r < n; r++) {
 				const uint16_t *srow =
-					(const uint16_t *)(src_le +
-							   (size_t)((dy + r) / div) *
-								   pitch * 2u);
+				        (const uint16_t *)(src_le +
+				                           (size_t)((dy + r) / div) * pitch * 2u);
 
 				for (uint32_t i = 0; i < bw; i++) {
 					band[(size_t)r * bw + i] =
-						sys_cpu_to_be16(srow[(dx0 + i) / div]);
+					        sys_cpu_to_be16(srow[(dx0 + i) / div]);
 				}
 			}
 		} else {
@@ -1927,15 +1969,14 @@ static int app_present_rect(const uint8_t *src_le, uint32_t x, uint32_t y,
 			 * correct, and this is the rare path. */
 			uint16_t row[ASTER_APP_ROW_PX];
 			const uint16_t *srow =
-				(const uint16_t *)(src_le +
-						   (size_t)(dy / div) * pitch * 2u);
+			        (const uint16_t *)(src_le + (size_t)(dy / div) * pitch * 2u);
 
 			n = 1;
 			for (uint32_t i = 0; i < bw; i++) {
 				row[i] = sys_cpu_to_be16(srow[(dx0 + i) / div]);
 			}
-			err = aster_plat_display_write_at_ex((const uint8_t *)row,
-							   dx0, dy, bw, 1, bw, true);
+			err = aster_plat_display_write_at_ex((const uint8_t *)row, dx0, dy, bw, 1,
+			                                     bw, true);
 			if (err != ASTER_OK) {
 				return err;
 			}
@@ -1949,8 +1990,8 @@ static int app_present_rect(const uint8_t *src_le, uint32_t x, uint32_t y,
 		 * the app it had failed, and stopped. Nothing on the reference
 		 * board noticed, because the app's space there is the panel's
 		 * and this path is not reached. */
-		err = aster_plat_display_write_at_ex((const uint8_t *)band, dx0, dy,
-						   bw, n, bw, true);
+		err = aster_plat_display_write_at_ex((const uint8_t *)band, dx0, dy, bw, n, bw,
+		                                     true);
 		if (err != ASTER_OK) {
 			return err;
 		}
@@ -2001,8 +2042,8 @@ static struct {
 static uint8_t *s_fit_scratch;
 static size_t s_fit_scratch_bytes;
 
-static void scale_fit_box(uint32_t bw, uint32_t bh, uint32_t gw, uint32_t gh,
-			  uint32_t *dw, uint32_t *dh, uint32_t *mx, uint32_t *my)
+static void scale_fit_box(uint32_t bw, uint32_t bh, uint32_t gw, uint32_t gh, uint32_t *dw,
+                          uint32_t *dh, uint32_t *mx, uint32_t *my)
 {
 	if ((uint64_t)gw * bh <= (uint64_t)gh * bw) {
 		*dw = gw;
@@ -2028,16 +2069,14 @@ static void scale_fit_box(uint32_t bw, uint32_t bh, uint32_t gw, uint32_t gh,
 }
 
 /* Destination-driven nearest neighbour. `swap` stores panel byte order. */
-static void scale_fit_blit(uint16_t *dst, uint32_t dpitch, bool swap,
-			   const uint8_t *src, uint32_t pitch,
-			   uint32_t bw, uint32_t bh, uint32_t gw, uint32_t gh,
-			   uint32_t dw, uint32_t dh, uint32_t mx, uint32_t my)
+static void scale_fit_blit(uint16_t *dst, uint32_t dpitch, bool swap, const uint8_t *src,
+                           uint32_t pitch, uint32_t bw, uint32_t bh, uint32_t gw, uint32_t gh,
+                           uint32_t dw, uint32_t dh, uint32_t mx, uint32_t my)
 {
 	/* Native-size packed frames only need byte-order conversion. Avoid the
 	 * resampling map entirely and convert two RGB565 pixels per word. */
-	if (bw == gw && bh == gh && dw == gw && dh == gh && !mx && !my &&
-	    pitch == gw && dpitch == gw && !((uintptr_t)src & 3u) &&
-	    !((uintptr_t)dst & 3u)) {
+	if (bw == gw && bh == gh && dw == gw && dh == gh && !mx && !my && pitch == gw &&
+	    dpitch == gw && !((uintptr_t)src & 3u) && !((uintptr_t)dst & 3u)) {
 		uint32_t pixels = gw * gh;
 		if (!swap) {
 			memcpy(dst, src, (size_t)pixels * 2u);
@@ -2048,7 +2087,9 @@ static void scale_fit_blit(uint16_t *dst, uint32_t dpitch, bool swap,
 				uint32_t v = in[i];
 				out[i] = ((v & 0x00ff00ffu) << 8) | ((v & 0xff00ff00u) >> 8);
 			}
-			if (pixels & 1u) dst[pixels-1] = sys_cpu_to_be16(((const uint16_t *)src)[pixels-1]);
+			if (pixels & 1u)
+				dst[pixels - 1] =
+				        sys_cpu_to_be16(((const uint16_t *)src)[pixels - 1]);
 		}
 		return;
 	}
@@ -2117,30 +2158,32 @@ static int scale_fit_send_front(uint16_t *dst, uint32_t pw, uint32_t ph)
 		uint8_t slot = (uint8_t)(ASTER_DISP_FLIP_SLOT0 + fi);
 
 		s_slots[slot].job = (struct aster_disp_job){
-			.buf = bytes,
-			.persistent_ui = IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B),
-			.desc = {
-				.buf_size = (size_t)pw * ph * 2u,
-				.width = pw,
-				.height = ph,
-				.pitch = pw,
-			},
-			.px = 0,
-			.py = 0,
+		        .buf = bytes,
+		        .persistent_ui = IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B),
+		        .desc =
+		                {
+		                        .buf_size = (size_t)pw * ph * 2u,
+		                        .width = pw,
+		                        .height = ph,
+		                        .pitch = pw,
+		                },
+		        .px = 0,
+		        .py = 0,
 		};
 		disp_slot_arm(slot);
 	}
 #else
 	if (disp_direct_send(&(struct aster_disp_job){
-			.buf = bytes,
-			.persistent_ui = IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B),
-			.desc = {
-				.buf_size = (size_t)pw * ph * 2u,
-				.width = pw,
-				.height = ph,
-				.pitch = pw,
-			},
-		})) {
+	            .buf = bytes,
+	            .persistent_ui = IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B),
+	            .desc =
+	                    {
+	                            .buf_size = (size_t)pw * ph * 2u,
+	                            .width = pw,
+	                            .height = ph,
+	                            .pitch = pw,
+	                    },
+	    })) {
 		return ASTER_EIO;
 	}
 #endif
@@ -2167,8 +2210,8 @@ void aster_plat_display_scale_fit_disarm(void)
 	}
 }
 
-int aster_plat_display_scale_fit_present(const uint8_t *src_le, uint32_t w,
-				       uint32_t h, uint32_t pitch)
+int aster_plat_display_scale_fit_present(const uint8_t *src_le, uint32_t w, uint32_t h,
+                                         uint32_t pitch)
 {
 	uint32_t lw, lh, dw, dh, mx, my;
 
@@ -2196,8 +2239,8 @@ int aster_plat_display_scale_fit_present(const uint8_t *src_le, uint32_t w,
 #if IS_ENABLED(CONFIG_ASTER_DISP_ASYNC)
 			disp_slot_acquire((uint8_t)(ASTER_DISP_FLIP_SLOT0 + fi));
 #endif
-			scale_fit_blit((uint16_t *)s_front[fi], lw, true, src_le, pitch,
-				       w, h, lw, lh, dw, dh, mx, my);
+			scale_fit_blit((uint16_t *)s_front[fi], lw, true, src_le, pitch, w, h, lw,
+			               lh, dw, dh, mx, my);
 			{
 				int err = scale_fit_send_front((uint16_t *)s_front[fi], lw, lh);
 
@@ -2217,8 +2260,8 @@ int aster_plat_display_scale_fit_present(const uint8_t *src_le, uint32_t w,
 		size_t need = (size_t)lw * lh * 2u;
 
 		if (!s_fit_scratch || s_fit_scratch_bytes < need) {
-			uint8_t *next = shared_multi_heap_aligned_alloc(
-				SMH_REG_ATTR_EXTERNAL, 32, need);
+			uint8_t *next =
+			        shared_multi_heap_aligned_alloc(SMH_REG_ATTR_EXTERNAL, 32, need);
 
 			if (!next) {
 				return ASTER_ENOMEM;
@@ -2229,11 +2272,11 @@ int aster_plat_display_scale_fit_present(const uint8_t *src_le, uint32_t w,
 			s_fit_scratch = next;
 			s_fit_scratch_bytes = need;
 		}
-		scale_fit_blit((uint16_t *)s_fit_scratch, lw, false, src_le, pitch,
-			       w, h, lw, lh, dw, dh, mx, my);
+		scale_fit_blit((uint16_t *)s_fit_scratch, lw, false, src_le, pitch, w, h, lw, lh,
+		               dw, dh, mx, my);
 		{
-			int err = aster_plat_display_write_at_ex(s_fit_scratch, 0, 0, lw, lh,
-								 lw, false);
+			int err = aster_plat_display_write_at_ex(s_fit_scratch, 0, 0, lw, lh, lw,
+			                                         false);
 
 			if (err == ASTER_OK) {
 				s_fit.active = true;
@@ -2310,8 +2353,7 @@ bool aster_plat_display_app_touch(uint32_t *x, uint32_t *y)
  * same double-buffered flip the 1:1 present uses, so the wire runs under the
  * app's next frame instead of in front of it; anything else is a sub-rect and
  * takes the banded path. */
-int aster_plat_display_app_present(const uint8_t *src_le, uint32_t w, uint32_t h,
-				 uint32_t pitch)
+int aster_plat_display_app_present(const uint8_t *src_le, uint32_t w, uint32_t h, uint32_t pitch)
 {
 #if CONFIG_ASTER_APP_SPACE_DIV > 1
 	if (disp_dev && s_app_scaled) {
@@ -2327,8 +2369,8 @@ int aster_plat_display_app_present(const uint8_t *src_le, uint32_t w, uint32_t h
 	return aster_plat_display_write_at_ex(src_le, 0, 0, w, h, pitch, false);
 }
 
-int aster_plat_display_write_app_at(const uint8_t *buf, uint32_t x, uint32_t y,
-				  uint32_t w, uint32_t h, uint32_t pitch)
+int aster_plat_display_write_app_at(const uint8_t *buf, uint32_t x, uint32_t y, uint32_t w,
+                                    uint32_t h, uint32_t pitch)
 {
 #if CONFIG_ASTER_APP_SPACE_DIV > 1
 	if (disp_dev && s_app_scaled) {
@@ -2353,143 +2395,184 @@ int aster_plat_display_write_app_at(const uint8_t *buf, uint32_t x, uint32_t y,
 #if IS_ENABLED(CONFIG_ASTER_DISP_TIMING)
 static struct k_spinlock damage_timing_lock;
 static uint64_t damage_timing_snapshot[4];
+
 static void damage_timing_log(struct k_work *work)
 {
- uint64_t v[4];ARG_UNUSED(work);
- k_spinlock_key_t key=k_spin_lock(&damage_timing_lock);
- memcpy(v,damage_timing_snapshot,sizeof(v));k_spin_unlock(&damage_timing_lock,key);
- LOG_INF("damage tim: n=64 regions=%llu windows=%llu completed_bytes=%llu elapsed_us=%llu",
-  (unsigned long long)v[0],(unsigned long long)v[1],(unsigned long long)v[2],(unsigned long long)v[3]);
-}
-K_WORK_DEFINE(damage_timing_work,damage_timing_log);
-#endif
-int aster_plat_display_write_app_regions(const uint8_t *buf,uint32_t w,uint32_t h,
- uint32_t pitch,const aster_dirty_set_t *regions)
-{
- if(!buf||!regions||!w||!h||pitch<w||regions->count>ASTER_DIRTY_CAP) return ASTER_EINVAL;
- /* Validate the whole batch before modifying the shadow or the panel. */
- for(uint32_t i=0;i<regions->count;i++) {
-  aster_dirty_rect_t r=regions->rect[i];
-  if(!r.w||!r.h||r.x>w||r.w>w-r.x||r.y>h||r.h>h-r.y) return ASTER_EINVAL;
- }
- if(!regions->count) return ASTER_OK;
- if(!aster_plat_display_count()) return ASTER_ENODEV;
-#if CONFIG_ASTER_APP_SPACE_DIV > 1
- /* Density scaling has its own band staging. Retain full present until
-  * the deferred shadow gather also covers that path. */
- if(s_app_scaled) return aster_plat_display_app_present(buf,w,h,pitch);
-#endif
- aster_plat_display_flush_drain();
-#if IS_ENABLED(CONFIG_ASTER_DISP_TIMING)
- uint32_t start=k_cycle_get_32();
- k_mutex_lock(&disp_lock,K_FOREVER);
- uint64_t before_bytes=s_completed_bytes,before_windows=s_completed_windows;
- k_mutex_unlock(&disp_lock);
-#endif
- int result=ASTER_OK;
-#if IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B)
- /* Recursive mutex: each gather uses the same guarded staging path. LE
-  * inputs cannot enter the async swapped-buffer shortcut. */
- k_mutex_lock(&disp_lock,K_FOREVER);s_damage_gather_only=true;
-#endif
- for(uint32_t i=0;i<regions->count;i++) {
-  aster_dirty_rect_t r=regions->rect[i];
-  const uint8_t *src=buf+((size_t)r.y*pitch+r.x)*2u;
-  result=aster_plat_display_write_app_at(src,r.x,r.y,r.w,r.h,pitch);
-  if(result) break;
- }
-#if IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B)
- s_damage_gather_only=false;
- if(!result) {
-  uint32_t pw,ph;panel_geom(&pw,&ph);
-  uint8_t *shadow=aster_axs15231b_shadow_begin(disp_dev,false);
-  if(!shadow) result=ASTER_ENOMEM;
-  else {
-   size_t completed=0;sys_cache_data_flush_range(shadow,(size_t)pw*ph*2u);
-   atomic_inc(&display_generation);
-   int err=aster_axs15231b_shadow_present_counted(disp_dev,0,0,pw,ph,&completed);
-   if(!err) {s_completed_bytes+=completed;s_completed_windows++;}
-   result=err?ASTER_EIO:ASTER_OK;
-  }
- }
- k_mutex_unlock(&disp_lock);
-#endif
- int completion=aster_plat_display_flush_drain_checked();
- if(!result) result=completion;
-#if IS_ENABLED(CONFIG_ASTER_DISP_TIMING)
- static uint32_t n;static uint64_t sum[4];
- sum[0]+=regions->count;
- k_mutex_lock(&disp_lock,K_FOREVER);
- sum[1]+=s_completed_windows-before_windows;sum[2]+=s_completed_bytes-before_bytes;
- k_mutex_unlock(&disp_lock);
- sum[3]+=k_cyc_to_us_floor64((uint32_t)(k_cycle_get_32()-start));
- if(++n==64) {
-  k_spinlock_key_t key=k_spin_lock(&damage_timing_lock);
-  memcpy(damage_timing_snapshot,sum,sizeof(sum));k_spin_unlock(&damage_timing_lock,key);
-  k_work_submit(&damage_timing_work);n=0;memset(sum,0,sizeof(sum));
- }
-#endif
- return result;
+	uint64_t v[4];
+	ARG_UNUSED(work);
+	k_spinlock_key_t key = k_spin_lock(&damage_timing_lock);
+	memcpy(v, damage_timing_snapshot, sizeof(v));
+	k_spin_unlock(&damage_timing_lock, key);
+	LOG_INF("damage tim: n=64 regions=%llu windows=%llu completed_bytes=%llu elapsed_us=%llu",
+	        (unsigned long long)v[0], (unsigned long long)v[1], (unsigned long long)v[2],
+	        (unsigned long long)v[3]);
 }
 
-int aster_plat_display_write_at(const uint8_t *buf, uint32_t x, uint32_t y,
-			      uint32_t w, uint32_t h, uint32_t pitch)
+K_WORK_DEFINE(damage_timing_work, damage_timing_log);
+#endif
+int aster_plat_display_write_app_regions(const uint8_t *buf, uint32_t w, uint32_t h, uint32_t pitch,
+                                         const aster_dirty_set_t *regions)
+{
+	if (!buf || !regions || !w || !h || pitch < w || regions->count > ASTER_DIRTY_CAP)
+		return ASTER_EINVAL;
+	/* Validate the whole batch before modifying the shadow or the panel. */
+	for (uint32_t i = 0; i < regions->count; i++) {
+		aster_dirty_rect_t r = regions->rect[i];
+		if (!r.w || !r.h || r.x > w || r.w > w - r.x || r.y > h || r.h > h - r.y)
+			return ASTER_EINVAL;
+	}
+	if (!regions->count)
+		return ASTER_OK;
+	if (!aster_plat_display_count())
+		return ASTER_ENODEV;
+#if CONFIG_ASTER_APP_SPACE_DIV > 1
+	/* Density scaling has its own band staging. Retain full present until
+  * the deferred shadow gather also covers that path. */
+	if (s_app_scaled)
+		return aster_plat_display_app_present(buf, w, h, pitch);
+#endif
+	aster_plat_display_flush_drain();
+#if IS_ENABLED(CONFIG_ASTER_DISP_TIMING)
+	uint32_t start = k_cycle_get_32();
+	k_mutex_lock(&disp_lock, K_FOREVER);
+	uint64_t before_bytes = s_completed_bytes, before_windows = s_completed_windows;
+	k_mutex_unlock(&disp_lock);
+#endif
+	int result = ASTER_OK;
+#if IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B)
+	/* Recursive mutex: each gather uses the same guarded staging path. LE
+  * inputs cannot enter the async swapped-buffer shortcut. */
+	k_mutex_lock(&disp_lock, K_FOREVER);
+	s_damage_gather_only = true;
+#endif
+	for (uint32_t i = 0; i < regions->count; i++) {
+		aster_dirty_rect_t r = regions->rect[i];
+		const uint8_t *src = buf + ((size_t)r.y * pitch + r.x) * 2u;
+		result = aster_plat_display_write_app_at(src, r.x, r.y, r.w, r.h, pitch);
+		if (result)
+			break;
+	}
+#if IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B)
+	s_damage_gather_only = false;
+	if (!result) {
+		uint32_t pw, ph;
+		panel_geom(&pw, &ph);
+		uint8_t *shadow = aster_axs15231b_shadow_begin(disp_dev, false);
+		if (!shadow)
+			result = ASTER_ENOMEM;
+		else {
+			size_t completed = 0;
+			sys_cache_data_flush_range(shadow, (size_t)pw * ph * 2u);
+			atomic_inc(&display_generation);
+			int err = aster_axs15231b_shadow_present_counted(disp_dev, 0, 0, pw, ph,
+			                                                 &completed);
+			if (!err) {
+				s_completed_bytes += completed;
+				s_completed_windows++;
+			}
+			result = err ? ASTER_EIO : ASTER_OK;
+		}
+	}
+	k_mutex_unlock(&disp_lock);
+#endif
+	int completion = aster_plat_display_flush_drain_checked();
+	if (!result)
+		result = completion;
+#if IS_ENABLED(CONFIG_ASTER_DISP_TIMING)
+	static uint32_t n;
+	static uint64_t sum[4];
+	sum[0] += regions->count;
+	k_mutex_lock(&disp_lock, K_FOREVER);
+	sum[1] += s_completed_windows - before_windows;
+	sum[2] += s_completed_bytes - before_bytes;
+	k_mutex_unlock(&disp_lock);
+	sum[3] += k_cyc_to_us_floor64((uint32_t)(k_cycle_get_32() - start));
+	if (++n == 64) {
+		k_spinlock_key_t key = k_spin_lock(&damage_timing_lock);
+		memcpy(damage_timing_snapshot, sum, sizeof(sum));
+		k_spin_unlock(&damage_timing_lock, key);
+		k_work_submit(&damage_timing_work);
+		n = 0;
+		memset(sum, 0, sizeof(sum));
+	}
+#endif
+	return result;
+}
+
+int aster_plat_display_write_at(const uint8_t *buf, uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                                uint32_t pitch)
 {
 	return aster_plat_display_write_at_ex(buf, x, y, w, h, pitch, false);
 }
 
-int aster_plat_display_qspi_tune(uint32_t mhz,bool prefetch,uint32_t *effective)
+int aster_plat_display_qspi_tune(uint32_t mhz, bool prefetch, uint32_t *effective)
 {
 #if IS_ENABLED(CONFIG_ASTER_QSPI_TUNING)
- extern int aster_axs15231b_qspi_tune(const struct device *,uint32_t,bool,uint32_t *);
- if(!effective||!aster_plat_display_count()) return ASTER_ENOTSUP;
- aster_plat_display_flush_drain();k_mutex_lock(&disp_lock,K_FOREVER);
- int err=aster_axs15231b_qspi_tune(disp_dev,mhz,prefetch,effective);
- atomic_inc(&display_generation);k_mutex_unlock(&disp_lock);
- return err?ASTER_EIO:ASTER_OK;
+	extern int aster_axs15231b_qspi_tune(const struct device *, uint32_t, bool, uint32_t *);
+	if (!effective || !aster_plat_display_count())
+		return ASTER_ENOTSUP;
+	aster_plat_display_flush_drain();
+	k_mutex_lock(&disp_lock, K_FOREVER);
+	int err = aster_axs15231b_qspi_tune(disp_dev, mhz, prefetch, effective);
+	atomic_inc(&display_generation);
+	k_mutex_unlock(&disp_lock);
+	return err ? ASTER_EIO : ASTER_OK;
 #else
- (void)mhz;(void)prefetch;(void)effective;return ASTER_ENOTSUP;
+	(void)mhz;
+	(void)prefetch;
+	(void)effective;
+	return ASTER_ENOTSUP;
 #endif
 }
 
 int aster_plat_display_window_test(uint32_t *completed)
 {
 #if IS_ENABLED(CONFIG_ASTER_AXS_WINDOW_TEST)
- extern int aster_axs15231b_window_test(const struct device *,uint32_t *);
- if(!completed||!aster_plat_display_count()||s_rot) return ASTER_ENOTSUP;
- aster_plat_display_flush_drain();
- k_mutex_lock(&disp_lock,K_FOREVER);atomic_inc(&display_generation);
- int err=aster_axs15231b_window_test(disp_dev,completed);
- glass_forget();k_mutex_unlock(&disp_lock);
- return err?ASTER_EIO:ASTER_OK;
+	extern int aster_axs15231b_window_test(const struct device *, uint32_t *);
+	if (!completed || !aster_plat_display_count() || s_rot)
+		return ASTER_ENOTSUP;
+	aster_plat_display_flush_drain();
+	k_mutex_lock(&disp_lock, K_FOREVER);
+	atomic_inc(&display_generation);
+	int err = aster_axs15231b_window_test(disp_dev, completed);
+	glass_forget();
+	k_mutex_unlock(&disp_lock);
+	return err ? ASTER_EIO : ASTER_OK;
 #else
- (void)completed;return ASTER_ENOTSUP;
+	(void)completed;
+	return ASTER_ENOTSUP;
 #endif
 }
 
-int aster_plat_display_write_persistent_ui(const uint8_t *buf,uint32_t w,uint32_t h,uint32_t pitch)
+int aster_plat_display_write_persistent_ui(const uint8_t *buf, uint32_t w, uint32_t h,
+                                           uint32_t pitch)
 {
- uint32_t pw,ph;panel_geom(&pw,&ph);
- if(!disp_dev || !buf || s_rot || w!=pw || h!=ph || pitch!=w) return ASTER_EINVAL;
- /* The UI owns this full frame until DMA completes, and screenshots run
+	uint32_t pw, ph;
+	panel_geom(&pw, &ph);
+	if (!disp_dev || !buf || s_rot || w != pw || h != ph || pitch != w)
+		return ASTER_EINVAL;
+	/* The UI owns this full frame until DMA completes, and screenshots run
   * on that same worker. ST7789 can therefore record the stable alias;
   * AXS continues to use its driver's authoritative panel shadow. */
- glass_note_full(buf,w,h,pitch,true);
- s_glass_ui=!IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B);
- struct aster_disp_job job={.buf=buf,.persistent_ui=IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B),
-  .desc={.width=w,.height=h,.pitch=pitch,.buf_size=(size_t)w*h*2u}};
+	glass_note_full(buf, w, h, pitch, true);
+	s_glass_ui = !IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B);
+	struct aster_disp_job job = {
+	        .buf = buf,
+	        .persistent_ui = IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B),
+	        .desc = {.width = w, .height = h, .pitch = pitch, .buf_size = (size_t)w * h * 2u}};
 #if IS_ENABLED(CONFIG_ASTER_DISP_ASYNC)
- disp_slot_post(ASTER_DISP_SHARED_SLOT,&job);return ASTER_OK;
+	disp_slot_post(ASTER_DISP_SHARED_SLOT, &job);
+	return ASTER_OK;
 #else
- return disp_direct_send(&job)?ASTER_EIO:ASTER_OK;
+	return disp_direct_send(&job) ? ASTER_EIO : ASTER_OK;
 #endif
 }
 
-int aster_plat_display_write_at_ex(const uint8_t *buf, uint32_t x, uint32_t y,
-				 uint32_t w, uint32_t h, uint32_t pitch,
-				 bool be_pixels_swapped)
+int aster_plat_display_write_at_ex(const uint8_t *buf, uint32_t x, uint32_t y, uint32_t w,
+                                   uint32_t h, uint32_t pitch, bool be_pixels_swapped)
 {
-    if (!aster_plat_display_count()) return ASTER_ENODEV;
+	if (!aster_plat_display_count())
+		return ASTER_ENODEV;
 	if (!disp_dev) {
 		return ASTER_EINVAL;
 	}
@@ -2510,10 +2593,30 @@ int aster_plat_display_write_at_ex(const uint8_t *buf, uint32_t x, uint32_t y,
 	const uint32_t row_bytes = pitch * 2;
 	uint32_t px, py, prw, prh; /* panel rect */
 	switch (s_rot) {
-	case 90:  px = y;  py = lw - (x + w); prw = h; prh = w; break;
-	case 180: px = pw - (x + w); py = ph - (y + h); prw = w; prh = h; break;
-	case 270: px = lh - (y + h); py = x; prw = h; prh = w; break;
-	default:  px = x; py = y; prw = w; prh = h; break;
+	case 90:
+		px = y;
+		py = lw - (x + w);
+		prw = h;
+		prh = w;
+		break;
+	case 180:
+		px = pw - (x + w);
+		py = ph - (y + h);
+		prw = w;
+		prh = h;
+		break;
+	case 270:
+		px = lh - (y + h);
+		py = x;
+		prw = h;
+		prh = w;
+		break;
+	default:
+		px = x;
+		py = y;
+		prw = w;
+		prh = h;
+		break;
 	}
 
 	/* Every branch below that reaches the wire reports its rect to the
@@ -2547,30 +2650,32 @@ int aster_plat_display_write_at_ex(const uint8_t *buf, uint32_t x, uint32_t y,
 		 * flip (see aster_plat_display_flip_rgb565) can overlap the
 		 * wire with the next frame's rasterization. */
 		struct aster_disp_job job = {
-			.buf = buf,
-			.desc = {
-				.buf_size = (size_t)row_bytes * prh,
-				.width = prw,
-				.height = prh,
-				.pitch = prw,
-			},
-			.px = px,
-			.py = py,
+		        .buf = buf,
+		        .desc =
+		                {
+		                        .buf_size = (size_t)row_bytes * prh,
+		                        .width = prw,
+		                        .height = prh,
+		                        .pitch = prw,
+		                },
+		        .px = px,
+		        .py = py,
 		};
 
 		disp_slot_post(ASTER_DISP_SHARED_SLOT, &job);
 		return ASTER_OK;
 #else
 		struct aster_disp_job job = {
-			.buf = buf,
-			.desc = {
-				.buf_size = (size_t)row_bytes * prh,
-				.width = prw,
-				.height = prh,
-				.pitch = prw,
-			},
-			.px = px,
-			.py = py,
+		        .buf = buf,
+		        .desc =
+		                {
+		                        .buf_size = (size_t)row_bytes * prh,
+		                        .width = prw,
+		                        .height = prh,
+		                        .pitch = prw,
+		                },
+		        .px = px,
+		        .py = py,
 		};
 		return disp_direct_send(&job) ? ASTER_EIO : ASTER_OK;
 #endif
@@ -2587,8 +2692,8 @@ int aster_plat_display_write_at_ex(const uint8_t *buf, uint32_t x, uint32_t y,
 	 * This is the path that makes full-screen app frames asynchronous:
 	 * aster_plat_display_write_rgb565() and the engine's dirty-rect flush
 	 * both land here, so neither needs to know the flip exists. */
-	if (!s_damage_gather_only && !be_pixels_swapped && s_rot == 0 && pitch == prw && prw == pw &&
-	    prh == ph) {
+	if (!s_damage_gather_only && !be_pixels_swapped && s_rot == 0 && pitch == prw &&
+	    prw == pw && prh == ph) {
 		if (aster_plat_display_flip_rgb565(buf, w, h, pitch) == ASTER_OK) {
 			return ASTER_OK;
 		}
@@ -2610,7 +2715,8 @@ int aster_plat_display_write_at_ex(const uint8_t *buf, uint32_t x, uint32_t y,
 		 * split: `sw` is the CPU gather into the shadow, `wr` is the
 		 * QSPI stream. Before this branch had no DISP_TIMING at all,
 		 * so its entire cost hid inside the engine's flush number. */
-		uint32_t t_sw0 = k_cycle_get_32(), acc_sw = 0, acc_wr = 0, acc_wait = 0, acc_cache = 0;
+		uint32_t t_sw0 = k_cycle_get_32(), acc_sw = 0, acc_wr = 0, acc_wait = 0,
+		         acc_cache = 0;
 #endif
 
 #if IS_ENABLED(CONFIG_ASTER_DISP_ASYNC)
@@ -2640,20 +2746,20 @@ int aster_plat_display_write_at_ex(const uint8_t *buf, uint32_t x, uint32_t y,
 				const uint32_t sc = (w - 1) - j;
 
 				for (uint32_t i = 0; i < prw; i++) {
-					const uint16_t *src = (const uint16_t *)
-						(buf + (size_t)i * row_bytes);
+					const uint16_t *src =
+					        (const uint16_t *)(buf + (size_t)i * row_bytes);
 
 					dst[i] = swap16 ? sys_cpu_to_be16(src[sc]) : src[sc];
 				}
 				break;
 			}
 			case 180: {
-				const uint16_t *src = (const uint16_t *)
-					(buf + (size_t)(h - 1 - j) * row_bytes);
+				const uint16_t *src =
+				        (const uint16_t *)(buf + (size_t)(h - 1 - j) * row_bytes);
 
 				for (uint32_t i = 0; i < prw; i++) {
 					dst[i] = swap16 ? sys_cpu_to_be16(src[(w - 1) - i])
-							: src[(w - 1) - i];
+					                : src[(w - 1) - i];
 				}
 				break;
 			}
@@ -2661,16 +2767,17 @@ int aster_plat_display_write_at_ex(const uint8_t *buf, uint32_t x, uint32_t y,
 				const uint32_t sc = j;
 
 				for (uint32_t i = 0; i < prw; i++) {
-					const uint16_t *src = (const uint16_t *)
-						(buf + (size_t)(h - 1 - i) * row_bytes);
+					const uint16_t *src =
+					        (const uint16_t *)(buf +
+					                           (size_t)(h - 1 - i) * row_bytes);
 
 					dst[i] = swap16 ? sys_cpu_to_be16(src[sc]) : src[sc];
 				}
 				break;
 			}
 			default: {
-				const uint16_t *src = (const uint16_t *)
-					(buf + (size_t)j * row_bytes);
+				const uint16_t *src =
+				        (const uint16_t *)(buf + (size_t)j * row_bytes);
 
 				for (uint32_t i = 0; i < prw; i++) {
 					dst[i] = swap16 ? sys_cpu_to_be16(src[i]) : src[i];
@@ -2679,11 +2786,11 @@ int aster_plat_display_write_at_ex(const uint8_t *buf, uint32_t x, uint32_t y,
 			}
 			}
 		}
-        if(s_damage_gather_only) {
-            aster_axs15231b_shadow_end(disp_dev);
-            k_mutex_unlock(&disp_lock);
-            return ASTER_OK;
-        }
+		if (s_damage_gather_only) {
+			aster_axs15231b_shadow_end(disp_dev);
+			k_mutex_unlock(&disp_lock);
+			return ASTER_OK;
+		}
 		/* The copy above touched only the dirty rows. AXS cannot open
 		 * the stream at an arbitrary row, so the glass always gets the
 		 * shadow from row 0 as one frame. */
@@ -2697,35 +2804,47 @@ int aster_plat_display_write_at_ex(const uint8_t *buf, uint32_t x, uint32_t y,
 		t_sw0 = k_cycle_get_32();
 #endif
 		{
-			size_t completed_bytes=0;
+			size_t completed_bytes = 0;
 			atomic_inc(&display_generation);
-            int err = aster_axs15231b_shadow_present_counted(disp_dev, 0, 0,
-								 (uint16_t)pw,
-								 (uint16_t)ph,&completed_bytes);
-            if(!err) {s_completed_windows++;s_completed_bytes+=completed_bytes;}
+			int err = aster_axs15231b_shadow_present_counted(
+			        disp_dev, 0, 0, (uint16_t)pw, (uint16_t)ph, &completed_bytes);
+			if (!err) {
+				s_completed_windows++;
+				s_completed_bytes += completed_bytes;
+			}
 #if IS_ENABLED(CONFIG_ASTER_DISP_TIMING)
 			/* The dirty rect is NOT the amount of wire here: the
 			 * glass gets a whole frame either way, so report the
 			 * driver's real stream length, not prw*prh*2. */
 			uint32_t tx_bytes = (uint32_t)completed_bytes;
 			static uint32_t count, errors;
-            static uint64_t sum_wait, sum_gather, sum_cache, sum_write, sum_bytes, sum_rect;
-            acc_wr = k_cycle_get_32() - t_sw0;
-            count++;errors += err != 0;
-            sum_wait += k_cyc_to_us_floor32(acc_wait);
-            sum_gather += k_cyc_to_us_floor32(acc_sw);
-            sum_cache += k_cyc_to_us_floor32(acc_cache);
-            sum_write += k_cyc_to_us_floor32(acc_wr);
-            sum_bytes += tx_bytes;sum_rect += (uint64_t)prw * prh * 2u;
-            if (count == 64) {
-                uint32_t v[7]={(uint32_t)(sum_rect/count),(uint32_t)(sum_bytes/count),
-                    (uint32_t)sum_wait,(uint32_t)sum_gather,(uint32_t)sum_cache,(uint32_t)sum_write,errors};
-                k_spinlock_key_t key=k_spin_lock(&axs_timing_lock);
-                memcpy(axs_timing_snapshot,v,sizeof(v));
-                k_spin_unlock(&axs_timing_lock,key);
-                k_work_submit(&axs_timing_work);
-                count=errors=0;sum_wait=sum_gather=sum_cache=sum_write=sum_bytes=sum_rect=0;
-            }
+			static uint64_t sum_wait, sum_gather, sum_cache, sum_write, sum_bytes,
+			        sum_rect;
+			acc_wr = k_cycle_get_32() - t_sw0;
+			count++;
+			errors += err != 0;
+			sum_wait += k_cyc_to_us_floor32(acc_wait);
+			sum_gather += k_cyc_to_us_floor32(acc_sw);
+			sum_cache += k_cyc_to_us_floor32(acc_cache);
+			sum_write += k_cyc_to_us_floor32(acc_wr);
+			sum_bytes += tx_bytes;
+			sum_rect += (uint64_t)prw * prh * 2u;
+			if (count == 64) {
+				uint32_t v[7] = {(uint32_t)(sum_rect / count),
+				                 (uint32_t)(sum_bytes / count),
+				                 (uint32_t)sum_wait,
+				                 (uint32_t)sum_gather,
+				                 (uint32_t)sum_cache,
+				                 (uint32_t)sum_write,
+				                 errors};
+				k_spinlock_key_t key = k_spin_lock(&axs_timing_lock);
+				memcpy(axs_timing_snapshot, v, sizeof(v));
+				k_spin_unlock(&axs_timing_lock, key);
+				k_work_submit(&axs_timing_work);
+				count = errors = 0;
+				sum_wait = sum_gather = sum_cache = sum_write = sum_bytes =
+				        sum_rect = 0;
+			}
 #endif
 
 			k_mutex_unlock(&disp_lock);
@@ -2800,33 +2919,34 @@ int aster_plat_display_write_at_ex(const uint8_t *buf, uint32_t x, uint32_t y,
 			case 90: {
 				const uint32_t sc = (w - 1) - j; /* source col */
 				for (uint32_t i = 0; i < prw; i++) {
-					const uint16_t *src = (const uint16_t *)
-						(buf + (size_t)i * row_bytes);
+					const uint16_t *src =
+					        (const uint16_t *)(buf + (size_t)i * row_bytes);
 					dst[i] = swap16 ? sys_cpu_to_be16(src[sc]) : src[sc];
 				}
 				break;
 			}
 			case 180: {
-				const uint16_t *src = (const uint16_t *)
-					(buf + (size_t)(h - 1 - j) * row_bytes);
+				const uint16_t *src =
+				        (const uint16_t *)(buf + (size_t)(h - 1 - j) * row_bytes);
 				for (uint32_t i = 0; i < prw; i++) {
 					dst[i] = swap16 ? sys_cpu_to_be16(src[(w - 1) - i])
-							: src[(w - 1) - i];
+					                : src[(w - 1) - i];
 				}
 				break;
 			}
 			case 270: {
 				const uint32_t sc = j; /* source col */
 				for (uint32_t i = 0; i < prw; i++) {
-					const uint16_t *src = (const uint16_t *)
-						(buf + (size_t)(h - 1 - i) * row_bytes);
+					const uint16_t *src =
+					        (const uint16_t *)(buf +
+					                           (size_t)(h - 1 - i) * row_bytes);
 					dst[i] = swap16 ? sys_cpu_to_be16(src[sc]) : src[sc];
 				}
 				break;
 			}
 			default: {
-				const uint16_t *src = (const uint16_t *)
-					(buf + (size_t)j * row_bytes);
+				const uint16_t *src =
+				        (const uint16_t *)(buf + (size_t)j * row_bytes);
 				for (uint32_t i = 0; i < prw; i++) {
 					dst[i] = swap16 ? sys_cpu_to_be16(src[i]) : src[i];
 				}
@@ -2849,14 +2969,17 @@ int aster_plat_display_write_at_ex(const uint8_t *buf, uint32_t x, uint32_t y,
 		acc_sw += t_wr0 - t_sw0;
 #endif
 		struct display_buffer_descriptor desc = {
-			.buf_size = band_bytes,
-			.width = prw,
-			.height = rows,
-			.pitch = prw,
+		        .buf_size = band_bytes,
+		        .width = prw,
+		        .height = rows,
+		        .pitch = prw,
 		};
 		atomic_inc(&display_generation);
-        int err = display_write(disp_dev, px, py + base, &desc, swap_buf);
-        if(!err) {s_completed_windows++;s_completed_bytes+=band_bytes;}
+		int err = display_write(disp_dev, px, py + base, &desc, swap_buf);
+		if (!err) {
+			s_completed_windows++;
+			s_completed_bytes += band_bytes;
+		}
 #if IS_ENABLED(CONFIG_ASTER_DISP_TIMING)
 		acc_wr += k_cycle_get_32() - t_wr0;
 		t_sw0 = k_cycle_get_32();
@@ -2869,9 +2992,11 @@ int aster_plat_display_write_at_ex(const uint8_t *buf, uint32_t x, uint32_t y,
 			uint32_t sw_us = k_cyc_to_us_floor32(s_tim_sw);
 			uint32_t wr_us = k_cyc_to_us_floor32(s_tim_wr);
 			LOG_INF("disp tim: n=64 avg_rect=%u B staged gather=%u us write=%u us (MB/s w=%u) cyc/sw=%u",
-				s_tim_bytes / 64, sw_us, wr_us,
-				(unsigned)((uint64_t)s_tim_bytes * 1000000 / 1048576 / (wr_us ? wr_us : 1)),
-				s_tim_sw / 64);			s_tim_n = s_tim_sw = s_tim_wr = s_tim_bytes = 0;
+			        s_tim_bytes / 64, sw_us, wr_us,
+			        (unsigned)((uint64_t)s_tim_bytes * 1000000 / 1048576 /
+			                   (wr_us ? wr_us : 1)),
+			        s_tim_sw / 64);
+			s_tim_n = s_tim_sw = s_tim_wr = s_tim_bytes = 0;
 		}
 #endif
 		if (err) {
@@ -2923,8 +3048,7 @@ int aster_plat_display_clear(uint16_t rgb565)
 		 * byte-order swap (and cache flush) lives -- a raw
 		 * display_write here bypassed it and re-introduced the
 		 * red-shows-blue bug for fills */
-		if (aster_plat_display_write_at(fb, 0, y, info.width, hh,
-					      info.width) != ASTER_OK) {
+		if (aster_plat_display_write_at(fb, 0, y, info.width, hh, info.width) != ASTER_OK) {
 			k_free(fb);
 			return ASTER_EIO;
 		}
@@ -2939,7 +3063,8 @@ int aster_plat_backlight_set(bool on, uint8_t level)
 		return ASTER_ENODEV;
 	}
 	if (IS_ENABLED(CONFIG_LED_PWM)) {
-		return led_set_brightness(bl_dev, bl_last, on ? ((uint32_t)level * 100u / 255u) : 0);
+		return led_set_brightness(bl_dev, bl_last,
+		                          on ? ((uint32_t)level * 100u / 255u) : 0);
 	}
 	return on ? led_on(bl_dev, bl_last) : led_off(bl_dev, bl_last);
 }
@@ -2989,7 +3114,6 @@ int aster_platform_init(void)
 	}
 #endif
 
-
 	uint32_t pw, ph, l_w, l_h;
 	panel_geom(&pw, &ph);
 	logical_geom(&l_w, &l_h);
@@ -3007,19 +3131,17 @@ int aster_platform_init(void)
 	/* One full-panel BE RGB565 staging buffer in PSRAM. 32-byte align
 	 * matches GDMA / cache-line comfort on S3. */
 	swap_buf_bytes = (size_t)pw * (size_t)ph * 2u;
-	swap_buf = shared_multi_heap_aligned_alloc(SMH_REG_ATTR_EXTERNAL, 32,
-						   swap_buf_bytes);
+	swap_buf = shared_multi_heap_aligned_alloc(SMH_REG_ATTR_EXTERNAL, 32, swap_buf_bytes);
 	if (!swap_buf) {
 		LOG_ERR("PSRAM display staging %zu B failed", swap_buf_bytes);
 		swap_buf_bytes = 0;
 		return -ENOMEM;
 	}
-	LOG_INF("display staging: PSRAM %p %zu B (one SPI window/rect)",
-		(void *)swap_buf, swap_buf_bytes);
+	LOG_INF("display staging: PSRAM %p %zu B (one SPI window/rect)", (void *)swap_buf,
+	        swap_buf_bytes);
 #endif
 #else
-	LOG_INF("display staging: DRAM bounce %u KB",
-		(unsigned)CONFIG_ASTER_DISP_BOUNCE_KB);
+	LOG_INF("display staging: DRAM bounce %u KB", (unsigned)CONFIG_ASTER_DISP_BOUNCE_KB);
 #endif
 
 #if IS_ENABLED(CONFIG_ASTER_SCREENSHOT) && !IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B)
@@ -3029,8 +3151,6 @@ int aster_platform_init(void)
 	LOG_INF("screen-grab shadow: allocated for the grab, then released");
 #endif
 
-
-
 #if CONFIG_ASTER_APP_SPACE_DIV > 1
 	/* App space is the logical screen divided by ASTER_APP_SPACE_DIV; this
 	 * only decides whether the two agree. A DIV=1 build has no app-space
@@ -3039,8 +3159,8 @@ int aster_platform_init(void)
 	app_geom_init();
 #endif
 
-	LOG_INF("platform ready: panel %ux%u -> logical %ux%u (rot %d)",
-		(unsigned)pw, (unsigned)ph, (unsigned)l_w, (unsigned)l_h, s_rot);
+	LOG_INF("platform ready: panel %ux%u -> logical %ux%u (rot %d)", (unsigned)pw, (unsigned)ph,
+	        (unsigned)l_w, (unsigned)l_h, s_rot);
 	/* The GRAM still holds power-on noise; blank it before anything
 	 * takes ~5 s (storage + font streaming) to paint the first frame. */
 	(void)aster_plat_display_clear(0x0000);

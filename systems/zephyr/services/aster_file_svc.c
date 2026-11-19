@@ -36,14 +36,13 @@ LOG_MODULE_REGISTER(aster_fsvc, LOG_LEVEL_INF);
 #endif
 
 #define FSVC_MAX_FILE (32u * 1024u * 1024u) /* includes full 48px SD fonts */
-#define BUF_SZ      512
-#define LINE_MAX    192
-#define IDLE_MS     5     /* main-loop poll gap */
+#define BUF_SZ 512
+#define LINE_MAX 192
+#define IDLE_MS 5 /* main-loop poll gap */
 #define LINE_TMO_MS 30000
 #define BODY_TMO_MS 30000
 
-static const struct device *const cdc =
-	DEVICE_DT_GET_OR_NULL(DT_NODELABEL(usb_serial));
+static const struct device *const cdc = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(usb_serial));
 
 /* Stacks come from internal DRAM only while the matching thread exists.
  * The shell worker is one transfer; the legacy CDC listener stays up. */
@@ -93,7 +92,8 @@ static void cdc_reply(const char *fmt, ...)
 	va_start(ap, fmt);
 	int w = vsnprintf(out, sizeof(out), fmt, ap);
 	va_end(ap);
-    if(!strncmp(out,"ERR",3)||!strncmp(out,"RESUME",6))aster_deploy_finish(!strncmp(out,"RESUME",6)?-ETIMEDOUT:-EIO);
+	if (!strncmp(out, "ERR", 3) || !strncmp(out, "RESUME", 6))
+		aster_deploy_finish(!strncmp(out, "RESUME", 6) ? -ETIMEDOUT : -EIO);
 	if (w > 0) {
 		if (transfer_shell) {
 			/* Restore commands before delivering the terminal verdict.
@@ -117,8 +117,8 @@ static void cdc_reply(const char *fmt, ...)
  * independently is what let them drift apart once; this makes that
  * unrepresentable. */
 #define CMD_PREFIX "ASTER"
-#define CMD_PING   CMD_PREFIX "PING"  /* "ASTERPING" */
-#define CMD_PUT    CMD_PREFIX "PUT "  /* "ASTERPUT " */
+#define CMD_PING CMD_PREFIX "PING" /* "ASTERPING" */
+#define CMD_PUT CMD_PREFIX "PUT "  /* "ASTERPUT " */
 
 /* Bytes discarded since the last completed line: a client that pipelined a
  * body it should have held back, or one that died mid-line, leaves debris here
@@ -157,15 +157,15 @@ static int cdc_read_line(char *line, size_t max, int64_t timeout_ms)
 				line[n] = 0;
 				if (s_line_drops) {
 					LOG_WRN("fsvc: dropped %u byte(s) that "
-						"cannot start a command (a "
-						"pipelined body, or a host not "
-						"speaking ASTERFS)", s_line_drops);
+					        "cannot start a command (a "
+					        "pipelined body, or a host not "
+					        "speaking ASTERFS)",
+					        s_line_drops);
 					s_line_drops = 0;
 				}
 				return (int)n;
 			}
-			if (n < sizeof(CMD_PREFIX) - 1 &&
-			    c != (unsigned char)CMD_PREFIX[n]) {
+			if (n < sizeof(CMD_PREFIX) - 1 && c != (unsigned char)CMD_PREFIX[n]) {
 				s_line_drops++;
 				continue;
 			}
@@ -232,7 +232,7 @@ static long file_crc32(const char *p, uint32_t *out)
  * on success (all `want` bytes written), -ETIMEDOUT on host stall, or a write
  * errno. */
 static int pump_body(const struct device *dev, struct fs_file_t *f, uint32_t want,
-		     uint32_t base_off)
+                     uint32_t base_off)
 {
 	uint32_t cum = base_off;
 
@@ -248,28 +248,30 @@ static int pump_body(const struct device *dev, struct fs_file_t *f, uint32_t wan
 				return -ENOBUFS;
 			}
 			int rx = transfer_shell ? k_msgq_get(&shell_bytes, &c, K_NO_WAIT)
-					       : uart_poll_in(dev, &c);
+			                        : uart_poll_in(dev, &c);
 			if (rx == 0) {
 				buf[n++] = c;
 				t0 = k_uptime_get();
 			} else if (k_uptime_get() - t0 > BODY_TMO_MS) {
 				return -ETIMEDOUT;
 			} else if (transfer_shell) {
-                k_msleep(1);
-            } else {
-                /* Native USB delivers 64-byte packets. A millisecond sleep
+				k_msleep(1);
+			} else {
+				/* Native USB delivers 64-byte packets. A millisecond sleep
                  * per packet throttles large full-font resources. Yield to
                  * ready peers, then poll again without a tick-long pause. */
-                k_busy_wait(50);
-                k_yield();
-            }
+				k_busy_wait(50);
+				k_yield();
+			}
 		}
 		int w = fs_write(f, buf, n);
 		if (w != (int)n) {
 			return w < 0 ? w : -EIO;
 		}
 		cum += n;
-        aster_deploy_snapshot state;if(aster_deploy_get(&state))aster_deploy_update(ASTER_DEPLOY_RECEIVE,cum,state.total,NULL);
+		aster_deploy_snapshot state;
+		if (aster_deploy_get(&state))
+			aster_deploy_update(ASTER_DEPLOY_RECEIVE, cum, state.total, NULL);
 		want -= n;
 		if (want) {
 			cdc_reply("ACK %u", cum); /* ready for next chunk */
@@ -297,7 +299,7 @@ static void publish_part(const char *tmp, const char *path, uint32_t len)
 		return;
 	}
 	LOG_INF("fsvc: put %s (%u bytes)", path, len);
-    aster_deploy_update(ASTER_DEPLOY_RECEIVED,len,len,path);
+	aster_deploy_update(ASTER_DEPLOY_RECEIVED, len, len, path);
 	cdc_reply("OK");
 }
 
@@ -309,8 +311,8 @@ static void publish_part(const char *tmp, const char *path, uint32_t len)
  *   mid:   "ACK <cum>"        after each chunk; "RESUME <n>" on stall/EIO
  *   done:  "OK" | "ERR retry" | "ERR <code>"
  */
-static void do_put(const struct device *dev, const char *path, uint32_t len,
-		   uint32_t want_crc, uint32_t off)
+static void do_put(const struct device *dev, const char *path, uint32_t len, uint32_t want_crc,
+                   uint32_t off)
 {
 	if (len == 0 || len > FSVC_MAX_FILE) {
 		cdc_reply("ERR %d", -EFBIG);
@@ -327,7 +329,7 @@ static void do_put(const struct device *dev, const char *path, uint32_t len,
 		return;
 	}
 	snprintf(tmp, sizeof(tmp), "%s.part", path);
-    aster_deploy_begin(path,len,off);
+	aster_deploy_begin(path, len, off);
 
 	/* make sure the parent dir exists (apps ship to the card root: ok) */
 	char dir[192];
@@ -346,7 +348,7 @@ static void do_put(const struct device *dev, const char *path, uint32_t len,
 
 		off = off < have ? off : have; /* trust the disk, not the claim */
 		if (off >= len) {
-            aster_deploy_update(ASTER_DEPLOY_VERIFY,len,len,path);
+			aster_deploy_update(ASTER_DEPLOY_VERIFY, len, len, path);
 			/* body already landed; verify crc and publish. */
 			uint32_t crc = 0;
 			int cre = file_crc32(tmp, &crc);
@@ -396,8 +398,7 @@ static void do_put(const struct device *dev, const char *path, uint32_t len,
 		if (err == -ETIMEDOUT) {
 			LOG_WRN("fsvc: stalled %s at %u/%u", path, durable, len);
 		} else {
-			LOG_WRN("fsvc: write %s err %d at %u/%u", path, err,
-				durable, len);
+			LOG_WRN("fsvc: write %s err %d at %u/%u", path, err, durable, len);
 		}
 		cdc_reply("RESUME %u", durable);
 		return;
@@ -405,7 +406,7 @@ static void do_put(const struct device *dev, const char *path, uint32_t len,
 
 	uint32_t crc = 0;
 
-	aster_deploy_update(ASTER_DEPLOY_VERIFY,len,len,path);
+	aster_deploy_update(ASTER_DEPLOY_VERIFY, len, len, path);
 	if (file_crc32(tmp, &crc) != 0 || crc != want_crc) {
 		(void)fs_unlink(tmp); /* torn tail: restart clean next round */
 		LOG_WRN("fsvc: crc mismatch %s (%08x/%08x)", path, crc, want_crc);
@@ -446,8 +447,8 @@ static int cmd_ping(const struct shell *sh, size_t argc, char **argv)
 	aster_system_info_t info;
 	aster_sysinfo_get(&info);
 	shell_print(sh, "PONG sd=%d product=aster target=%s abi=%u.%u caps=%llx serial=shared",
-		    aster_storage_mounted() ? 1 : 0, CONFIG_ASTER_TARGET_ID,
-		    ASTER_ABI_MAJOR, ASTER_ABI_MINOR, (unsigned long long)info.feature_flags);
+	            aster_storage_mounted() ? 1 : 0, CONFIG_ASTER_TARGET_ID, ASTER_ABI_MAJOR,
+	            ASTER_ABI_MINOR, (unsigned long long)info.feature_flags);
 	return 0;
 }
 
@@ -466,7 +467,7 @@ static int cmd_put(const struct shell *sh, size_t argc, char **argv)
 			shell_print(sh, "ERR %d", -EINVAL);
 			return 0;
 		}
-		values[i-2] = (uint32_t)v;
+		values[i - 2] = (uint32_t)v;
 	}
 	/* Reserve shared filesystem scratch until the worker completes. */
 	if (k_sem_take(&shell_idle, K_NO_WAIT)) {
@@ -499,17 +500,20 @@ static int cmd_put(const struct shell *sh, size_t argc, char **argv)
 	}
 	fsvc_started = true;
 	k_thread_create(&fsvc_thread, fsvc_stack_mem,
-			K_KERNEL_STACK_LEN(FSVC_STACK) - K_KERNEL_STACK_RESERVED,
-			shell_fsvc_fn, NULL, NULL, NULL, 7, 0, K_NO_WAIT);
+	                K_KERNEL_STACK_LEN(FSVC_STACK) - K_KERNEL_STACK_RESERVED, shell_fsvc_fn,
+	                NULL, NULL, NULL, 7, 0, K_NO_WAIT);
 	k_thread_name_set(&fsvc_thread, "aster_shell_fs");
 	return 0;
 }
+
 SHELL_CMD_ARG_REGISTER(ASTERPING, NULL, "File service and target identity", cmd_ping, 1, 0);
 SHELL_CMD_ARG_REGISTER(ASTERPUT, NULL, "<SD path> <length> <crc32> [offset]", cmd_put, 4, 1);
 
 static void fsvc_fn(void *p1, void *p2, void *p3)
 {
-	ARG_UNUSED(p1); ARG_UNUSED(p2); ARG_UNUSED(p3);
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
 	char line[LINE_MAX];
 
 	cdc_reply("ASTERFS 3 sd=%d", aster_storage_mounted() ? 1 : 0);
@@ -526,9 +530,9 @@ static void fsvc_fn(void *p1, void *p2, void *p3)
 
 			aster_sysinfo_get(&info);
 			cdc_reply("PONG sd=%d product=aster target=%s abi=%u.%u caps=%llx",
-				  aster_storage_mounted() ? 1 : 0, CONFIG_ASTER_TARGET_ID,
-				  ASTER_ABI_MAJOR, ASTER_ABI_MINOR,
-				  (unsigned long long)info.feature_flags);
+			          aster_storage_mounted() ? 1 : 0, CONFIG_ASTER_TARGET_ID,
+			          ASTER_ABI_MAJOR, ASTER_ABI_MINOR,
+			          (unsigned long long)info.feature_flags);
 		} else if (strncmp(line, CMD_PUT, sizeof(CMD_PUT) - 1) == 0) {
 			char path[160];
 			uint32_t len = 0, crc = 0, off = 0;
@@ -597,8 +601,8 @@ int aster_file_svc_start(void)
 		return -ENOMEM;
 	}
 	k_thread_create(&legacy_thread, legacy_stack_mem,
-			K_KERNEL_STACK_LEN(FSVC_STACK) - K_KERNEL_STACK_RESERVED,
-			fsvc_fn, NULL, NULL, NULL, 7, 0, K_NO_WAIT);
+	                K_KERNEL_STACK_LEN(FSVC_STACK) - K_KERNEL_STACK_RESERVED, fsvc_fn, NULL,
+	                NULL, NULL, 7, 0, K_NO_WAIT);
 	k_thread_name_set(&legacy_thread, "aster_fsvc");
 	LOG_INF("file svc on USB-CDC (ASTERPUT <path> <len> <crc32> [resume-off])");
 	return 0;

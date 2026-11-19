@@ -18,8 +18,16 @@
 LOG_MODULE_REGISTER(aster_app_mgr, LOG_LEVEL_INF);
 
 static K_MUTEX_DEFINE(files_lock);
-void aster_app_mgr_files_lock(void) { k_mutex_lock(&files_lock, K_FOREVER); }
-void aster_app_mgr_files_unlock(void) { k_mutex_unlock(&files_lock); }
+
+void aster_app_mgr_files_lock(void)
+{
+	k_mutex_lock(&files_lock, K_FOREVER);
+}
+
+void aster_app_mgr_files_unlock(void)
+{
+	k_mutex_unlock(&files_lock);
+}
 
 static aster_app_rec_t recs[ASTER_APP_MAX_RECS] __attribute__((section(".ext_ram.bss.app_recs")));
 static int nrecs;
@@ -64,7 +72,8 @@ bool aster_app_mgr_is_live(const char *id)
 	bool live = false;
 	for (int i = 0; i < nrecs; i++) {
 		if ((!id || strcmp(recs[i].id, id) == 0) &&
-		    (recs[i].state == ASTER_APP_STATE_RUNNING || recs[i].state == ASTER_APP_STATE_PAUSED)) {
+		    (recs[i].state == ASTER_APP_STATE_RUNNING ||
+		     recs[i].state == ASTER_APP_STATE_PAUSED)) {
 			live = true;
 			break;
 		}
@@ -78,7 +87,9 @@ bool aster_app_mgr_code_slot(const char *id, int *slot)
 	k_mutex_lock(&reg_lock, K_FOREVER);
 	aster_app_rec_t *r = find_mut(id);
 	bool found = r != NULL;
-	if (found) { *slot = r->code_slot; }
+	if (found) {
+		*slot = r->code_slot;
+	}
 	k_mutex_unlock(&reg_lock);
 	return found;
 }
@@ -93,19 +104,28 @@ static int read_manifest_at(const char *dir, char *buf, size_t n)
 {
 	char path[160];
 	struct fs_dirent st;
-	if (snprintf(path, sizeof(path), "%s/manifest.json", dir) >= (int)sizeof(path)) { return -1; }
+	if (snprintf(path, sizeof(path), "%s/manifest.json", dir) >= (int)sizeof(path)) {
+		return -1;
+	}
 	int err = fs_stat(path, &st);
-	if (err || st.size == 0 || st.size >= n) { return -1; }
+	if (err || st.size == 0 || st.size >= n) {
+		return -1;
+	}
 	struct fs_file_t f;
 	fs_file_t_init(&f);
 	err = fs_open(&f, path, FS_O_READ);
-	if (err) { return -1; }
+	if (err) {
+		return -1;
+	}
 	err = fs_read(&f, buf, st.size);
 	int close = fs_close(&f);
-	if (err < 0 || (size_t)err != st.size || close) { return -1; }
+	if (err < 0 || (size_t)err != st.size || close) {
+		return -1;
+	}
 	buf[err] = 0;
 	return 0;
 }
+
 static int read_manifest_for(const char *id, char *buf, size_t n)
 {
 	char dir[128];
@@ -118,13 +138,13 @@ static int read_manifest_for(const char *id, char *buf, size_t n)
  * note_mem). A rescan rebuilds a record from what is on disk and must carry
  * these over for the app it is still running. */
 struct live_snap {
-	char            id[64];
+	char id[64];
 	aster_app_state_t state;
-	uint32_t        last_error;
-	uint32_t        start_count;
-	uint64_t        started_at;
-	uint32_t        peak_mem;
-	int             code_slot;
+	uint32_t last_error;
+	uint32_t start_count;
+	uint64_t started_at;
+	uint32_t peak_mem;
+	int code_slot;
 };
 
 static void snap_take(struct live_snap *s, const aster_app_rec_t *r)
@@ -211,7 +231,8 @@ int aster_app_mgr_scan(void)
 		} else {
 			select_error = aster_versions_find(base, &selected);
 		}
-		if (select_error || aster_versions_dir(code_dir, sizeof(code_dir), base, selected.slot) ||
+		if (select_error ||
+		    aster_versions_dir(code_dir, sizeof(code_dir), base, selected.slot) ||
 		    read_manifest_at(code_dir, jbuf, sizeof(jbuf)) != 0) {
 			/* Not an app as far as we can tell -- but "unreadable
 			 * manifest" and "was never an app" are different things, and
@@ -242,16 +263,22 @@ int aster_app_mgr_scan(void)
 		aster_json_str(jbuf, "abi_min", r->abi_min, sizeof(r->abi_min));
 		r->abi_major = r->abi_min[0] ? (uint32_t)atoi(r->abi_min) : 1;
 		uint32_t v;
-		if (aster_json_u32(jbuf, "mem_initial", &v) == 0) r->mem_initial = v;
-		if (aster_json_u32(jbuf, "mem_max", &v) == 0) r->mem_max = v;
-		if (aster_json_u32(jbuf, "mem_stack", &v) == 0) r->mem_stack = v;
-		if (aster_json_u32(jbuf, "mem_heap", &v) == 0) r->mem_heap = v;
-		if (aster_json_u32(jbuf, "aot", &v) == 0) r->has_aot = v != 0;
+		if (aster_json_u32(jbuf, "mem_initial", &v) == 0)
+			r->mem_initial = v;
+		if (aster_json_u32(jbuf, "mem_max", &v) == 0)
+			r->mem_max = v;
+		if (aster_json_u32(jbuf, "mem_stack", &v) == 0)
+			r->mem_stack = v;
+		if (aster_json_u32(jbuf, "mem_heap", &v) == 0)
+			r->mem_heap = v;
+		if (aster_json_u32(jbuf, "aot", &v) == 0)
+			r->has_aot = v != 0;
 		/* quote-delimited key match, so "aot" above cannot pick this up.
 		 * No cast: the id is 32 bits on both sides (it was a uint8_t
 		 * here, which turned target 999 into 231 by the time `app info`
 		 * printed it). */
-		if (aster_json_u32(jbuf, "aot_skip", &v) == 0) r->aot_skip = v;
+		if (aster_json_u32(jbuf, "aot_skip", &v) == 0)
+			r->aot_skip = v;
 		/* permission mask (ABI 1.2 enforcement); packed at scan so the
 		 * runtime gate never touches the FS at call time */
 		char perms[8][24];
@@ -286,13 +313,12 @@ int aster_app_mgr_scan(void)
 			if (aster_json_str(jbuf, "category", cat, sizeof(cat)) >= 0) {
 				aster_pkg_norm_category(cat, r->category, sizeof(r->category));
 			}
-			if (aster_json_str(jbuf, "orientation", orient,
-					 sizeof(orient)) >= 0) {
+			if (aster_json_str(jbuf, "orientation", orient, sizeof(orient)) >= 0) {
 				r->want_orientation = aster_pkg_norm_orientation(orient);
 			}
 			snprintf(path, sizeof(path), "%s/icon.bin", code_dir);
-			r->has_icon = fs_stat(path, &st) == 0 &&
-				      st.type == FS_DIR_ENTRY_FILE && st.size >= 16;
+			r->has_icon = fs_stat(path, &st) == 0 && st.type == FS_DIR_ENTRY_FILE &&
+			              st.size >= 16;
 		}
 	}
 	fs_closedir(&dir);
@@ -358,7 +384,9 @@ static int power_guarded_install(const char *src_path)
 		int scanned = aster_app_mgr_scan();
 		if (scanned < 0) {
 			LOG_ERR("install: stage=commit operation=registry-scan result=%d", scanned);
-			if (!err) { err = ASTER_EIO; }
+			if (!err) {
+				err = ASTER_EIO;
+			}
 		}
 	}
 	aster_app_mgr_files_unlock();
@@ -448,21 +476,33 @@ static int app_uninstall_locked(const char *id)
 
 /* Serial callers publish progress only; the existing UI worker renders it. */
 #include "aster_deploy.h"
-static void serial_progress(void *context,aster_install_phase phase,uint64_t done,uint64_t total,const char *file)
+
+static void serial_progress(void *context, aster_install_phase phase, uint64_t done, uint64_t total,
+                            const char *file)
 {
-    (void)context;static const aster_deploy_phase phases[]={ASTER_DEPLOY_CHECK,ASTER_DEPLOY_COPY,ASTER_DEPLOY_SYNC,ASTER_DEPLOY_COMMIT,ASTER_DEPLOY_COMMIT};
-    if((unsigned)phase<sizeof(phases)/sizeof(phases[0]))aster_deploy_update(phases[phase],done,total,file);
+	(void)context;
+	static const aster_deploy_phase phases[] = {ASTER_DEPLOY_CHECK, ASTER_DEPLOY_COPY,
+	                                            ASTER_DEPLOY_SYNC, ASTER_DEPLOY_COMMIT,
+	                                            ASTER_DEPLOY_COMMIT};
+	if ((unsigned)phase < sizeof(phases) / sizeof(phases[0]))
+		aster_deploy_update(phases[phase], done, total, file);
 }
+
 static int power_guarded_install_serial(const char *src_path)
 {
-    aster_deploy_update(ASTER_DEPLOY_CHECK,0,0,src_path);
-    aster_app_mgr_files_lock();
-    int err=aster_pkg_install_bundle_progress(src_path,NULL,NULL,serial_progress,NULL);
-    if(!aster_app_mgr_is_live(NULL)) {
-        int scanned=aster_app_mgr_scan();if(scanned<0&&!err)err=ASTER_EIO;
-    }
-    aster_app_mgr_files_unlock();aster_deploy_finish(err);return err;
+	aster_deploy_update(ASTER_DEPLOY_CHECK, 0, 0, src_path);
+	aster_app_mgr_files_lock();
+	int err = aster_pkg_install_bundle_progress(src_path, NULL, NULL, serial_progress, NULL);
+	if (!aster_app_mgr_is_live(NULL)) {
+		int scanned = aster_app_mgr_scan();
+		if (scanned < 0 && !err)
+			err = ASTER_EIO;
+	}
+	aster_app_mgr_files_unlock();
+	aster_deploy_finish(err);
+	return err;
 }
+
 static int power_guarded_uninstall(const char *id)
 {
 	aster_app_mgr_files_lock();
@@ -491,18 +531,21 @@ int aster_app_mgr_read_manifest(const char *id, aster_manifest_t *m)
 	aster_json_str(jbuf, "abi_min", m->abi_min, sizeof(m->abi_min));
 	aster_json_str(jbuf, "abi_target", m->abi_target, sizeof(m->abi_target));
 	uint32_t v;
-	if (aster_json_u32(jbuf, "mem_initial", &v) == 0) m->mem_initial = v;
-	if (aster_json_u32(jbuf, "mem_max", &v) == 0)     m->mem_max = v;
-	if (aster_json_u32(jbuf, "mem_stack", &v) == 0)   m->mem_stack = v;
-	if (aster_json_u32(jbuf, "mem_heap", &v) == 0)    m->mem_heap = v;
+	if (aster_json_u32(jbuf, "mem_initial", &v) == 0)
+		m->mem_initial = v;
+	if (aster_json_u32(jbuf, "mem_max", &v) == 0)
+		m->mem_max = v;
+	if (aster_json_u32(jbuf, "mem_stack", &v) == 0)
+		m->mem_stack = v;
+	if (aster_json_u32(jbuf, "mem_heap", &v) == 0)
+		m->mem_heap = v;
 	m->requires_n = aster_json_str_array(jbuf, "requires", m->requires, 8);
 	m->optional_n = aster_json_str_array(jbuf, "optional", m->optional, 8);
 	m->permissions_n = aster_json_str_array(jbuf, "permissions", m->permissions, 8);
 	{
 		char orient[16];
 
-		if (aster_json_str(jbuf, "orientation", orient,
-				 sizeof(orient)) >= 0) {
+		if (aster_json_str(jbuf, "orientation", orient, sizeof(orient)) >= 0) {
 			m->orientation = aster_pkg_norm_orientation(orient);
 		}
 	}
@@ -564,54 +607,107 @@ void aster_app_mgr_note_mem(const char *id, uint32_t linear_bytes)
 	k_mutex_unlock(&reg_lock);
 }
 
-bool aster_app_mgr_snapshot(int index,aster_app_rec_t *out)
+bool aster_app_mgr_snapshot(int index, aster_app_rec_t *out)
 {
-    if(!out)return false;
-    k_mutex_lock(&reg_lock,K_FOREVER);
-    bool found=index>=0 && index<nrecs;
-    if(found)*out=recs[index];
-    k_mutex_unlock(&reg_lock);return found;
-}
-bool aster_app_mgr_find_snapshot(const char *id,aster_app_rec_t *out)
-{
-    if(!out || !id)return false;
-    k_mutex_lock(&reg_lock,K_FOREVER);aster_app_rec_t *r=find_mut(id);
-    if(r)*out=*r;
-    k_mutex_unlock(&reg_lock);return r!=NULL;
+	if (!out)
+		return false;
+	k_mutex_lock(&reg_lock, K_FOREVER);
+	bool found = index >= 0 && index < nrecs;
+	if (found)
+		*out = recs[index];
+	k_mutex_unlock(&reg_lock);
+	return found;
 }
 
-static struct {char owner[64],package[256],resources[256];} pending_install;
-int aster_app_mgr_queue_install(const char *owner,const char *package,const char *resources)
+bool aster_app_mgr_find_snapshot(const char *id, aster_app_rec_t *out)
 {
-    if(!owner || !package || !resources || strlen(owner)>=64 ||
-       strlen(package)>=256 || strlen(resources)>=256)return ASTER_EINVAL;
-    aster_app_mgr_files_lock();
-    int r=pending_install.owner[0]?ASTER_EBUSY:0;
-    if(!r) {
-        int initial=ASTER_EAGAIN;
-        if(aster_kv_set(owner,"store.install.result",&initial,sizeof(initial))) {
-            aster_app_mgr_files_unlock();return ASTER_EIO;
-        }
-        strcpy(pending_install.owner,owner);strcpy(pending_install.package,package);
-        strcpy(pending_install.resources,resources);
-    }
-    aster_app_mgr_files_unlock();return r;
+	if (!out || !id)
+		return false;
+	k_mutex_lock(&reg_lock, K_FOREVER);
+	aster_app_rec_t *r = find_mut(id);
+	if (r)
+		*out = *r;
+	k_mutex_unlock(&reg_lock);
+	return r != NULL;
 }
-bool aster_app_mgr_finish_install(const char *owner,bool execute)
-{return aster_app_mgr_finish_install_progress(owner,execute,NULL,NULL);}
-bool aster_app_mgr_finish_install_progress(const char *owner,bool execute,aster_install_progress_fn notify,void *context)
+
+static struct {
+	char owner[64], package[256], resources[256];
+} pending_install;
+
+int aster_app_mgr_queue_install(const char *owner, const char *package, const char *resources)
 {
-    aster_app_mgr_files_lock();
-    if(!pending_install.owner[0] || strcmp(owner,pending_install.owner)){aster_app_mgr_files_unlock();return false;}
-    int r=execute?aster_pkg_install_bundle_progress(pending_install.package,pending_install.resources,owner,notify,context):ASTER_ESTATE;
-    int scanned=aster_app_mgr_scan();if(!r && scanned<0)r=ASTER_EIO;
-    (void)aster_kv_set(owner,"store.install.result",&r,sizeof(r));
-    memset(&pending_install,0,sizeof(pending_install));
-    if(notify&&!r)notify(context,ASTER_INSTALL_DONE,0,0,"");
-    aster_app_mgr_files_unlock();return true;
+	if (!owner || !package || !resources || strlen(owner) >= 64 || strlen(package) >= 256 ||
+	    strlen(resources) >= 256)
+		return ASTER_EINVAL;
+	aster_app_mgr_files_lock();
+	int r = pending_install.owner[0] ? ASTER_EBUSY : 0;
+	if (!r) {
+		int initial = ASTER_EAGAIN;
+		if (aster_kv_set(owner, "store.install.result", &initial, sizeof(initial))) {
+			aster_app_mgr_files_unlock();
+			return ASTER_EIO;
+		}
+		strcpy(pending_install.owner, owner);
+		strcpy(pending_install.package, package);
+		strcpy(pending_install.resources, resources);
+	}
+	aster_app_mgr_files_unlock();
+	return r;
+}
+
+bool aster_app_mgr_finish_install(const char *owner, bool execute)
+{
+	return aster_app_mgr_finish_install_progress(owner, execute, NULL, NULL);
+}
+
+bool aster_app_mgr_finish_install_progress(const char *owner, bool execute,
+                                           aster_install_progress_fn notify, void *context)
+{
+	aster_app_mgr_files_lock();
+	if (!pending_install.owner[0] || strcmp(owner, pending_install.owner)) {
+		aster_app_mgr_files_unlock();
+		return false;
+	}
+	int r = execute ? aster_pkg_install_bundle_progress(pending_install.package,
+	                                                    pending_install.resources, owner,
+	                                                    notify, context)
+	                : ASTER_ESTATE;
+	int scanned = aster_app_mgr_scan();
+	if (!r && scanned < 0)
+		r = ASTER_EIO;
+	(void)aster_kv_set(owner, "store.install.result", &r, sizeof(r));
+	memset(&pending_install, 0, sizeof(pending_install));
+	if (notify && !r)
+		notify(context, ASTER_INSTALL_DONE, 0, 0, "");
+	aster_app_mgr_files_unlock();
+	return true;
 }
 
 /* A lease spans the complete transaction, including publication and rescan. */
-int aster_app_mgr_install(const char *path){if(aster_power_activity_begin())return ASTER_EBUSY;int r=power_guarded_install(path);aster_power_activity_end();return r;}
-int aster_app_mgr_install_serial(const char *path){if(aster_power_activity_begin())return ASTER_EBUSY;int r=power_guarded_install_serial(path);aster_power_activity_end();return r;}
-int aster_app_mgr_uninstall(const char *id){if(aster_power_activity_begin())return ASTER_EBUSY;int r=power_guarded_uninstall(id);aster_power_activity_end();return r;}
+int aster_app_mgr_install(const char *path)
+{
+	if (aster_power_activity_begin())
+		return ASTER_EBUSY;
+	int r = power_guarded_install(path);
+	aster_power_activity_end();
+	return r;
+}
+
+int aster_app_mgr_install_serial(const char *path)
+{
+	if (aster_power_activity_begin())
+		return ASTER_EBUSY;
+	int r = power_guarded_install_serial(path);
+	aster_power_activity_end();
+	return r;
+}
+
+int aster_app_mgr_uninstall(const char *id)
+{
+	if (aster_power_activity_begin())
+		return ASTER_EBUSY;
+	int r = power_guarded_uninstall(id);
+	aster_power_activity_end();
+	return r;
+}

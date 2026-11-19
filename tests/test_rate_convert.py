@@ -1,14 +1,16 @@
 """Compile actual streaming resampler; check rate, chunk invariance and alias rejection."""
+
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-ROOT=Path(__file__).resolve().parents[1]
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class RateConvert(unittest.TestCase):
     def test_streaming_samples_and_antialias(self):
-        code=r'''
+        code = r'''
 #include "aster_rate_convert.h"
 #include <assert.h>
 #include <math.h>
@@ -47,7 +49,24 @@ int main(void){
 }
 '''
         with tempfile.TemporaryDirectory() as folder:
-            p=Path(folder);(p/'test.c').write_text(code)
-            subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined',
-                '-I'+str(ROOT/'common/audio'),str(p/'test.c'),str(ROOT/'common/audio/aster_rate_convert.c'),'-lm','-o',str(p/'test')],check=True,capture_output=True)
-            subprocess.run([str(p/'test')],check=True,timeout=15)
+            p = Path(folder)
+            (p / 'test.c').write_text(code)
+            subprocess.run(
+                [
+                    'cc',
+                    '-std=c11',
+                    '-Wall',
+                    '-Wextra',
+                    '-Werror',
+                    '-fsanitize=address,undefined',
+                    '-I' + str(ROOT / 'common/audio'),
+                    str(p / 'test.c'),
+                    str(ROOT / 'common/audio/aster_rate_convert.c'),
+                    '-lm',
+                    '-o',
+                    str(p / 'test'),
+                ],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run([str(p / 'test')], check=True, timeout=15)

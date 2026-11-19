@@ -15,331 +15,432 @@
 #include <string.h>
 LOG_MODULE_REGISTER(axs15231b, LOG_LEVEL_INF);
 #include "axs15231b_init.h"
+
 struct axs_config {
- struct spi_dt_spec spi;
- uint16_t width, height;
+    struct spi_dt_spec spi;
+    uint16_t width, height;
 };
+
 struct axs_data {
- struct k_mutex lock;
- struct spi_config single, quad;
+    struct k_mutex lock;
+    struct spi_config single, quad;
 #if defined(CONFIG_ASTER_QSPI_TUNING)
- struct spi_config probe[2];uint8_t probe_index;
+    struct spi_config probe[2];
+    uint8_t probe_index;
 #endif
- uint8_t *frame;
- const uint8_t *borrowed; /* Persistent UI frame; ordinary writes always copy. */
- uint16_t next_row;
- /* Ground truth for CONFIG_ASTER_DISP_TIMING: the byte count the last
+    uint8_t *frame;
+    const uint8_t *borrowed; /* Persistent UI frame; ordinary writes always copy. */
+    uint16_t next_row;
+    /* Ground truth for CONFIG_ASTER_DISP_TIMING: the byte count the last
   * pixel stream actually put on the wire, and a cumulative total. The
   * QSPI glass has no row-window shortcut (see axs_tx_locked), so callers
   * must not infer wire cost from the rect they asked to update. */
- size_t last_tx_bytes;
- uint64_t tx_bytes_total;
+    size_t last_tx_bytes;
+    uint64_t tx_bytes_total;
 };
-static int axs_write_bytes(const struct device *dev, const struct spi_config *cfg,
-                          const void *buf, size_t size)
+
+static int axs_write_bytes(const struct device *dev, const struct spi_config *cfg, const void *buf,
+                           size_t size)
 {
- const struct axs_config *c=dev->config;
- struct spi_buf b={.buf=(void *)buf,.len=size};
- struct spi_buf_set set={.buffers=&b,.count=1};
- return spi_write(c->spi.bus,cfg,&set);
+    const struct axs_config *c = dev->config;
+    struct spi_buf b = {.buf = (void *)buf, .len = size};
+    struct spi_buf_set set = {.buffers = &b, .count = 1};
+    return spi_write(c->spi.bus, cfg, &set);
 }
+
 static int axs_header(const struct device *dev, uint8_t opcode, uint8_t cmd)
 {
- struct axs_data *d=dev->data;
- uint8_t header[4]={opcode,0,cmd,0};
- return axs_write_bytes(dev,&d->single,header,sizeof(header));
+    struct axs_data *d = dev->data;
+    uint8_t header[4] = {opcode, 0, cmd, 0};
+    return axs_write_bytes(dev, &d->single, header, sizeof(header));
 }
+
 static void axs_end(const struct device *dev)
 {
- const struct axs_config *c=dev->config;
- /* SPI_HOLD_ON_CS preserves CS across header, quad payload and DMA chunks.
+    const struct axs_config *c = dev->config;
+    /* SPI_HOLD_ON_CS preserves CS across header, quad payload and DMA chunks.
   * End explicitly, including all error paths; do not leave the glass selected. */
- gpio_pin_set_dt(&c->spi.config.cs.gpio,0);
+    gpio_pin_set_dt(&c->spi.config.cs.gpio, 0);
 }
-static int axs_cmd(const struct device *dev,uint8_t cmd,const void *data,size_t size)
+
+static int axs_cmd(const struct device *dev, uint8_t cmd, const void *data, size_t size)
 {
- struct axs_data *d=dev->data;
- int err=axs_header(dev,0x02,cmd);
- if(!err && size) err=axs_write_bytes(dev,&d->single,data,size);
- axs_end(dev);
- return err;
+    struct axs_data *d = dev->data;
+    int err = axs_header(dev, 0x02, cmd);
+    if (!err && size)
+        err = axs_write_bytes(dev, &d->single, data, size);
+    axs_end(dev);
+    return err;
 }
-static int axs_blanking(const struct device *dev,bool blank)
+
+static int axs_blanking(const struct device *dev, bool blank)
 {
- struct axs_data *d=dev->data;
- k_mutex_lock(&d->lock,K_FOREVER);
- int err=axs_cmd(dev,blank?0x28:0x29,NULL,0);
- k_mutex_unlock(&d->lock);
- return err;
+    struct axs_data *d = dev->data;
+    k_mutex_lock(&d->lock, K_FOREVER);
+    int err = axs_cmd(dev, blank ? 0x28 : 0x29, NULL, 0);
+    k_mutex_unlock(&d->lock);
+    return err;
 }
-static int axs_on(const struct device *dev) { return axs_blanking(dev,false); }
-static int axs_off(const struct device *dev) { return axs_blanking(dev,true); }
+
+static int axs_on(const struct device *dev)
+{
+    return axs_blanking(dev, false);
+}
+
+static int axs_off(const struct device *dev)
+{
+    return axs_blanking(dev, true);
+}
+
 /* Validated path avoids unverified arbitrary row windows. RAMWR restarts at the
  * top; RAMWRC continues the previous stream. Caller holds d->lock. `wire`
  * is already in panel byte order and is either the shadow or a borrowed
  * full frame. */
-static int axs_tx_locked(const struct device *dev,uint16_t x,uint16_t y,
-                         uint16_t width,uint16_t height,const void *wire)
+static int axs_tx_locked(const struct device *dev, uint16_t x, uint16_t y, uint16_t width,
+                         uint16_t height, const void *wire)
 {
- const struct axs_config *c=dev->config;
- struct axs_data *d=dev->data;
- bool band=x==0 && width==c->width && (y==0 || y==d->next_row);
- bool continuation=band && y!=0;
- uint8_t window[4];
- sys_put_be16(0,window);sys_put_be16(c->width-1,window+2);
- int err=continuation?0:axs_cmd(dev,0x2a,window,4);
- if(!err) err=axs_header(dev,0x32,continuation?0x3c:0x2c);
- size_t offset=band?(size_t)y*c->width*2u:0;
- size_t size=(size_t)c->width*(band?height:c->height)*2u;
- d->last_tx_bytes=0; /* Only successfully completed payloads are counted. */
- if(!err) err=axs_write_bytes(dev,&d->quad,(const uint8_t *)wire+offset,size);
- if(!err) {d->last_tx_bytes=size;d->tx_bytes_total+=size;}
- d->next_row=err?0:(band?y+height:c->height);
- axs_end(dev);
- return err;
+    const struct axs_config *c = dev->config;
+    struct axs_data *d = dev->data;
+    bool band = x == 0 && width == c->width && (y == 0 || y == d->next_row);
+    bool continuation = band && y != 0;
+    uint8_t window[4];
+    sys_put_be16(0, window);
+    sys_put_be16(c->width - 1, window + 2);
+    int err = continuation ? 0 : axs_cmd(dev, 0x2a, window, 4);
+    if (!err)
+        err = axs_header(dev, 0x32, continuation ? 0x3c : 0x2c);
+    size_t offset = band ? (size_t)y * c->width * 2u : 0;
+    size_t size = (size_t)c->width * (band ? height : c->height) * 2u;
+    d->last_tx_bytes = 0; /* Only successfully completed payloads are counted. */
+    if (!err)
+        err = axs_write_bytes(dev, &d->quad, (const uint8_t *)wire + offset, size);
+    if (!err) {
+        d->last_tx_bytes = size;
+        d->tx_bytes_total += size;
+    }
+    d->next_row = err ? 0 : (band ? y + height : c->height);
+    axs_end(dev);
+    return err;
 }
 #if defined(CONFIG_ASTER_QSPI_TUNING)
 extern uint32_t spi_esp32_effective_hz(const struct device *);
-extern int spi_esp32_tx_prefetch_set(const struct device *,bool);
-int aster_axs15231b_qspi_tune(const struct device *dev,uint32_t mhz,bool prefetch,uint32_t *effective)
+extern int spi_esp32_tx_prefetch_set(const struct device *, bool);
+
+int aster_axs15231b_qspi_tune(const struct device *dev, uint32_t mhz, bool prefetch,
+                              uint32_t *effective)
 {
- const struct axs_config *c=dev->config;struct axs_data *d=dev->data;
- if(mhz!=40&&mhz!=48&&mhz!=60&&mhz!=80) return -EINVAL;
- k_mutex_lock(&d->lock,K_FOREVER);
- int err=spi_esp32_tx_prefetch_set(c->spi.bus,prefetch);
- if(!err) {
-  d->single.frequency=d->quad.frequency=mhz*1000000u;
-  /* Stable alternate config addresses bypass the SPI pointer cache, even
+    const struct axs_config *c = dev->config;
+    struct axs_data *d = dev->data;
+    if (mhz != 40 && mhz != 48 && mhz != 60 && mhz != 80)
+        return -EINVAL;
+    k_mutex_lock(&d->lock, K_FOREVER);
+    int err = spi_esp32_tx_prefetch_set(c->spi.bus, prefetch);
+    if (!err) {
+        d->single.frequency = d->quad.frequency = mhz * 1000000u;
+        /* Stable alternate config addresses bypass the SPI pointer cache, even
    * for repeated tuning while the APP is paused. No dangling stack config. */
-  d->probe_index^=1u;d->probe[d->probe_index]=d->single;
-  const uint8_t nop[4]={0x02,0,0,0};
-  err=axs_write_bytes(dev,&d->probe[d->probe_index],nop,sizeof(nop));axs_end(dev);
-  *effective=spi_esp32_effective_hz(c->spi.bus);
- }
- k_mutex_unlock(&d->lock);return err;
+        d->probe_index ^= 1u;
+        d->probe[d->probe_index] = d->single;
+        const uint8_t nop[4] = {0x02, 0, 0, 0};
+        err = axs_write_bytes(dev, &d->probe[d->probe_index], nop, sizeof(nop));
+        axs_end(dev);
+        *effective = spi_esp32_effective_hz(c->spi.bus);
+    }
+    k_mutex_unlock(&d->lock);
+    return err;
 }
 #endif
 
 #if defined(CONFIG_ASTER_AXS_WINDOW_TEST)
 /* Diagnostic only: a real rectangle stream, not a shadow-rect/full-frame
  * fallback. Physical placement must be checked on the glass. */
-static int axs_tx_window_locked(const struct device *dev,uint16_t x,uint16_t y,
- uint16_t w,uint16_t h,const uint8_t *wire)
+static int axs_tx_window_locked(const struct device *dev, uint16_t x, uint16_t y, uint16_t w,
+                                uint16_t h, const uint8_t *wire)
 {
- uint8_t window[4];
- sys_put_be16(x,window);sys_put_be16(x+w-1u,window+2);
- int err=axs_cmd(dev,0x2a,window,4);
- sys_put_be16(y,window);sys_put_be16(y+h-1u,window+2);
- if(!err) err=axs_cmd(dev,0x2b,window,4);
- if(!err) err=axs_header(dev,0x32,0x2c);
- if(!err) err=axs_write_bytes(dev,&((struct axs_data *)dev->data)->quad,wire,(size_t)w*h*2u);
- axs_end(dev);return err;
+    uint8_t window[4];
+    sys_put_be16(x, window);
+    sys_put_be16(x + w - 1u, window + 2);
+    int err = axs_cmd(dev, 0x2a, window, 4);
+    sys_put_be16(y, window);
+    sys_put_be16(y + h - 1u, window + 2);
+    if (!err)
+        err = axs_cmd(dev, 0x2b, window, 4);
+    if (!err)
+        err = axs_header(dev, 0x32, 0x2c);
+    if (!err)
+        err = axs_write_bytes(dev, &((struct axs_data *)dev->data)->quad, wire, (size_t)w * h * 2u);
+    axs_end(dev);
+    return err;
 }
-int aster_axs15231b_window_test(const struct device *dev,uint32_t *completed)
+
+int aster_axs15231b_window_test(const struct device *dev, uint32_t *completed)
 {
- const struct axs_config *c=dev->config;struct axs_data *d=dev->data;
- *completed=0;
- if(c->width!=320||c->height!=480||!d->frame) return -EINVAL;
- uint8_t *patch=k_malloc(32u*32u*2u);if(!patch) return -ENOMEM;
- k_mutex_lock(&d->lock,K_FOREVER);
- d->borrowed=NULL;d->next_row=0;
- for(uint32_t y=0;y<c->height;y++)for(uint32_t x=0;x<c->width;x++) {
-  uint16_t col=0x1082;
-  if(x%80u==0||y%80u==0) col=0x4208;
-  if(x==0||x==319||y==0||y==479) col=0xffff;
-  sys_put_be16(col,d->frame+((size_t)y*c->width+x)*2u);
- }
- /* Start from the established full-frame route. Small tests follow, each
+    const struct axs_config *c = dev->config;
+    struct axs_data *d = dev->data;
+    *completed = 0;
+    if (c->width != 320 || c->height != 480 || !d->frame)
+        return -EINVAL;
+    uint8_t *patch = k_malloc(32u * 32u * 2u);
+    if (!patch)
+        return -ENOMEM;
+    k_mutex_lock(&d->lock, K_FOREVER);
+    d->borrowed = NULL;
+    d->next_row = 0;
+    for (uint32_t y = 0; y < c->height; y++)
+        for (uint32_t x = 0; x < c->width; x++) {
+            uint16_t col = 0x1082;
+            if (x % 80u == 0 || y % 80u == 0)
+                col = 0x4208;
+            if (x == 0 || x == 319 || y == 0 || y == 479)
+                col = 0xffff;
+            sys_put_be16(col, d->frame + ((size_t)y * c->width + x) * 2u);
+        }
+    /* Start from the established full-frame route. Small tests follow, each
   * starts RAMWR anew after BOTH window commands; no RAMWRC continuation. */
- int err=axs_tx_locked(dev,0,0,c->width,c->height,d->frame);
- const uint16_t xy[3][2]={{16,16},{144,224},{272,432}};
- const uint16_t colors[3]={0xf800,0x07e0,0x001f};
- for(uint32_t i=0;!err&&i<3;i++) {
-  for(uint32_t p=0;p<32u*32u;p++)sys_put_be16(colors[i],patch+p*2u);
-  err=axs_tx_window_locked(dev,xy[i][0],xy[i][1],32,32,patch);
-  if(!err) {*completed+=32u*32u*2u;d->tx_bytes_total+=32u*32u*2u;}
- }
- /* Restore addressing, but do not overwrite the diagnostic pixels. */
- uint8_t window[4]={0,0,0,0};sys_put_be16(c->width-1,window+2);
- int reset=axs_cmd(dev,0x2a,window,4);
- sys_put_be16(c->height-1,window+2);
- int reset_y=axs_cmd(dev,0x2b,window,4);
- d->last_tx_bytes=0;d->next_row=0;
- k_mutex_unlock(&d->lock);k_free(patch);
- /* Software shadow intentionally contains only the baseline; never treat
+    int err = axs_tx_locked(dev, 0, 0, c->width, c->height, d->frame);
+    const uint16_t xy[3][2] = {{16, 16}, {144, 224}, {272, 432}};
+    const uint16_t colors[3] = {0xf800, 0x07e0, 0x001f};
+    for (uint32_t i = 0; !err && i < 3; i++) {
+        for (uint32_t p = 0; p < 32u * 32u; p++)
+            sys_put_be16(colors[i], patch + p * 2u);
+        err = axs_tx_window_locked(dev, xy[i][0], xy[i][1], 32, 32, patch);
+        if (!err) {
+            *completed += 32u * 32u * 2u;
+            d->tx_bytes_total += 32u * 32u * 2u;
+        }
+    }
+    /* Restore addressing, but do not overwrite the diagnostic pixels. */
+    uint8_t window[4] = {0, 0, 0, 0};
+    sys_put_be16(c->width - 1, window + 2);
+    int reset = axs_cmd(dev, 0x2a, window, 4);
+    sys_put_be16(c->height - 1, window + 2);
+    int reset_y = axs_cmd(dev, 0x2b, window, 4);
+    d->last_tx_bytes = 0;
+    d->next_row = 0;
+    k_mutex_unlock(&d->lock);
+    k_free(patch);
+    /* Software shadow intentionally contains only the baseline; never treat
   * a screenshot of it as evidence that raw windows landed correctly. */
- return err?err:reset?reset:reset_y;
+    return err ? err : reset ? reset : reset_y;
 }
 #endif
 
-static int axs_write_frame(const struct device *dev,const uint16_t x,const uint16_t y,
-                     const struct display_buffer_descriptor *desc,const void *buffer,bool persistent)
+static int axs_write_frame(const struct device *dev, const uint16_t x, const uint16_t y,
+                           const struct display_buffer_descriptor *desc, const void *buffer,
+                           bool persistent)
 {
- const struct axs_config *c=dev->config;
- struct axs_data *d=dev->data;
- if(!desc || !buffer || !desc->width || !desc->height || desc->pitch<desc->width ||
-    x+desc->width>c->width || y+desc->height>c->height ||
-    desc->buf_size<((size_t)(desc->height-1)*desc->pitch+desc->width)*2u) return -EINVAL;
- k_mutex_lock(&d->lock,K_FOREVER);
- bool full=x==0 && y==0 && desc->width==c->width && desc->height==c->height && desc->pitch==c->width;
- if(persistent && !full) {k_mutex_unlock(&d->lock);return -EINVAL;}
- if(persistent) d->borrowed=buffer;
- else {
-  if(d->borrowed && !full) memcpy(d->frame,d->borrowed,(size_t)c->width*c->height*2u);
-  d->borrowed=NULL;
- if(x==0 && desc->width==c->width && desc->pitch==c->width)
-  memcpy(d->frame+(size_t)y*c->width*2u,buffer,(size_t)desc->width*desc->height*2u);
- else for(uint16_t row=0;row<desc->height;row++)
-  memcpy(d->frame+((size_t)(y+row)*c->width+x)*2u,
-         (const uint8_t *)buffer+(size_t)row*desc->pitch*2u,(size_t)desc->width*2u);
- }
- int err=axs_tx_locked(dev,x,y,desc->width,desc->height,persistent?buffer:d->frame);
- k_mutex_unlock(&d->lock);
- return err;
+    const struct axs_config *c = dev->config;
+    struct axs_data *d = dev->data;
+    if (!desc || !buffer || !desc->width || !desc->height || desc->pitch < desc->width ||
+        x + desc->width > c->width || y + desc->height > c->height ||
+        desc->buf_size < ((size_t)(desc->height - 1) * desc->pitch + desc->width) * 2u)
+        return -EINVAL;
+    k_mutex_lock(&d->lock, K_FOREVER);
+    bool full = x == 0 && y == 0 && desc->width == c->width && desc->height == c->height &&
+                desc->pitch == c->width;
+    if (persistent && !full) {
+        k_mutex_unlock(&d->lock);
+        return -EINVAL;
+    }
+    if (persistent)
+        d->borrowed = buffer;
+    else {
+        if (d->borrowed && !full)
+            memcpy(d->frame, d->borrowed, (size_t)c->width * c->height * 2u);
+        d->borrowed = NULL;
+        if (x == 0 && desc->width == c->width && desc->pitch == c->width)
+            memcpy(d->frame + (size_t)y * c->width * 2u, buffer,
+                   (size_t)desc->width * desc->height * 2u);
+        else
+            for (uint16_t row = 0; row < desc->height; row++)
+                memcpy(d->frame + ((size_t)(y + row) * c->width + x) * 2u,
+                       (const uint8_t *)buffer + (size_t)row * desc->pitch * 2u,
+                       (size_t)desc->width * 2u);
+    }
+    int err = axs_tx_locked(dev, x, y, desc->width, desc->height, persistent ? buffer : d->frame);
+    k_mutex_unlock(&d->lock);
+    return err;
 }
+
 /* Byte-swap staging writes the shadow directly. begin() holds d->lock until
  * shadow_present(); a partial update first materializes a borrowed UI frame. */
-uint8_t *aster_axs15231b_shadow_begin(const struct device *dev,bool replacing_all)
+uint8_t *aster_axs15231b_shadow_begin(const struct device *dev, bool replacing_all)
 {
- const struct axs_config *c=dev->config;
- struct axs_data *d=dev->data;
- k_mutex_lock(&d->lock,K_FOREVER);
- if(!d->frame) {k_mutex_unlock(&d->lock);return NULL;}
- if(d->borrowed && !replacing_all)
-  memcpy(d->frame,d->borrowed,(size_t)c->width*c->height*2u);
- d->borrowed=NULL;
- return d->frame;
+    const struct axs_config *c = dev->config;
+    struct axs_data *d = dev->data;
+    k_mutex_lock(&d->lock, K_FOREVER);
+    if (!d->frame) {
+        k_mutex_unlock(&d->lock);
+        return NULL;
+    }
+    if (d->borrowed && !replacing_all)
+        memcpy(d->frame, d->borrowed, (size_t)c->width * c->height * 2u);
+    d->borrowed = NULL;
+    return d->frame;
 }
+
 /* End a CPU-only damage update; no pixel stream until the batch is ready. */
 void aster_axs15231b_shadow_end(const struct device *dev)
 {
- struct axs_data *d=dev->data;
- k_mutex_unlock(&d->lock);
+    struct axs_data *d = dev->data;
+    k_mutex_unlock(&d->lock);
 }
-int aster_axs15231b_shadow_present_counted(const struct device *dev,
-                                   uint16_t x,uint16_t y,uint16_t w,uint16_t h,size_t *completed)
+
+int aster_axs15231b_shadow_present_counted(const struct device *dev, uint16_t x, uint16_t y,
+                                           uint16_t w, uint16_t h, size_t *completed)
 {
- struct axs_data *d=dev->data;
- int err=axs_tx_locked(dev,x,y,w,h,d->frame);
- if(completed) *completed=d->last_tx_bytes;
- k_mutex_unlock(&d->lock);
- return err;
+    struct axs_data *d = dev->data;
+    int err = axs_tx_locked(dev, x, y, w, h, d->frame);
+    if (completed)
+        *completed = d->last_tx_bytes;
+    k_mutex_unlock(&d->lock);
+    return err;
 }
-int aster_axs15231b_shadow_present(const struct device *dev,
-                                   uint16_t x,uint16_t y,uint16_t w,uint16_t h)
+
+int aster_axs15231b_shadow_present(const struct device *dev, uint16_t x, uint16_t y, uint16_t w,
+                                   uint16_t h)
 {
- return aster_axs15231b_shadow_present_counted(dev,x,y,w,h,NULL);
+    return aster_axs15231b_shadow_present_counted(dev, x, y, w, h, NULL);
 }
+
 /* Diagnostics only: successfully completed pixel bytes of the most recent transfer, and the total
  * completed since boot. Failed transfers may have sent an unknown prefix. Read after shadow_present()/write() has returned,
  * from non-ISR context. */
 size_t aster_axs15231b_last_tx_bytes(const struct device *dev)
 {
- struct axs_data *d=dev->data;
- k_mutex_lock(&d->lock,K_FOREVER);size_t value=d->last_tx_bytes;
- k_mutex_unlock(&d->lock);return value;
+    struct axs_data *d = dev->data;
+    k_mutex_lock(&d->lock, K_FOREVER);
+    size_t value = d->last_tx_bytes;
+    k_mutex_unlock(&d->lock);
+    return value;
 }
+
 uint64_t aster_axs15231b_tx_bytes_total(const struct device *dev)
 {
- struct axs_data *d=dev->data;
- k_mutex_lock(&d->lock,K_FOREVER);uint64_t value=d->tx_bytes_total;
- k_mutex_unlock(&d->lock);return value;
+    struct axs_data *d = dev->data;
+    k_mutex_lock(&d->lock, K_FOREVER);
+    uint64_t value = d->tx_bytes_total;
+    k_mutex_unlock(&d->lock);
+    return value;
 }
-static int axs_write(const struct device *dev,const uint16_t x,const uint16_t y,
-                     const struct display_buffer_descriptor *desc,const void *buffer)
+
+static int axs_write(const struct device *dev, const uint16_t x, const uint16_t y,
+                     const struct display_buffer_descriptor *desc, const void *buffer)
 {
- return axs_write_frame(dev,x,y,desc,buffer,false);
+    return axs_write_frame(dev, x, y, desc, buffer, false);
 }
+
 /* Internal native-front contract: buffer remains allocated while borrowed;
  * callers serialize drawing and screenshot capture, and wait before reuse.
  * Release the borrow after DMA drains and before the owner frees its front.
  * Never used for guest memory or short-lived staging/band buffers. */
 int aster_axs15231b_write_persistent(const struct device *dev,
-                     const struct display_buffer_descriptor *desc,const void *buffer)
+                                     const struct display_buffer_descriptor *desc,
+                                     const void *buffer)
 {
- return axs_write_frame(dev,0,0,desc,buffer,true);
+    return axs_write_frame(dev, 0, 0, desc, buffer, true);
 }
+
 void aster_axs15231b_release_persistent(const struct device *dev)
 {
- const struct axs_config *c=dev->config;
- struct axs_data *d=dev->data;
- k_mutex_lock(&d->lock,K_FOREVER);
- if(d->borrowed && d->borrowed!=d->frame)
-  memcpy(d->frame,d->borrowed,(size_t)c->width*c->height*2u);
- d->borrowed=NULL;
- k_mutex_unlock(&d->lock);
+    const struct axs_config *c = dev->config;
+    struct axs_data *d = dev->data;
+    k_mutex_lock(&d->lock, K_FOREVER);
+    if (d->borrowed && d->borrowed != d->frame)
+        memcpy(d->frame, d->borrowed, (size_t)c->width * c->height * 2u);
+    d->borrowed = NULL;
+    k_mutex_unlock(&d->lock);
 }
-static void axs_capabilities(const struct device *dev,struct display_capabilities *cap)
+
+static void axs_capabilities(const struct device *dev, struct display_capabilities *cap)
 {
- const struct axs_config *c=dev->config;
- memset(cap,0,sizeof(*cap));
- cap->x_resolution=c->width;cap->y_resolution=c->height;
- cap->supported_pixel_formats=PIXEL_FORMAT_RGB_565;
- cap->current_pixel_format=PIXEL_FORMAT_RGB_565;
- cap->current_orientation=DISPLAY_ORIENTATION_NORMAL;
+    const struct axs_config *c = dev->config;
+    memset(cap, 0, sizeof(*cap));
+    cap->x_resolution = c->width;
+    cap->y_resolution = c->height;
+    cap->supported_pixel_formats = PIXEL_FORMAT_RGB_565;
+    cap->current_pixel_format = PIXEL_FORMAT_RGB_565;
+    cap->current_orientation = DISPLAY_ORIENTATION_NORMAL;
 }
+
 static void *axs_framebuffer(const struct device *dev)
 {
- struct axs_data *d=dev->data;
- return (void *)(d->borrowed?d->borrowed:d->frame);
+    struct axs_data *d = dev->data;
+    return (void *)(d->borrowed ? d->borrowed : d->frame);
 }
-static int axs_format(const struct device *dev,const enum display_pixel_format fmt)
+
+static int axs_format(const struct device *dev, const enum display_pixel_format fmt)
 {
- ARG_UNUSED(dev);return fmt==PIXEL_FORMAT_RGB_565?0:-ENOTSUP;
+    ARG_UNUSED(dev);
+    return fmt == PIXEL_FORMAT_RGB_565 ? 0 : -ENOTSUP;
 }
-static int axs_orientation(const struct device *dev,const enum display_orientation orient)
+
+static int axs_orientation(const struct device *dev, const enum display_orientation orient)
 {
- ARG_UNUSED(dev);
- /* Retain native window; Aster performs pixel/touch rotation for landscape. */
- return orient==DISPLAY_ORIENTATION_NORMAL?0:-ENOTSUP;
+    ARG_UNUSED(dev);
+    /* Retain native window; Aster performs pixel/touch rotation for landscape. */
+    return orient == DISPLAY_ORIENTATION_NORMAL ? 0 : -ENOTSUP;
 }
+
 static int axs_init(const struct device *dev)
 {
- const struct axs_config *c=dev->config;
- struct axs_data *d=dev->data;
- if(!spi_is_ready_dt(&c->spi)) return -ENODEV;
- k_mutex_init(&d->lock);
- d->frame=shared_multi_heap_aligned_alloc(SMH_REG_ATTR_EXTERNAL,64,
-                                         (size_t)c->width*c->height*2u);
- if(!d->frame) return -ENOMEM;
- memset(d->frame,0,(size_t)c->width*c->height*2u);
- d->single=c->spi.config;
- d->quad=d->single;d->quad.operation|=SPI_LINES_QUAD;
- int err=axs_cmd(dev,0x01,NULL,0);
- if(err) return err;
- k_msleep(150);
- for(size_t i=0;i<ARRAY_SIZE(axs_init_cmds);i++) {
-  const struct axs_init_cmd *cmd=&axs_init_cmds[i];
-  err=axs_cmd(dev,cmd->cmd,cmd->data,cmd->len);
-  if(err) return err;
-  if(cmd->delay_ms) k_msleep(cmd->delay_ms);
- }
- uint8_t rgb565=0x55;
- err=axs_cmd(dev,0x3a,&rgb565,1);
- if(!err) err=axs_cmd(dev,0x29,NULL,0);
- if(!err) {
-  d->quad.frequency=CONFIG_ASTER_AXS_PIXEL_CLOCK_MHZ*1000000u;
+    const struct axs_config *c = dev->config;
+    struct axs_data *d = dev->data;
+    if (!spi_is_ready_dt(&c->spi))
+        return -ENODEV;
+    k_mutex_init(&d->lock);
+    d->frame = shared_multi_heap_aligned_alloc(SMH_REG_ATTR_EXTERNAL, 64,
+                                               (size_t)c->width * c->height * 2u);
+    if (!d->frame)
+        return -ENOMEM;
+    memset(d->frame, 0, (size_t)c->width * c->height * 2u);
+    d->single = c->spi.config;
+    d->quad = d->single;
+    d->quad.operation |= SPI_LINES_QUAD;
+    int err = axs_cmd(dev, 0x01, NULL, 0);
+    if (err)
+        return err;
+    k_msleep(150);
+    for (size_t i = 0; i < ARRAY_SIZE(axs_init_cmds); i++) {
+        const struct axs_init_cmd *cmd = &axs_init_cmds[i];
+        err = axs_cmd(dev, cmd->cmd, cmd->data, cmd->len);
+        if (err)
+            return err;
+        if (cmd->delay_ms)
+            k_msleep(cmd->delay_ms);
+    }
+    uint8_t rgb565 = 0x55;
+    err = axs_cmd(dev, 0x3a, &rgb565, 1);
+    if (!err)
+        err = axs_cmd(dev, 0x29, NULL, 0);
+    if (!err) {
+        d->quad.frequency = CONFIG_ASTER_AXS_PIXEL_CLOCK_MHZ * 1000000u;
 #if defined(CONFIG_ASTER_AXS_TX_PREFETCH)
-  extern int spi_esp32_tx_prefetch_set(const struct device *,bool);
-  err=spi_esp32_tx_prefetch_set(c->spi.bus,true);
+        extern int spi_esp32_tx_prefetch_set(const struct device *, bool);
+        err = spi_esp32_tx_prefetch_set(c->spi.bus, true);
 #endif
-  LOG_INF("AXS15231B %ux%u QSPI control %u MHz pixels requested %u MHz",
-   c->width,c->height,c->spi.config.frequency/1000000,d->quad.frequency/1000000);
- }
- return err;
+        LOG_INF("AXS15231B %ux%u QSPI control %u MHz pixels requested %u MHz", c->width, c->height,
+                c->spi.config.frequency / 1000000, d->quad.frequency / 1000000);
+    }
+    return err;
 }
-static DEVICE_API(display,axs_api)={
- .blanking_on=axs_off,.blanking_off=axs_on,.write=axs_write,
- .get_capabilities=axs_capabilities,.set_pixel_format=axs_format,
- .get_framebuffer=axs_framebuffer,
- .set_orientation=axs_orientation,
+
+static DEVICE_API(display, axs_api) = {
+    .blanking_on = axs_off,
+    .blanking_off = axs_on,
+    .write = axs_write,
+    .get_capabilities = axs_capabilities,
+    .set_pixel_format = axs_format,
+    .get_framebuffer = axs_framebuffer,
+    .set_orientation = axs_orientation,
 };
 #define AXS_DEFINE(i) \
- static const struct axs_config axs_config_##i={ \
-  .spi=SPI_DT_SPEC_INST_GET(i,SPI_OP_MODE_MASTER|SPI_WORD_SET(8)|SPI_HOLD_ON_CS), \
-  .width=DT_INST_PROP(i,width),.height=DT_INST_PROP(i,height), \
- }; \
- static struct axs_data axs_data_##i; \
- DEVICE_DT_INST_DEFINE(i,axs_init,NULL,&axs_data_##i,&axs_config_##i, \
-                       POST_KERNEL,CONFIG_APPLICATION_INIT_PRIORITY,&axs_api);
+    static const struct axs_config axs_config_##i = { \
+        .spi = SPI_DT_SPEC_INST_GET(i, SPI_OP_MODE_MASTER | SPI_WORD_SET(8) | SPI_HOLD_ON_CS), \
+        .width = DT_INST_PROP(i, width), \
+        .height = DT_INST_PROP(i, height), \
+    }; \
+    static struct axs_data axs_data_##i; \
+    DEVICE_DT_INST_DEFINE(i, axs_init, NULL, &axs_data_##i, &axs_config_##i, POST_KERNEL, \
+                          CONFIG_APPLICATION_INIT_PRIORITY, &axs_api);
 DT_INST_FOREACH_STATUS_OKAY(AXS_DEFINE)

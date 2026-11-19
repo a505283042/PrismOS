@@ -43,21 +43,21 @@
 #include <lvgl.h>
 
 /* Compact 16px labels fit both panel orientations. */
-#define QP_PAD_X   12
+#define QP_PAD_X 12
 #define QP_TITLE_H 34
-#define QP_ROW_H   42 /* one line box + 9 px of air above and below */
-#define QP_WIFI_H  64 /* two line boxes + the same air             */
-#define QP_RULE     2 /* accent terminator under the last row      */
-#define QP_BTN_W   64
-#define QP_BTN_H   28
+#define QP_ROW_H 42  /* one line box + 9 px of air above and below */
+#define QP_WIFI_H 64 /* two line boxes + the same air             */
+#define QP_RULE 2    /* accent terminator under the last row      */
+#define QP_BTN_W 64
+#define QP_BTN_H 28
 #define QP_BTN_GAP 8
 /* the first line box of any row, and the second when there is one */
-#define QP_ROW_Y   ((QP_ROW_H - ASTER_FONT_CAPTION_LINE_H) / 2)
+#define QP_ROW_Y ((QP_ROW_H - ASTER_FONT_CAPTION_LINE_H) / 2)
 #define QP_WIFI_Y1 ((QP_WIFI_H - 2 * ASTER_FONT_CAPTION_LINE_H) / 2)
 #define QP_WIFI_Y2 (QP_WIFI_Y1 + ASTER_FONT_CAPTION_LINE_H)
 /* dot column: the dot is centred on the line box it belongs to */
-#define QP_DOT_X   QP_PAD_X
-#define QP_TXT_X   (QP_PAD_X + 16)
+#define QP_DOT_X QP_PAD_X
+#define QP_TXT_X (QP_PAD_X + 16)
 #define QP_DOT_DY ((ASTER_FONT_CAPTION_LINE_H - 6) / 2)
 /* the theme row: a fixed "主题" and the current name beside it, both on
  * the row's single line box */
@@ -65,17 +65,16 @@
 
 #define QP_VOL_LBL_W 40
 #define QP_VOL_VAL_W 40
-#define QP_VOL_GAP    8
-#define QP_VOL_SL_X  (QP_PAD_X + QP_VOL_LBL_W + QP_VOL_GAP)
+#define QP_VOL_GAP 8
+#define QP_VOL_SL_X (QP_PAD_X + QP_VOL_LBL_W + QP_VOL_GAP)
 
 /* The rows are whole line boxes plus air, and the sheet is the sum of its
  * rows plus the accent rule. Both are load-bearing: a face re-bake that
  * changes ASTER_FONT_CAPTION_LINE_H has to break the build here, the same way the
  * drawer tiles do, rather than clip the bottom row's descenders. */
-BUILD_ASSERT(QP_TITLE_H >= ASTER_FONT_CAPTION_LINE_H &&
-	     QP_ROW_H >= ASTER_FONT_CAPTION_LINE_H + 8 &&
-	     QP_WIFI_H >= 2 * ASTER_FONT_CAPTION_LINE_H + 8,
-	     "quick-settings rows no longer fit the face's line box");
+BUILD_ASSERT(QP_TITLE_H >= ASTER_FONT_CAPTION_LINE_H && QP_ROW_H >= ASTER_FONT_CAPTION_LINE_H + 8 &&
+                     QP_WIFI_H >= 2 * ASTER_FONT_CAPTION_LINE_H + 8,
+             "quick-settings rows no longer fit the face's line box");
 
 /* The sheet is the sum of its rows and the scrim is the screen, so a sheet
  * taller than the screen is a row the user cannot reach: lv_obj_set_size()
@@ -88,17 +87,17 @@ BUILD_ASSERT(QP_TITLE_H >= ASTER_FONT_CAPTION_LINE_H &&
  * point of the assert, not a reason to relax it -- a face re-bake that grows
  * ASTER_FONT_CAPTION_LINE_H takes it negative here rather than silently eating the
  * SD row off the bottom of the glass. */
-#define QP_SHEET_MAX_H (QP_TITLE_H + QP_ROW_H /* SD */ + QP_RULE + \
-			(IS_ENABLED(CONFIG_ASTER_AUDIO) ? QP_ROW_H : 0) + \
-			(IS_ENABLED(CONFIG_ASTER_WIFI) ? QP_WIFI_H : 0) + \
-			QP_ROW_H /* theme */)
+#define QP_SHEET_MAX_H \
+	(QP_TITLE_H + QP_ROW_H /* SD */ + QP_RULE + \
+	 (IS_ENABLED(CONFIG_ASTER_AUDIO) ? QP_ROW_H : 0) + \
+	 (IS_ENABLED(CONFIG_ASTER_WIFI) ? QP_WIFI_H : 0) + QP_ROW_H /* theme */)
 
 BUILD_ASSERT(QP_SHEET_MAX_H + 12 <= ASTER_UI_MIN_HEIGHT,
-	     "quick-settings sheet is taller than the logical screen: its last "
-	     "row would be clipped with no error (shrink QP_ROW_H/QP_TITLE_H)");
+             "quick-settings sheet is taller than the logical screen: its last "
+             "row would be clipped with no error (shrink QP_ROW_H/QP_TITLE_H)");
 
 #if IS_ENABLED(CONFIG_ASTER_AUDIO)
-#define QPANEL_KV_ID  "aster.qpanel"
+#define QPANEL_KV_ID "aster.qpanel"
 #define QPANEL_KV_VOL "volume"
 #endif
 
@@ -158,11 +157,11 @@ static void load_palette(void)
 	 * app context lands in, and the state a build with the native
 	 * launcher disabled is in permanently. */
 	aster_qpanel_palette_t p = {
-		.bg = 0x243044,
-		.fg = 0xE6EBF5,
-		.dim = 0x8B95A8,
-		.surface = 0x0A0E1A,
-		.accent = 0x06B6D4,
+	        .bg = 0x243044,
+	        .fg = 0xE6EBF5,
+	        .dim = 0x8B95A8,
+	        .surface = 0x0A0E1A,
+	        .accent = 0x06B6D4,
 	};
 
 	if (s_ops && s_ops->palette) {
@@ -171,8 +170,7 @@ static void load_palette(void)
 	s_pal = p;
 }
 
-static lv_obj_t *mk_label(lv_obj_t *parent, const char *text, uint32_t color,
-			  int align)
+static lv_obj_t *mk_label(lv_obj_t *parent, const char *text, uint32_t color, int align)
 {
 	lv_obj_t *o = lv_label_create(parent);
 
@@ -181,8 +179,10 @@ static lv_obj_t *mk_label(lv_obj_t *parent, const char *text, uint32_t color,
 	lv_obj_set_style_text_font(o, aster_ui_font(ASTER_FONT_CAPTION_PX), 0);
 	aster_ui_font_warm(ASTER_FONT_CAPTION_PX, text);
 	lv_obj_set_style_text_align(o,
-		align == 1 ? LV_TEXT_ALIGN_CENTER :
-		align == 2 ? LV_TEXT_ALIGN_RIGHT : LV_TEXT_ALIGN_LEFT, 0);
+	                            align == 1   ? LV_TEXT_ALIGN_CENTER
+	                            : align == 2 ? LV_TEXT_ALIGN_RIGHT
+	                                         : LV_TEXT_ALIGN_LEFT,
+	                            0);
 	return o;
 }
 
@@ -248,8 +248,8 @@ static lv_obj_t *mk_row(lv_obj_t *parent, int h)
 	return r;
 }
 
-static lv_obj_t *mk_button(lv_obj_t *parent, int x, int y, int w, int h,
-			   const char *text, lv_event_cb_t cb, lv_obj_t **out_lbl)
+static lv_obj_t *mk_button(lv_obj_t *parent, int x, int y, int w, int h, const char *text,
+                           lv_event_cb_t cb, lv_obj_t **out_lbl)
 {
 	lv_obj_t *b = lv_button_create(parent);
 	lv_obj_t *l;
@@ -288,7 +288,7 @@ static bool forget(void)
 	bool had = s_sheet != NULL;
 
 	s_scrim = s_sheet = NULL;
- s_exit_mode = false;
+	s_exit_mode = false;
 #if IS_ENABLED(CONFIG_ASTER_AUDIO)
 	s_vol_slider = s_vol_val = NULL;
 #endif
@@ -313,7 +313,7 @@ static void on_delete(lv_event_t *e)
 {
 	ARG_UNUSED(e);
 	if (forget()) {
-		aster_service_logf(3,"qpanel: close (screen rebuilt under it)");
+		aster_service_logf(3, "qpanel: close (screen rebuilt under it)");
 	}
 }
 
@@ -359,9 +359,9 @@ static bool snapshot_take(void)
 		 * save. Named here because "the panel does not open in this app"
 		 * would otherwise read as a gesture bug -- it is not, the pull
 		 * was recognised and this is the refusal. */
-		aster_service_logf(2,"qpanel: no whole-panel frame on the glass to save -- "
-			"not opening (last present was partial? builds without "
-			"CONFIG_ASTER_SCREENSHOT keep no shadow to fall back on)");
+		aster_service_logf(2, "qpanel: no whole-panel frame on the glass to save -- "
+		                      "not opening (last present was partial? builds without "
+		                      "CONFIG_ASTER_SCREENSHOT keep no shadow to fall back on)");
 		return false;
 	}
 	/* The glass holds a PANEL-order frame of PANEL size; the copy goes back
@@ -370,15 +370,16 @@ static bool snapshot_take(void)
 	 * reaches its direct path there either. Refuse rather than write a
 	 * rotated frame back as if it were logical. */
 	if (w != lw || h != lh || pitch != w) {
-		aster_service_logf(2,"qpanel: glass is %ux%u pitch %u, logical is %ux%u -- not opening",
-			(unsigned)w, (unsigned)h, (unsigned)pitch, (unsigned)lw, (unsigned)lh);
+		aster_service_logf(
+		        2, "qpanel: glass is %ux%u pitch %u, logical is %ux%u -- not opening",
+		        (unsigned)w, (unsigned)h, (unsigned)pitch, (unsigned)lw, (unsigned)lh);
 		return false;
 	}
 	if (!s_snap) {
 		s_snap = aster_os_alloc_external((size_t)lw * lh * 2u);
 		if (!s_snap) {
-			aster_service_logf(1,"qpanel: no PSRAM for the %u B glass snapshot",
-				(unsigned)(lw * lh * 2u));
+			aster_service_logf(1, "qpanel: no PSRAM for the %u B glass snapshot",
+			                   (unsigned)(lw * lh * 2u));
 			return false;
 		}
 	}
@@ -430,7 +431,7 @@ static void on_vol(lv_event_t *e)
 		uint8_t raw = (uint8_t)v;
 
 		(void)aster_service_kv_set(QPANEL_KV_ID, QPANEL_KV_VOL, &raw, 1);
-		aster_service_logf(3,"qpanel: volume %d saved", v);
+		aster_service_logf(3, "qpanel: volume %d saved", v);
 	}
 }
 
@@ -472,7 +473,7 @@ void aster_qpanel_restore_volume(void)
 	if (aster_service_kv_get(QPANEL_KV_ID, QPANEL_KV_VOL, &raw, 1, &n) == 0 && n == 1 &&
 	    raw <= 100) {
 		(void)aster_device_audio_set_volume((int)raw);
-		aster_service_logf(3,"qpanel: volume %u restored", (unsigned)raw);
+		aster_service_logf(3, "qpanel: volume %u restored", (unsigned)raw);
 	}
 }
 #else
@@ -488,8 +489,7 @@ static void on_wifi_btn(lv_event_t *e)
 {
 	ARG_UNUSED(e);
 	lv_obj_set_pos(s_sheet, 0, 0);
-	lv_obj_set_size(s_sheet, aster_ui_lvgl_layout_width(),
-			aster_ui_lvgl_layout_height());
+	lv_obj_set_size(s_sheet, aster_ui_lvgl_layout_width(), aster_ui_lvgl_layout_height());
 	lv_obj_set_style_border_width(s_sheet, 0, 0);
 	lv_obj_set_style_radius(s_sheet, 0, 0);
 	aster_wifi_settings_open(s_sheet, aster_qpanel_dismiss);
@@ -519,8 +519,7 @@ static void wifi_refresh(void)
 			char line[64];
 
 			if (ws.ip[0]) {
-				snprintf(line, sizeof(line), "%s · %s",
-					 ws.ssid, ws.ip);
+				snprintf(line, sizeof(line), "%s · %s", ws.ssid, ws.ip);
 			} else {
 				snprintf(line, sizeof(line), "%s", ws.ssid);
 			}
@@ -576,7 +575,7 @@ static void on_theme_btn(lv_event_t *e)
 		return;
 	}
 	i = (i + 1) % n;
-	aster_service_logf(3,"qpanel: theme -> %d of %d", i, n);
+	aster_service_logf(3, "qpanel: theme -> %d of %d", i, n);
 	s_ops->apply(i);
 	/* Nothing below may touch a widget: apply() asks the host to rebuild
 	 * its tree for the new palette, and that rebuild takes this sheet
@@ -609,193 +608,250 @@ static void (*bt_close_owner)(void);
 
 static uint32_t bt_capabilities(void)
 {
- aster_player_info_t info;
- return aster_player_service_info(&info)==0?info.capabilities:0;
+	aster_player_info_t info;
+	return aster_player_service_info(&info) == 0 ? info.capabilities : 0;
 }
 
 bool aster_bluetooth_settings_available(void)
 {
- return (bt_capabilities()&(ASTER_PLAYER_CAP_BT_SINK|ASTER_PLAYER_CAP_BT_SOURCE))!=0;
+	return (bt_capabilities() & (ASTER_PLAYER_CAP_BT_SINK | ASTER_PLAYER_CAP_BT_SOURCE)) != 0;
 }
 
-bool aster_bluetooth_settings_is_open(void){return bt_root!=NULL;}
-
-static int bt_command(uint32_t command,const char *address)
+bool aster_bluetooth_settings_is_open(void)
 {
- aster_player_request_t request={.size=sizeof(request),.version=1,.command=command};
- if(address)snprintf(request.path,sizeof(request.path),"%s",address);
- return aster_player_service_control(&request);
+	return bt_root != NULL;
+}
+
+static int bt_command(uint32_t command, const char *address)
+{
+	aster_player_request_t request = {
+	        .size = sizeof(request), .version = 1, .command = command};
+	if (address)
+		snprintf(request.path, sizeof(request.path), "%s", address);
+	return aster_player_service_control(&request);
 }
 
 static void bt_start_after_stop(uint32_t command)
 {
- bt_pending=command;
- bt_deadline=aster_os_uptime32()+10000;
+	bt_pending = command;
+	bt_deadline = aster_os_uptime32() + 10000;
 }
 
 static void bt_tick(void)
 {
- if(!bt_root&&!bt_pending&&!bt_restore_visibility)return;
- uint32_t now=aster_os_uptime32();
- if(now-bt_last_poll<250)return;
- bt_last_poll=now;
- aster_player_info_t info={0};
- aster_player_service_info(&info);
- aster_player_bt_list_t list={0};
- aster_player_service_bt_list(&list);
- if(!bt_root&&bt_restore_visibility&&!bt_pending&&
-    (list.state==ASTER_PLAYER_BT_IDLE||list.state==ASTER_PLAYER_BT_ERROR)){
-  bt_restore_visibility=false;
-  bt_command(ASTER_PLAYER_BT_OFF,NULL);
-  bt_start_after_stop(ASTER_PLAYER_BT_ON);
-  return;
- }
- if(bt_pending){
-  if((int32_t)(now-bt_deadline)>=0){bt_pending=0;bt_error=ASTER_ETIMEDOUT;}
-  else if(info.state!=ASTER_PLAYER_STOPPING && list.state!=ASTER_PLAYER_BT_STOPPING){
-   int error=bt_command(bt_pending,NULL);
-   if(error!=ASTER_EBUSY){bt_pending=0;bt_error=error;}
-  }
- }
- bt_enabled=bt_pending||info.device[0]||list.state==ASTER_PLAYER_BT_STOPPING;
- if(!bt_root)return;
- bt_peer_connected=info.mode==ASTER_PLAYER_BLUETOOTH&&(info.flags&ASTER_PLAYER_F_CONNECTED);
- char waiting[96];
- snprintf(waiting,sizeof(waiting),"本机可被发现 · %s",info.device);
- const char *state=bt_error?"操作失败，请重试":
-  bt_pending||info.state==ASTER_PLAYER_STOPPING||list.state==ASTER_PLAYER_BT_STOPPING?"正在更新蓝牙状态":
-  !bt_enabled?"蓝牙已关闭":
-  list.state==ASTER_PLAYER_BT_SCANNING?"正在搜索附近设备":
-  list.state==ASTER_PLAYER_BT_CONNECTING?"正在连接蓝牙设备":
-  list.state==ASTER_PLAYER_BT_CONNECTED?"设备已连接 · 点击设备断开":
-  list.state==ASTER_PLAYER_BT_ERROR||(info.mode==ASTER_PLAYER_BLUETOOTH&&info.state==ASTER_PLAYER_ERROR)?"蓝牙连接失败":
-  bt_peer_connected?"设备已连接 · 点击设备断开":
-  bt_restore_visibility?"选择要连接的设备":waiting;
- const char *toggle=bt_enabled?"关闭蓝牙":"开启蓝牙";
- if(strcmp(lv_label_get_text(bt_toggle),toggle))set_label(bt_toggle,toggle);
- if(bt_search){
-  if(bt_enabled&&!bt_pending)lv_obj_remove_state(bt_search,LV_STATE_DISABLED);
-  else lv_obj_add_state(bt_search,LV_STATE_DISABLED);
- }
- if(strcmp(lv_label_get_text(bt_status),state))set_label(bt_status,state);
- for(unsigned i=0;i<ASTER_PLAYER_BT_DEVICES_MAX;i++){
-  if(i==0&&bt_peer_connected){
-   set_label(bt_names[i],"已连接的手机");
-   lv_obj_remove_flag(bt_rows[i],LV_OBJ_FLAG_HIDDEN);
-   continue;
-  }
-  if(i>=list.count){lv_obj_add_flag(bt_rows[i],LV_OBJ_FLAG_HIDDEN);continue;}
-  char name[112];
-  snprintf(name,sizeof(name),"%s%s",list.devices[i].flags&ASTER_PLAYER_F_CONNECTED?"已连接 · ":"",
-           list.devices[i].name[0]?list.devices[i].name:list.devices[i].address);
-  if(strcmp(lv_label_get_text(bt_names[i]),name))set_label(bt_names[i],name);
-  lv_obj_remove_flag(bt_rows[i],LV_OBJ_FLAG_HIDDEN);
- }
- bt_devices=list;
+	if (!bt_root && !bt_pending && !bt_restore_visibility)
+		return;
+	uint32_t now = aster_os_uptime32();
+	if (now - bt_last_poll < 250)
+		return;
+	bt_last_poll = now;
+	aster_player_info_t info = {0};
+	aster_player_service_info(&info);
+	aster_player_bt_list_t list = {0};
+	aster_player_service_bt_list(&list);
+	if (!bt_root && bt_restore_visibility && !bt_pending &&
+	    (list.state == ASTER_PLAYER_BT_IDLE || list.state == ASTER_PLAYER_BT_ERROR)) {
+		bt_restore_visibility = false;
+		bt_command(ASTER_PLAYER_BT_OFF, NULL);
+		bt_start_after_stop(ASTER_PLAYER_BT_ON);
+		return;
+	}
+	if (bt_pending) {
+		if ((int32_t)(now - bt_deadline) >= 0) {
+			bt_pending = 0;
+			bt_error = ASTER_ETIMEDOUT;
+		} else if (info.state != ASTER_PLAYER_STOPPING &&
+		           list.state != ASTER_PLAYER_BT_STOPPING) {
+			int error = bt_command(bt_pending, NULL);
+			if (error != ASTER_EBUSY) {
+				bt_pending = 0;
+				bt_error = error;
+			}
+		}
+	}
+	bt_enabled = bt_pending || info.device[0] || list.state == ASTER_PLAYER_BT_STOPPING;
+	if (!bt_root)
+		return;
+	bt_peer_connected =
+	        info.mode == ASTER_PLAYER_BLUETOOTH && (info.flags & ASTER_PLAYER_F_CONNECTED);
+	char waiting[96];
+	snprintf(waiting, sizeof(waiting), "本机可被发现 · %s", info.device);
+	const char *state =
+	        bt_error ? "操作失败，请重试"
+	        : bt_pending || info.state == ASTER_PLAYER_STOPPING ||
+	                        list.state == ASTER_PLAYER_BT_STOPPING
+	                ? "正在更新蓝牙状态"
+	        : !bt_enabled                              ? "蓝牙已关闭"
+	        : list.state == ASTER_PLAYER_BT_SCANNING   ? "正在搜索附近设备"
+	        : list.state == ASTER_PLAYER_BT_CONNECTING ? "正在连接蓝牙设备"
+	        : list.state == ASTER_PLAYER_BT_CONNECTED  ? "设备已连接 · 点击设备断开"
+	        : list.state == ASTER_PLAYER_BT_ERROR || (info.mode == ASTER_PLAYER_BLUETOOTH &&
+	                                                  info.state == ASTER_PLAYER_ERROR)
+	                ? "蓝牙连接失败"
+	        : bt_peer_connected     ? "设备已连接 · 点击设备断开"
+	        : bt_restore_visibility ? "选择要连接的设备"
+	                                : waiting;
+	const char *toggle = bt_enabled ? "关闭蓝牙" : "开启蓝牙";
+	if (strcmp(lv_label_get_text(bt_toggle), toggle))
+		set_label(bt_toggle, toggle);
+	if (bt_search) {
+		if (bt_enabled && !bt_pending)
+			lv_obj_remove_state(bt_search, LV_STATE_DISABLED);
+		else
+			lv_obj_add_state(bt_search, LV_STATE_DISABLED);
+	}
+	if (strcmp(lv_label_get_text(bt_status), state))
+		set_label(bt_status, state);
+	for (unsigned i = 0; i < ASTER_PLAYER_BT_DEVICES_MAX; i++) {
+		if (i == 0 && bt_peer_connected) {
+			set_label(bt_names[i], "已连接的手机");
+			lv_obj_remove_flag(bt_rows[i], LV_OBJ_FLAG_HIDDEN);
+			continue;
+		}
+		if (i >= list.count) {
+			lv_obj_add_flag(bt_rows[i], LV_OBJ_FLAG_HIDDEN);
+			continue;
+		}
+		char name[112];
+		snprintf(name, sizeof(name), "%s%s",
+		         list.devices[i].flags & ASTER_PLAYER_F_CONNECTED ? "已连接 · " : "",
+		         list.devices[i].name[0] ? list.devices[i].name : list.devices[i].address);
+		if (strcmp(lv_label_get_text(bt_names[i]), name))
+			set_label(bt_names[i], name);
+		lv_obj_remove_flag(bt_rows[i], LV_OBJ_FLAG_HIDDEN);
+	}
+	bt_devices = list;
 }
 
 static void bt_select(lv_event_t *event)
 {
- unsigned choice=(unsigned)(uintptr_t)lv_obj_get_user_data(lv_event_get_current_target_obj(event));
- bt_error=0;
- if(choice>=100){
-  unsigned index=choice-100;
-  if(index==0&&bt_peer_connected){bt_error=bt_command(ASTER_PLAYER_BT_DISCONNECT,NULL);return;}
-  if(!bt_pending && index<bt_devices.count){
-   bool connected=bt_devices.devices[index].flags&ASTER_PLAYER_F_CONNECTED;
-   bt_error=bt_command(connected?ASTER_PLAYER_BT_DISCONNECT:ASTER_PLAYER_BT_CONNECT,
-                       connected?NULL:bt_devices.devices[index].address);
-  }
-  return;
- }
- if(choice==ASTER_PLAYER_BT_ON){
-  if(bt_enabled){
-   bt_pending=0;bt_restore_visibility=false;
-   bt_error=bt_command(ASTER_PLAYER_BT_OFF,NULL);
-  }else{
-   uint32_t caps=bt_capabilities();
-   bt_error=bt_command(caps&ASTER_PLAYER_CAP_BT_SINK?ASTER_PLAYER_BT_ON:ASTER_PLAYER_SOURCE_ON,NULL);
-  }
-  return;
- }
- if(bt_pending)return;
- aster_player_info_t info={0};aster_player_service_info(&info);
- if(choice==ASTER_PLAYER_SOURCE_ON){
-  if(bt_devices.state==ASTER_PLAYER_BT_SCANNING||bt_devices.state==ASTER_PLAYER_BT_CONNECTING||
-     bt_devices.state==ASTER_PLAYER_BT_CONNECTED)return;
-  if(!bt_command(ASTER_PLAYER_BT_SCAN,NULL))return;
-  bt_restore_visibility=(bt_capabilities()&ASTER_PLAYER_CAP_BT_SINK)!=0;
- }
- bt_command(ASTER_PLAYER_BT_OFF,NULL);
- if(info.mode==ASTER_PLAYER_LOCAL)bt_command(ASTER_PLAYER_STOP,NULL);
- bt_start_after_stop(choice);
+	unsigned choice =
+	        (unsigned)(uintptr_t)lv_obj_get_user_data(lv_event_get_current_target_obj(event));
+	bt_error = 0;
+	if (choice >= 100) {
+		unsigned index = choice - 100;
+		if (index == 0 && bt_peer_connected) {
+			bt_error = bt_command(ASTER_PLAYER_BT_DISCONNECT, NULL);
+			return;
+		}
+		if (!bt_pending && index < bt_devices.count) {
+			bool connected = bt_devices.devices[index].flags & ASTER_PLAYER_F_CONNECTED;
+			bt_error = bt_command(connected ? ASTER_PLAYER_BT_DISCONNECT
+			                                : ASTER_PLAYER_BT_CONNECT,
+			                      connected ? NULL : bt_devices.devices[index].address);
+		}
+		return;
+	}
+	if (choice == ASTER_PLAYER_BT_ON) {
+		if (bt_enabled) {
+			bt_pending = 0;
+			bt_restore_visibility = false;
+			bt_error = bt_command(ASTER_PLAYER_BT_OFF, NULL);
+		} else {
+			uint32_t caps = bt_capabilities();
+			bt_error =
+			        bt_command(caps & ASTER_PLAYER_CAP_BT_SINK ? ASTER_PLAYER_BT_ON
+			                                                   : ASTER_PLAYER_SOURCE_ON,
+			                   NULL);
+		}
+		return;
+	}
+	if (bt_pending)
+		return;
+	aster_player_info_t info = {0};
+	aster_player_service_info(&info);
+	if (choice == ASTER_PLAYER_SOURCE_ON) {
+		if (bt_devices.state == ASTER_PLAYER_BT_SCANNING ||
+		    bt_devices.state == ASTER_PLAYER_BT_CONNECTING ||
+		    bt_devices.state == ASTER_PLAYER_BT_CONNECTED)
+			return;
+		if (!bt_command(ASTER_PLAYER_BT_SCAN, NULL))
+			return;
+		bt_restore_visibility = (bt_capabilities() & ASTER_PLAYER_CAP_BT_SINK) != 0;
+	}
+	bt_command(ASTER_PLAYER_BT_OFF, NULL);
+	if (info.mode == ASTER_PLAYER_LOCAL)
+		bt_command(ASTER_PLAYER_STOP, NULL);
+	bt_start_after_stop(choice);
 }
 
 static void bt_delete(lv_event_t *event)
 {
- (void)event;
- bt_root=NULL;
+	(void)event;
+	bt_root = NULL;
 }
 
 static void bt_close(lv_event_t *event)
 {
- (void)event;
- if(bt_close_owner)bt_close_owner();
- else lv_obj_delete(bt_root);
+	(void)event;
+	if (bt_close_owner)
+		bt_close_owner();
+	else
+		lv_obj_delete(bt_root);
 }
 
-void aster_bluetooth_settings_open(lv_obj_t *parent,void (*close_owner)(void))
+void aster_bluetooth_settings_open(lv_obj_t *parent, void (*close_owner)(void))
 {
- uint32_t caps=bt_capabilities();
- if(!parent||bt_root||!(caps&(ASTER_PLAYER_CAP_BT_SINK|ASTER_PLAYER_CAP_BT_SOURCE)))return;
- load_palette();memset(&bt_devices,0,sizeof(bt_devices));bt_error=0;bt_close_owner=close_owner;
- int w=aster_ui_lvgl_layout_width(), h=aster_ui_lvgl_layout_height();
- bt_root=lv_obj_create(parent);
- lv_obj_remove_style_all(bt_root);
- lv_obj_add_flag(bt_root,LV_OBJ_FLAG_FLOATING);
- lv_obj_set_pos(bt_root,0,0);
- lv_obj_set_size(bt_root,w,h);
- lv_obj_set_style_bg_color(bt_root,hexc(s_pal.bg),0);
- lv_obj_set_style_bg_opa(bt_root,LV_OPA_COVER,0);
- lv_obj_add_event_cb(bt_root,bt_delete,LV_EVENT_DELETE,NULL);
- no_scroll(bt_root);
- lv_obj_t *title=mk_label(bt_root,"蓝牙",s_pal.fg,0);lv_obj_set_pos(title,16,20);
- mk_button(bt_root,w-78,10,66,40,"返回",bt_close,NULL);
- bt_status=mk_label(bt_root,"",s_pal.dim,0);
- lv_obj_set_pos(bt_status,16,65);lv_obj_set_width(bt_status,w-32);
- lv_label_set_long_mode(bt_status,LV_LABEL_LONG_MODE_DOTS);
- int cell=(w-36)/2;
- lv_obj_t *toggle=mk_button(bt_root,12,100,cell,46,"开启蓝牙",bt_select,&bt_toggle);
- lv_obj_set_style_bg_color(toggle,hexc(s_pal.surface),0);
- lv_obj_set_user_data(toggle,(void *)(uintptr_t)ASTER_PLAYER_BT_ON);
- bt_search=NULL;
- if(caps&ASTER_PLAYER_CAP_BT_SOURCE){
-  bt_search=mk_button(bt_root,24+cell,100,cell,46,"搜索设备",bt_select,NULL);
-  lv_obj_set_style_bg_color(bt_search,hexc(s_pal.surface),0);
-  lv_obj_set_user_data(bt_search,(void *)(uintptr_t)ASTER_PLAYER_SOURCE_ON);
- }
- lv_obj_t *list=lv_obj_create(bt_root);
- lv_obj_remove_style_all(list);lv_obj_set_pos(list,12,162);lv_obj_set_size(list,w-24,h-174);
- lv_obj_set_flex_flow(list,LV_FLEX_FLOW_COLUMN);
- lv_obj_set_style_pad_row(list,6,0);
- lv_obj_add_flag(list,LV_OBJ_FLAG_SCROLLABLE);lv_obj_set_scroll_dir(list,LV_DIR_VER);
- for(unsigned i=0;i<ASTER_PLAYER_BT_DEVICES_MAX;i++){
-  bt_rows[i]=mk_button(list,0,0,w-28,46,"",bt_select,&bt_names[i]);
-  lv_obj_set_style_bg_color(bt_rows[i],hexc(s_pal.surface),0);
-  lv_obj_set_user_data(bt_rows[i],(void *)(uintptr_t)(100+i));
-  lv_obj_set_width(bt_names[i],w-46);
-  lv_label_set_long_mode(bt_names[i],LV_LABEL_LONG_MODE_DOTS);
- }
- bt_last_poll=aster_os_uptime32()-250;
- bt_tick();
+	uint32_t caps = bt_capabilities();
+	if (!parent || bt_root || !(caps & (ASTER_PLAYER_CAP_BT_SINK | ASTER_PLAYER_CAP_BT_SOURCE)))
+		return;
+	load_palette();
+	memset(&bt_devices, 0, sizeof(bt_devices));
+	bt_error = 0;
+	bt_close_owner = close_owner;
+	int w = aster_ui_lvgl_layout_width(), h = aster_ui_lvgl_layout_height();
+	bt_root = lv_obj_create(parent);
+	lv_obj_remove_style_all(bt_root);
+	lv_obj_add_flag(bt_root, LV_OBJ_FLAG_FLOATING);
+	lv_obj_set_pos(bt_root, 0, 0);
+	lv_obj_set_size(bt_root, w, h);
+	lv_obj_set_style_bg_color(bt_root, hexc(s_pal.bg), 0);
+	lv_obj_set_style_bg_opa(bt_root, LV_OPA_COVER, 0);
+	lv_obj_add_event_cb(bt_root, bt_delete, LV_EVENT_DELETE, NULL);
+	no_scroll(bt_root);
+	lv_obj_t *title = mk_label(bt_root, "蓝牙", s_pal.fg, 0);
+	lv_obj_set_pos(title, 16, 20);
+	mk_button(bt_root, w - 78, 10, 66, 40, "返回", bt_close, NULL);
+	bt_status = mk_label(bt_root, "", s_pal.dim, 0);
+	lv_obj_set_pos(bt_status, 16, 65);
+	lv_obj_set_width(bt_status, w - 32);
+	lv_label_set_long_mode(bt_status, LV_LABEL_LONG_MODE_DOTS);
+	int cell = (w - 36) / 2;
+	lv_obj_t *toggle = mk_button(bt_root, 12, 100, cell, 46, "开启蓝牙", bt_select, &bt_toggle);
+	lv_obj_set_style_bg_color(toggle, hexc(s_pal.surface), 0);
+	lv_obj_set_user_data(toggle, (void *)(uintptr_t)ASTER_PLAYER_BT_ON);
+	bt_search = NULL;
+	if (caps & ASTER_PLAYER_CAP_BT_SOURCE) {
+		bt_search =
+		        mk_button(bt_root, 24 + cell, 100, cell, 46, "搜索设备", bt_select, NULL);
+		lv_obj_set_style_bg_color(bt_search, hexc(s_pal.surface), 0);
+		lv_obj_set_user_data(bt_search, (void *)(uintptr_t)ASTER_PLAYER_SOURCE_ON);
+	}
+	lv_obj_t *list = lv_obj_create(bt_root);
+	lv_obj_remove_style_all(list);
+	lv_obj_set_pos(list, 12, 162);
+	lv_obj_set_size(list, w - 24, h - 174);
+	lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
+	lv_obj_set_style_pad_row(list, 6, 0);
+	lv_obj_add_flag(list, LV_OBJ_FLAG_SCROLLABLE);
+	lv_obj_set_scroll_dir(list, LV_DIR_VER);
+	for (unsigned i = 0; i < ASTER_PLAYER_BT_DEVICES_MAX; i++) {
+		bt_rows[i] = mk_button(list, 0, 0, w - 28, 46, "", bt_select, &bt_names[i]);
+		lv_obj_set_style_bg_color(bt_rows[i], hexc(s_pal.surface), 0);
+		lv_obj_set_user_data(bt_rows[i], (void *)(uintptr_t)(100 + i));
+		lv_obj_set_width(bt_names[i], w - 46);
+		lv_label_set_long_mode(bt_names[i], LV_LABEL_LONG_MODE_DOTS);
+	}
+	bt_last_poll = aster_os_uptime32() - 250;
+	bt_tick();
 }
 
 static void on_bluetooth(lv_event_t *event)
 {
- (void)event;
- lv_obj_set_pos(s_sheet,0,0);
- lv_obj_set_size(s_sheet,aster_ui_lvgl_layout_width(),aster_ui_lvgl_layout_height());
- aster_bluetooth_settings_open(s_sheet,aster_qpanel_dismiss);
+	(void)event;
+	lv_obj_set_pos(s_sheet, 0, 0);
+	lv_obj_set_size(s_sheet, aster_ui_lvgl_layout_width(), aster_ui_lvgl_layout_height());
+	aster_bluetooth_settings_open(s_sheet, aster_qpanel_dismiss);
 }
 
 static void build(void)
@@ -807,8 +863,8 @@ static void build(void)
 	bool has_vol = IS_ENABLED(CONFIG_ASTER_AUDIO);
 	bool has_wifi = IS_ENABLED(CONFIG_ASTER_WIFI);
 	bool has_bt = aster_bluetooth_settings_available();
-	bool has_theme = s_ops && s_ops->count && s_ops->index &&
-			 s_ops->name && s_ops->apply && s_ops->count() > 1;
+	bool has_theme = s_ops && s_ops->count && s_ops->index && s_ops->name && s_ops->apply &&
+	                 s_ops->count() > 1;
 	int h = QP_TITLE_H + QP_ROW_H /* SD */ + QP_RULE;
 
 	if (has_vol) {
@@ -817,7 +873,8 @@ static void build(void)
 	if (has_wifi) {
 		h += QP_WIFI_H;
 	}
-	if (has_bt) h += QP_ROW_H;
+	if (has_bt)
+		h += QP_ROW_H;
 	if (has_theme) {
 		h += QP_ROW_H;
 	}
@@ -860,16 +917,16 @@ static void build(void)
 	lv_obj_set_style_border_side(s_sheet, LV_BORDER_SIDE_BOTTOM, 0);
 	lv_obj_set_style_border_color(s_sheet, hexc(s_pal.accent), 0);
 	lv_obj_set_flex_flow(s_sheet, LV_FLEX_FLOW_COLUMN);
-	lv_obj_set_flex_align(s_sheet, LV_FLEX_ALIGN_START,
-			      LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+	lv_obj_set_flex_align(s_sheet, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START,
+	                      LV_FLEX_ALIGN_START);
 	no_scroll(s_sheet);
 	lv_obj_add_event_cb(s_sheet, on_delete, LV_EVENT_DELETE, NULL);
 
 	row = mk_row(s_sheet, QP_TITLE_H);
 	l = mk_label(row, "控制", s_pal.fg, 0);
 	lv_obj_set_pos(l, QP_PAD_X, (QP_TITLE_H - ASTER_FONT_CAPTION_LINE_H) / 2);
-	mk_button(row, dw - QP_PAD_X - 56, (QP_TITLE_H - QP_BTN_H) / 2, 56,
-		  QP_BTN_H, "关闭", on_close, NULL);
+	mk_button(row, dw - QP_PAD_X - 56, (QP_TITLE_H - QP_BTN_H) / 2, 56, QP_BTN_H, "关闭",
+	          on_close, NULL);
 
 #if IS_ENABLED(CONFIG_ASTER_WIFI)
 	if (has_wifi) {
@@ -890,17 +947,17 @@ static void build(void)
 		lv_obj_set_height(s_wifi_sub, ASTER_FONT_CAPTION_LINE_H);
 		lv_label_set_long_mode(s_wifi_sub, LV_LABEL_LONG_MODE_DOTS);
 
-		s_wifi_btn = mk_button(row, dw - QP_PAD_X - QP_BTN_W, 7,
-				       QP_BTN_W, QP_BTN_H, "重连", on_wifi_btn,
-				       &s_wifi_btn_lbl);
+		s_wifi_btn = mk_button(row, dw - QP_PAD_X - QP_BTN_W, 7, QP_BTN_W, QP_BTN_H, "重连",
+		                       on_wifi_btn, &s_wifi_btn_lbl);
 	}
 #endif /* CONFIG_ASTER_WIFI */
 
 	if (has_bt) {
-		row=mk_row(s_sheet,QP_ROW_H);
-		l=mk_label(row,"蓝牙",s_pal.fg,0);
-		lv_obj_set_pos(l,QP_TXT_X,QP_ROW_Y);
-		mk_button(row,dw-QP_PAD_X-QP_BTN_W,7,QP_BTN_W,QP_BTN_H,"设置",on_bluetooth,NULL);
+		row = mk_row(s_sheet, QP_ROW_H);
+		l = mk_label(row, "蓝牙", s_pal.fg, 0);
+		lv_obj_set_pos(l, QP_TXT_X, QP_ROW_Y);
+		mk_button(row, dw - QP_PAD_X - QP_BTN_W, 7, QP_BTN_W, QP_BTN_H, "设置",
+		          on_bluetooth, NULL);
 	}
 
 #if IS_ENABLED(CONFIG_ASTER_AUDIO)
@@ -919,24 +976,17 @@ static void build(void)
 		lv_obj_set_ext_click_area(s_vol_slider, 14);
 		lv_obj_add_flag(s_vol_slider, LV_OBJ_FLAG_PRESS_LOCK);
 		lv_obj_remove_flag(s_vol_slider, LV_OBJ_FLAG_ADV_HITTEST);
-		lv_obj_set_size(s_vol_slider, dw - QP_VOL_SL_X - QP_VOL_GAP -
-				QP_VOL_VAL_W - QP_PAD_X, 16);
+		lv_obj_set_size(s_vol_slider,
+		                dw - QP_VOL_SL_X - QP_VOL_GAP - QP_VOL_VAL_W - QP_PAD_X, 16);
 		lv_obj_set_pos(s_vol_slider, QP_VOL_SL_X, (QP_ROW_H - 16) / 2);
-		lv_obj_set_style_bg_color(s_vol_slider, hexc(s_pal.surface),
-					  LV_PART_MAIN);
-		lv_obj_set_style_bg_color(s_vol_slider, hexc(s_pal.accent),
-					  LV_PART_INDICATOR);
-		lv_obj_set_style_bg_color(s_vol_slider, hexc(s_pal.fg),
-					  LV_PART_KNOB);
-		lv_obj_set_style_bg_opa(s_vol_slider, LV_OPA_COVER,
-					LV_PART_KNOB);
-		lv_obj_add_event_cb(s_vol_slider, on_vol,
-				    LV_EVENT_VALUE_CHANGED, NULL);
-		lv_obj_add_event_cb(s_vol_slider, on_vol, LV_EVENT_RELEASED,
-				    NULL);
+		lv_obj_set_style_bg_color(s_vol_slider, hexc(s_pal.surface), LV_PART_MAIN);
+		lv_obj_set_style_bg_color(s_vol_slider, hexc(s_pal.accent), LV_PART_INDICATOR);
+		lv_obj_set_style_bg_color(s_vol_slider, hexc(s_pal.fg), LV_PART_KNOB);
+		lv_obj_set_style_bg_opa(s_vol_slider, LV_OPA_COVER, LV_PART_KNOB);
+		lv_obj_add_event_cb(s_vol_slider, on_vol, LV_EVENT_VALUE_CHANGED, NULL);
+		lv_obj_add_event_cb(s_vol_slider, on_vol, LV_EVENT_RELEASED, NULL);
 	}
 #endif /* CONFIG_ASTER_AUDIO */
-
 
 	if (has_theme) {
 		row = mk_row(s_sheet, QP_ROW_H);
@@ -944,13 +994,11 @@ static void build(void)
 		lv_obj_set_pos(l, QP_TXT_X, QP_ROW_Y);
 		s_theme_name = mk_label(row, "", s_pal.dim, 0);
 		lv_obj_set_pos(s_theme_name, QP_THEME_X, QP_ROW_Y);
-		lv_obj_set_width(s_theme_name,
-				 dw - QP_PAD_X - QP_BTN_W - 8 - QP_THEME_X);
+		lv_obj_set_width(s_theme_name, dw - QP_PAD_X - QP_BTN_W - 8 - QP_THEME_X);
 		lv_obj_set_height(s_theme_name, ASTER_FONT_CAPTION_LINE_H);
 		lv_label_set_long_mode(s_theme_name, LV_LABEL_LONG_MODE_DOTS);
-		s_theme_btn = mk_button(row, dw - QP_PAD_X - QP_BTN_W,
-					(QP_ROW_H - QP_BTN_H) / 2, QP_BTN_W,
-					QP_BTN_H, "切换", on_theme_btn, NULL);
+		s_theme_btn = mk_button(row, dw - QP_PAD_X - QP_BTN_W, (QP_ROW_H - QP_BTN_H) / 2,
+		                        QP_BTN_W, QP_BTN_H, "切换", on_theme_btn, NULL);
 	} else {
 		s_theme_name = s_theme_btn = NULL;
 	}
@@ -962,8 +1010,7 @@ static void build(void)
 
 #if IS_ENABLED(CONFIG_ASTER_AUDIO)
 	if (has_vol) {
-		lv_slider_set_value(s_vol_slider, aster_device_audio_get_volume(),
-				    LV_ANIM_OFF);
+		lv_slider_set_value(s_vol_slider, aster_device_audio_get_volume(), LV_ANIM_OFF);
 		vol_show(aster_device_audio_get_volume());
 	}
 #endif
@@ -981,59 +1028,81 @@ static void build(void)
 /* Return confirmation shares the APP snapshot/present hold with the panel. */
 static void on_exit_cancel(lv_event_t *e)
 {
- ARG_UNUSED(e);
- aster_service_logf(3,"return: cancelled");
- aster_qpanel_dismiss();
+	ARG_UNUSED(e);
+	aster_service_logf(3, "return: cancelled");
+	aster_qpanel_dismiss();
 }
+
 static void on_exit_confirm(lv_event_t *e)
 {
- ARG_UNUSED(e);
- /* Runtime consumes this immediately after the LVGL tick. Keep the glass
+	ARG_UNUSED(e);
+	/* Runtime consumes this immediately after the LVGL tick. Keep the glass
   * held until normal app teardown; no guest frame can overwrite the modal. */
- s_exit_confirmed=true;
- aster_service_logf(3,"return: confirmed");
+	s_exit_confirmed = true;
+	aster_service_logf(3, "return: confirmed");
 }
+
 bool aster_qpanel_request_exit(const char *name)
 {
- if(s_sheet || !aster_ui_lvgl_screen() || !snapshot_take()) return false;
- load_palette();s_exit_mode=true;s_exit_confirmed=false;s_frozen=true;
- int w=(int)aster_ui_lvgl_layout_width(),h=(int)aster_ui_lvgl_layout_height();
- int cw=MIN(w-32,288),ch=194;
- s_scrim=lv_obj_create(aster_ui_lvgl_screen());
- lv_obj_remove_style_all(s_scrim);lv_obj_set_size(s_scrim,w,h);
- lv_obj_set_style_bg_color(s_scrim,hexc(0),0);
- lv_obj_set_style_bg_opa(s_scrim,LV_OPA_70,0);no_scroll(s_scrim);
- lv_obj_add_flag(s_scrim,LV_OBJ_FLAG_CLICKABLE);
- lv_obj_add_event_cb(s_scrim,on_exit_cancel,LV_EVENT_CLICKED,NULL);
- lv_obj_add_event_cb(s_scrim,on_delete,LV_EVENT_DELETE,NULL);
- s_sheet=lv_obj_create(aster_ui_lvgl_screen());
- lv_obj_remove_style_all(s_sheet);lv_obj_set_size(s_sheet,cw,ch);
- lv_obj_set_pos(s_sheet,(w-cw)/2,(h-ch)/2);
- lv_obj_set_style_bg_color(s_sheet,hexc(s_pal.bg),0);
- lv_obj_set_style_bg_opa(s_sheet,LV_OPA_COVER,0);
- lv_obj_set_style_radius(s_sheet,16,0);no_scroll(s_sheet);
- lv_obj_add_flag(s_sheet,LV_OBJ_FLAG_CLICKABLE);
- lv_obj_add_event_cb(s_sheet,on_delete,LV_EVENT_DELETE,NULL);
- lv_obj_t *title=mk_label(s_sheet,"返回主页？",s_pal.accent,0);
- lv_obj_set_style_text_font(title,aster_ui_font(20),0);
- aster_ui_font_warm(20,"返回主页？");lv_obj_set_pos(title,18,18);
- lv_obj_t *app=mk_label(s_sheet,name?name:"当前应用",s_pal.fg,0);
- lv_obj_set_pos(app,18,51);lv_obj_set_width(app,cw-36);
- lv_label_set_long_mode(app,LV_LABEL_LONG_MODE_DOTS);
- lv_obj_t *info=mk_label(s_sheet,"结束当前应用并返回主页。\n取消可继续使用。",s_pal.dim,0);
- lv_obj_set_pos(info,18,81);lv_obj_set_width(info,cw-36);
- int bw=(cw-44)/2;
- lv_obj_t *cancel=mk_button(s_sheet,18,138,bw,42,"取消",on_exit_cancel,NULL);
- lv_obj_set_style_bg_color(cancel,hexc(s_pal.surface),0);
- lv_obj_t *yes=mk_button(s_sheet,26+bw,138,bw,42,"返回主页",on_exit_confirm,NULL);
- lv_obj_set_style_bg_color(yes,hexc(s_pal.accent),0);
- lv_obj_set_style_text_color(lv_obj_get_child(yes,0),hexc(0x211d28),0);
- aster_service_logf(3,"return: confirmation opened");return true;
+	if (s_sheet || !aster_ui_lvgl_screen() || !snapshot_take())
+		return false;
+	load_palette();
+	s_exit_mode = true;
+	s_exit_confirmed = false;
+	s_frozen = true;
+	int w = (int)aster_ui_lvgl_layout_width(), h = (int)aster_ui_lvgl_layout_height();
+	int cw = MIN(w - 32, 288), ch = 194;
+	s_scrim = lv_obj_create(aster_ui_lvgl_screen());
+	lv_obj_remove_style_all(s_scrim);
+	lv_obj_set_size(s_scrim, w, h);
+	lv_obj_set_style_bg_color(s_scrim, hexc(0), 0);
+	lv_obj_set_style_bg_opa(s_scrim, LV_OPA_70, 0);
+	no_scroll(s_scrim);
+	lv_obj_add_flag(s_scrim, LV_OBJ_FLAG_CLICKABLE);
+	lv_obj_add_event_cb(s_scrim, on_exit_cancel, LV_EVENT_CLICKED, NULL);
+	lv_obj_add_event_cb(s_scrim, on_delete, LV_EVENT_DELETE, NULL);
+	s_sheet = lv_obj_create(aster_ui_lvgl_screen());
+	lv_obj_remove_style_all(s_sheet);
+	lv_obj_set_size(s_sheet, cw, ch);
+	lv_obj_set_pos(s_sheet, (w - cw) / 2, (h - ch) / 2);
+	lv_obj_set_style_bg_color(s_sheet, hexc(s_pal.bg), 0);
+	lv_obj_set_style_bg_opa(s_sheet, LV_OPA_COVER, 0);
+	lv_obj_set_style_radius(s_sheet, 16, 0);
+	no_scroll(s_sheet);
+	lv_obj_add_flag(s_sheet, LV_OBJ_FLAG_CLICKABLE);
+	lv_obj_add_event_cb(s_sheet, on_delete, LV_EVENT_DELETE, NULL);
+	lv_obj_t *title = mk_label(s_sheet, "返回主页？", s_pal.accent, 0);
+	lv_obj_set_style_text_font(title, aster_ui_font(20), 0);
+	aster_ui_font_warm(20, "返回主页？");
+	lv_obj_set_pos(title, 18, 18);
+	lv_obj_t *app = mk_label(s_sheet, name ? name : "当前应用", s_pal.fg, 0);
+	lv_obj_set_pos(app, 18, 51);
+	lv_obj_set_width(app, cw - 36);
+	lv_label_set_long_mode(app, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_t *info =
+	        mk_label(s_sheet, "结束当前应用并返回主页。\n取消可继续使用。", s_pal.dim, 0);
+	lv_obj_set_pos(info, 18, 81);
+	lv_obj_set_width(info, cw - 36);
+	int bw = (cw - 44) / 2;
+	lv_obj_t *cancel = mk_button(s_sheet, 18, 138, bw, 42, "取消", on_exit_cancel, NULL);
+	lv_obj_set_style_bg_color(cancel, hexc(s_pal.surface), 0);
+	lv_obj_t *yes = mk_button(s_sheet, 26 + bw, 138, bw, 42, "返回主页", on_exit_confirm, NULL);
+	lv_obj_set_style_bg_color(yes, hexc(s_pal.accent), 0);
+	lv_obj_set_style_text_color(lv_obj_get_child(yes, 0), hexc(0x211d28), 0);
+	aster_service_logf(3, "return: confirmation opened");
+	return true;
 }
-bool aster_qpanel_exit_is_open(void) {return s_exit_mode && s_sheet;}
+
+bool aster_qpanel_exit_is_open(void)
+{
+	return s_exit_mode && s_sheet;
+}
+
 bool aster_qpanel_take_exit_confirmed(void)
 {
- bool confirmed=s_exit_confirmed;s_exit_confirmed=false;return confirmed;
+	bool confirmed = s_exit_confirmed;
+	s_exit_confirmed = false;
+	return confirmed;
 }
 
 /* ---------- public API ---------- */
@@ -1050,7 +1119,8 @@ uint32_t aster_qpanel_allow(bool launcher)
 	 * page swipes at home, pull-up-exit inside an app -- and neither is
 	 * live while the sheet owns the glass. */
 	uint32_t m = ASTER_GEST_ALLOW_PANEL;
- if(s_exit_mode) return 0;
+	if (s_exit_mode)
+		return 0;
 
 	if (s_sheet) {
 		return m;
@@ -1097,9 +1167,9 @@ void aster_qpanel_open(aster_qpanel_host_t host)
 	 * would stop nothing there anyway -- a guest present is not what puts
 	 * pixels back under the sheet. */
 	s_frozen = (host == ASTER_QPANEL_OVER_APP && s_sheet != NULL);
-	aster_service_logf(3,"qpanel: open%s (snapshot %u ms, build %u ms)",
-		s_frozen ? " (over app)" : "", snap_ms,
-		aster_os_uptime32() - open_start - snap_ms);
+	aster_service_logf(3, "qpanel: open%s (snapshot %u ms, build %u ms)",
+	                   s_frozen ? " (over app)" : "", snap_ms,
+	                   aster_os_uptime32() - open_start - snap_ms);
 }
 
 void aster_qpanel_close(bool restore)
@@ -1129,7 +1199,7 @@ void aster_qpanel_close(bool restore)
 		}
 		s_frozen = false;
 	}
-	aster_service_logf(3,"qpanel: close");
+	aster_service_logf(3, "qpanel: close");
 }
 
 void aster_qpanel_on_app_stop(void)
@@ -1151,15 +1221,16 @@ void aster_qpanel_dismiss(void)
 
 void aster_qpanel_force_close(void)
 {
- s_exit_confirmed=false;
+	s_exit_confirmed = false;
 	aster_qpanel_close(false);
 }
 
 void aster_qpanel_tick(void)
 {
- aster_launcher_power_tick();
- bt_tick();
- if(aster_bluetooth_settings_is_open())return;
+	aster_launcher_power_tick();
+	bt_tick();
+	if (aster_bluetooth_settings_is_open())
+		return;
 	/* Self-throttled to 1 Hz rather than left to the caller's gate. There
 	 * are two callers now and they run at completely different rates: the
 	 * launcher's home refresh is already once a second, while the app loop

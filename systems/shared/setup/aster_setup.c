@@ -44,6 +44,7 @@ static aster_setup_credentials_t pending;
 static uint64_t began;
 static uint64_t done_since;
 static const uint8_t sizes[] = {12, 14, 16, 18, 20, 24, 28, 32, 40, 48};
+
 typedef struct {
     aster_setup_json json;
     char response[4096], url[512], server[192], release[65], market[192];
@@ -53,13 +54,17 @@ typedef struct {
     uint32_t files;
     uint64_t total, completed;
 } context;
-static void phase(aster_setup_phase_t next) {
+
+static void phase(aster_setup_phase_t next)
+{
     k_mutex_lock(&lock, K_FOREVER);
     aster_setup_core_step(&snapshot.state, next);
     k_mutex_unlock(&lock);
     LOG_INF("setup phase %d", next);
 }
-static void progress(uint64_t done, uint64_t total, unsigned file, const char *name) {
+
+static void progress(uint64_t done, uint64_t total, unsigned file, const char *name)
+{
     k_mutex_lock(&lock, K_FOREVER);
     snapshot.state.bytes = done;
     snapshot.state.total = total;
@@ -68,24 +73,32 @@ static void progress(uint64_t done, uint64_t total, unsigned file, const char *n
         snprintf(snapshot.file, sizeof(snapshot.file), "%.63s", name);
     k_mutex_unlock(&lock);
 }
-static bool connected(void) {
+
+static bool connected(void)
+{
     aster_wifi_status_t status = {0};
     return !aster_plat_wifi_status(&status) && status.state == ASTER_PLAT_WIFI_STATE_COMPLETED &&
            status.ip[0] && strcmp(status.ip, "0.0.0.0");
 }
-void aster_setup_begin(void) {
+
+void aster_setup_begin(void)
+{
     k_mutex_lock(&lock, K_FOREVER);
     if (snapshot.state.phase == ASTER_SETUP_WELCOME)
         begin_command = true;
     k_mutex_unlock(&lock);
 }
-void aster_setup_retry(void) {
+
+void aster_setup_retry(void)
+{
     k_mutex_lock(&lock, K_FOREVER);
     if (snapshot.state.phase == ASTER_SETUP_ERROR || snapshot.state.phase == ASTER_SETUP_STORAGE)
         retry_command = true;
     k_mutex_unlock(&lock);
 }
-int aster_setup_repair(void) {
+
+int aster_setup_repair(void)
+{
     if (aster_app_mgr_is_live(NULL))
         return -EBUSY;
     k_mutex_lock(&lock, K_FOREVER);
@@ -95,7 +108,9 @@ int aster_setup_repair(void) {
     k_mutex_unlock(&lock);
     return rc;
 }
-int aster_setup_submit(const aster_setup_credentials_t *c) {
+
+int aster_setup_submit(const aster_setup_credentials_t *c)
+{
     if (!aster_setup_credentials_valid(c))
         return -EINVAL;
     k_mutex_lock(&lock, K_FOREVER);
@@ -110,7 +125,9 @@ int aster_setup_submit(const aster_setup_credentials_t *c) {
     LOG_INF("setup configuration queued");
     return 0;
 }
-int aster_setup_request_format(void) {
+
+int aster_setup_request_format(void)
+{
     if (!aster_storage_can_format())
         return -ENOTSUP;
     if (aster_app_mgr_is_live(NULL))
@@ -122,23 +139,35 @@ int aster_setup_request_format(void) {
     k_mutex_unlock(&lock);
     return rc;
 }
-int aster_setup_repair_source(const char *url) {
-    if (!aster_setup_server_url(url)) return -EINVAL;
-    if (aster_app_mgr_is_live(NULL)) return -EBUSY;
+
+int aster_setup_repair_source(const char *url)
+{
+    if (!aster_setup_server_url(url))
+        return -EINVAL;
+    if (aster_app_mgr_is_live(NULL))
+        return -EBUSY;
     k_mutex_lock(&lock, K_FOREVER);
     int rc = started && snapshot.state.phase == ASTER_SETUP_DONE && !snapshot.hotspot ? 0 : -EBUSY;
-    if (!rc) rc = aster_kv_set("aster.setup", "server", url, strlen(url));
-    if (!rc) { source_boot = true; repair_command = true; }
+    if (!rc)
+        rc = aster_kv_set("aster.setup", "server", url, strlen(url));
+    if (!rc) {
+        source_boot = true;
+        repair_command = true;
+    }
     k_mutex_unlock(&lock);
     return rc;
 }
-bool aster_setup_format_pending(void) {
+
+bool aster_setup_format_pending(void)
+{
     k_mutex_lock(&lock, K_FOREVER);
     bool pending = format_command;
     k_mutex_unlock(&lock);
     return pending;
 }
-void aster_setup_format_ui_ready(void) {
+
+void aster_setup_format_ui_ready(void)
+{
     k_mutex_lock(&lock, K_FOREVER);
     if (format_command) {
         format_command = false;
@@ -147,14 +176,18 @@ void aster_setup_format_ui_ready(void) {
     }
     k_mutex_unlock(&lock);
 }
-static bool consume(bool *command) {
+
+static bool consume(bool *command)
+{
     k_mutex_lock(&lock, K_FOREVER);
     bool yes = *command;
     *command = false;
     k_mutex_unlock(&lock);
     return yes;
 }
-static bool take_credentials(aster_setup_credentials_t *out) {
+
+static bool take_credentials(aster_setup_credentials_t *out)
+{
     k_mutex_lock(&lock, K_FOREVER);
     bool available = credentials_command;
     if (available) {
@@ -168,7 +201,9 @@ static bool take_credentials(aster_setup_credentials_t *out) {
     k_mutex_unlock(&lock);
     return available;
 }
-static bool resources_complete(void) {
+
+static bool resources_complete(void)
+{
     if (!aster_storage_mounted())
         return false;
     for (unsigned i = 0; i < sizeof(sizes); i++) {
@@ -202,7 +237,9 @@ static bool resources_complete(void) {
     aster_psram_free(rec);
     return ok;
 }
-static bool healthy(void) {
+
+static bool healthy(void)
+{
     uint8_t pending_byte;
     size_t length = 0;
     /* Presence (even a truncated marker) means setup did not commit. This
@@ -213,15 +250,21 @@ static bool healthy(void) {
         return false;
     return resources_complete();
 }
-static const char *str(context *c, const char *key) {
+
+static const char *str(context *c, const char *key)
+{
     const aster_setup_json_field *f = aster_setup_json_get(&c->json, key);
     return f && !f->is_number ? f->text : NULL;
 }
-static uint64_t num(context *c, const char *key) {
+
+static uint64_t num(context *c, const char *key)
+{
     const aster_setup_json_field *f = aster_setup_json_get(&c->json, key);
     return f && f->is_number ? f->number : UINT64_MAX;
 }
-static bool hex64(const char *p) {
+
+static bool hex64(const char *p)
+{
     if (!p || strlen(p) != 64)
         return false;
     for (; *p; p++)
@@ -229,7 +272,9 @@ static bool hex64(const char *p) {
             return false;
     return true;
 }
-static int headers(uint32_t h, struct aster_http_snapshot *s, uint32_t timeout_ms) {
+
+static int headers(uint32_t h, struct aster_http_snapshot *s, uint32_t timeout_ms)
+{
     int rc;
     uint64_t start = k_uptime_get();
     do {
@@ -245,7 +290,9 @@ static int headers(uint32_t h, struct aster_http_snapshot *s, uint32_t timeout_m
         k_msleep(10);
     } while (true);
 }
-static int start_request(const struct aster_http_options *options) {
+
+static int start_request(const struct aster_http_options *options)
+{
     uint64_t until = k_uptime_get() + 5000;
     int handle;
     do {
@@ -256,7 +303,9 @@ static int start_request(const struct aster_http_options *options) {
     } while (k_uptime_get() < until);
     return handle;
 }
-static int close_request(uint32_t handle) {
+
+static int close_request(uint32_t handle)
+{
     uint64_t until = k_uptime_get() + 5000;
     int rc;
     do {
@@ -267,7 +316,9 @@ static int close_request(uint32_t handle) {
     } while (k_uptime_get() < until);
     return rc;
 }
-static int range_header(uint32_t handle, char *value, size_t capacity, size_t *length) {
+
+static int range_header(uint32_t handle, char *value, size_t capacity, size_t *length)
+{
     uint64_t until = k_uptime_get() + 5000;
     int rc;
     do {
@@ -278,10 +329,13 @@ static int range_header(uint32_t handle, char *value, size_t capacity, size_t *l
     } while (k_uptime_get() < until);
     return rc;
 }
-static int get_json(context *c) {
+
+static int get_json(context *c)
+{
     struct aster_http_options options = {.method = ASTER_HTTP_GET,
                                          .url = c->url,
-                                         .timeout_ms = !strncmp(c->url, "https://", 8) ? 120000 : 30000,
+                                         .timeout_ms =
+                                             !strncmp(c->url, "https://", 8) ? 120000 : 30000,
                                          .body_limit = sizeof(c->response) - 1};
     int h = start_request(&options);
     if (h < 0)
@@ -315,7 +369,9 @@ static int get_json(context *c) {
     c->response[n] = 0;
     return rc ? rc : aster_setup_json_parse(&c->json, c->response) ? -EPROTO : 0;
 }
-static int hash_file(context *c, const char *path, uint64_t expected, char output[65]) {
+
+static int hash_file(context *c, const char *path, uint64_t expected, char output[65])
+{
     int64_t began_ms = k_uptime_get();
     uint64_t read_ms = 0, hash_ms = 0, read_bytes = 0;
     struct fs_dirent st;
@@ -365,11 +421,13 @@ static int hash_file(context *c, const char *path, uint64_t expected, char outpu
             snprintf(output + 2 * i, 3, "%02x", digest[i]);
     }
     LOG_INF("setup hash bytes=%llu wall_ms=%llu sd_read_ms=%llu sha_ms=%llu result=%d",
-            (unsigned long long)read_bytes, (unsigned long long)(k_uptime_get()-began_ms),
+            (unsigned long long)read_bytes, (unsigned long long)(k_uptime_get() - began_ms),
             (unsigned long long)read_ms, (unsigned long long)hash_ms, rc);
     return rc;
 }
-static int fetch(context *c, uint64_t bytes, unsigned index) {
+
+static int fetch(context *c, uint64_t bytes, unsigned index)
+{
     char hash[65];
     phase(ASTER_SETUP_VERIFY);
     if (!hash_file(c, c->destination, bytes, hash) && !strcmp(hash, c->digest))
@@ -403,7 +461,8 @@ static int fetch(context *c, uint64_t bytes, unsigned index) {
         /* A static blob URL is content-addressed and verified after download.
          * GitHub's ETag is opaque, not our SHA256; don't send a false If-Range. */
         if (offset && c->static_base[0]) {
-            snprintf(request, sizeof(request), "Range: bytes=%llu-\r\n", (unsigned long long)offset);
+            snprintf(request, sizeof(request), "Range: bytes=%llu-\r\n",
+                     (unsigned long long)offset);
             opts.headers_length = strlen(request);
         }
         int h = start_request(&opts);
@@ -443,7 +502,7 @@ static int fetch(context *c, uint64_t bytes, unsigned index) {
              * those into the existing 16 KiB buffer: short FAT writes cause
              * repeated sector read/modify/write and cluster bookkeeping. */
             int n = aster_network_http_read(OWNER, h, c->buffer + buffered,
-                                       sizeof(c->buffer) - buffered);
+                                            sizeof(c->buffer) - buffered);
             if (n == -EAGAIN) {
                 int64_t tick = k_uptime_get();
                 /* svc_read wakes the HTTP worker. Yield briefly so the
@@ -493,9 +552,11 @@ static int fetch(context *c, uint64_t bytes, unsigned index) {
                 rc = sync ? sync : close;
         }
         int closed = close_request(h);
-        LOG_INF("setup transfer bytes=%llu wall_ms=%llu sd_write_ms=%llu wait_ms=%llu reads=%u empty=%u result=%d",
-                (unsigned long long)received, (unsigned long long)(k_uptime_get()-transfer_ms),
-                (unsigned long long)write_ms, (unsigned long long)wait_ms, reads, empty_reads, rc ? rc : closed);
+        LOG_INF(
+            "setup transfer bytes=%llu wall_ms=%llu sd_write_ms=%llu wait_ms=%llu reads=%u empty=%u result=%d",
+            (unsigned long long)received, (unsigned long long)(k_uptime_get() - transfer_ms),
+            (unsigned long long)write_ms, (unsigned long long)wait_ms, reads, empty_reads,
+            rc ? rc : closed);
         if (!rc)
             rc = closed;
         if (rc)
@@ -520,7 +581,9 @@ static int fetch(context *c, uint64_t bytes, unsigned index) {
     phase(ASTER_SETUP_DOWNLOAD);
     return rc;
 }
-static int provision(void) {
+
+static int provision(void)
+{
     phase(ASTER_SETUP_PROVISION);
     aster_wifi_hotspot_status_t ap = {0};
     aster_plat_wifi_hotspot_status(&ap);
@@ -543,7 +606,9 @@ static int provision(void) {
     k_mutex_unlock(&lock);
     return aster_setup_web_start();
 }
-static int join(aster_setup_credentials_t *credentials) {
+
+static int join(aster_setup_credentials_t *credentials)
+{
     phase(ASTER_SETUP_CONNECT);
     aster_wifi_status_t status = {0};
     if (connected() && !aster_plat_wifi_status(&status) && !strcmp(status.ssid, credentials->ssid))
@@ -561,20 +626,27 @@ static int join(aster_setup_credentials_t *credentials) {
     } while (k_uptime_get() < end);
     return -ETIMEDOUT;
 }
-static int wait_https_time(const char *source) {
-    if (strncmp(source, "https://", 8)) return 0;
+
+static int wait_https_time(const char *source)
+{
+    if (strncmp(source, "https://", 8))
+        return 0;
     int64_t end = k_uptime_get() + 30000;
     do {
         aster_time_info_t now;
-        if (!aster_time_read(&now) && (now.flags & ASTER_TIME_FLAG_SYNCED)) return 0;
+        if (!aster_time_read(&now) && (now.flags & ASTER_TIME_FLAG_SYNCED))
+            return 0;
         k_msleep(100);
     } while (k_uptime_get() < end);
     return -ENODATA;
 }
-static int download(context *c) {
+
+static int download(context *c)
+{
     phase(ASTER_SETUP_PLAN);
     int time_status = wait_https_time(c->server);
-    if (time_status) return time_status;
+    if (time_status)
+        return time_status;
     aster_system_info_t info;
     aster_sysinfo_get(&info);
     aster_display_info_t display;
@@ -586,19 +658,22 @@ static int download(context *c) {
     int rc;
     if (static_source) {
         strcpy(c->url, c->server);
-        if ((rc = get_json(c))) return rc;
+        if ((rc = get_json(c)))
+            return rc;
         const char *kind = str(c, "kind"), *base = str(c, "base_url");
-        if (num(c, "schema") != 1 || !kind || strcmp(kind, "aster-static-source") ||
-            !base || !aster_setup_server_url(base) || strlen(base) >= sizeof(c->static_base) ||
-            (!strncmp(c->server, "https://", 8) && strncmp(base, "https://", 8))) return -EPROTO;
+        if (num(c, "schema") != 1 || !kind || strcmp(kind, "aster-static-source") || !base ||
+            !aster_setup_server_url(base) || strlen(base) >= sizeof(c->static_base) ||
+            (!strncmp(c->server, "https://", 8) && strncmp(base, "https://", 8)))
+            return -EPROTO;
         strcpy(c->static_base, base);
-        snprintf(c->url, sizeof(c->url), "%s/setup-%s-%s.json", c->static_base,
-                 info.board, aster_arch_name(info.cpu_arch));
-    } else snprintf(c->url, sizeof(c->url),
-             "%s/v1/setup/resolve?board=%s&target=%s&abi=%u&width=%u&height=%u&features=%llu",
-             c->server, info.board, aster_arch_name(info.cpu_arch), (unsigned)info.abi_version,
-             (unsigned)display.width, (unsigned)display.height,
-             (unsigned long long)info.feature_flags);
+        snprintf(c->url, sizeof(c->url), "%s/setup-%s-%s.json", c->static_base, info.board,
+                 aster_arch_name(info.cpu_arch));
+    } else
+        snprintf(c->url, sizeof(c->url),
+                 "%s/v1/setup/resolve?board=%s&target=%s&abi=%u&width=%u&height=%u&features=%llu",
+                 c->server, info.board, aster_arch_name(info.cpu_arch), (unsigned)info.abi_version,
+                 (unsigned)display.width, (unsigned)display.height,
+                 (unsigned long long)info.feature_flags);
     rc = get_json(c);
     if (rc)
         return rc;
@@ -608,14 +683,16 @@ static int download(context *c) {
         const char *board = str(c, "board"), *target = str(c, "target");
         uint64_t abi = num(c, "abi_min"), features = num(c, "features");
         uint64_t w = num(c, "width"), h = num(c, "height");
-        if (!board || strcmp(board, info.board) || !target || strcmp(target, aster_arch_name(info.cpu_arch)) ||
-            abi > info.abi_version || (abi >> 16) != (info.abi_version >> 16) ||
+        if (!board || strcmp(board, info.board) || !target ||
+            strcmp(target, aster_arch_name(info.cpu_arch)) || abi > info.abi_version ||
+            (abi >> 16) != (info.abi_version >> 16) ||
             (features & info.feature_flags) != features ||
-            !((w == display.width && h == display.height) || (w == display.height && h == display.width)))
+            !((w == display.width && h == display.height) ||
+              (w == display.height && h == display.width)))
             return -EPERM;
     }
-    if (num(c, "schema") != (static_source ? 2 : 1) || !hex64(release) || files != 11 || total > 256 * 1024 * 1024 ||
-        !market || !aster_setup_server_url(market))
+    if (num(c, "schema") != (static_source ? 2 : 1) || !hex64(release) || files != 11 ||
+        total > 256 * 1024 * 1024 || !market || !aster_setup_server_url(market))
         return -EPROTO;
     strcpy(c->release, release);
     strcpy(c->market, market);
@@ -631,8 +708,11 @@ static int download(context *c) {
      * not a second complete 96 MiB font tree. */
     for (unsigned i = 0; i < c->files; i++) {
         phase(ASTER_SETUP_DOWNLOAD);
-        if (static_source) snprintf(c->url, sizeof(c->url), "%s/setup-%s-%u.json", c->static_base, c->release, i);
-        else snprintf(c->url, sizeof(c->url), "%s/v1/setup/releases/%s/files/%u", c->server, c->release, i);
+        if (static_source)
+            snprintf(c->url, sizeof(c->url), "%s/setup-%s-%u.json", c->static_base, c->release, i);
+        else
+            snprintf(c->url, sizeof(c->url), "%s/v1/setup/releases/%s/files/%u", c->server,
+                     c->release, i);
         if ((rc = get_json(c)))
             return rc;
         const char *path = str(c, "path"), *digest = str(c, "sha256"), *kind = str(c, "kind"),
@@ -643,8 +723,11 @@ static int download(context *c) {
             snprintf(expected, sizeof(expected), "fonts/ui_%u.cpfont", sizes[i]);
         else
             strcpy(expected, "store/package.ast");
-        if (static_source) snprintf(expected_url, sizeof(expected_url), "blob-%.64s", digest ? digest : "");
-        else snprintf(expected_url, sizeof(expected_url), "/v1/setup/releases/%s/payload/%u", c->release, i);
+        if (static_source)
+            snprintf(expected_url, sizeof(expected_url), "blob-%.64s", digest ? digest : "");
+        else
+            snprintf(expected_url, sizeof(expected_url), "/v1/setup/releases/%s/payload/%u",
+                     c->release, i);
         if (num(c, "schema") != 1 || num(c, "index") != i || !path || strcmp(path, expected) ||
             !digest || !hex64(digest) || !kind ||
             strcmp(kind, i < sizeof(sizes) ? "font" : "store") || !url ||
@@ -657,8 +740,10 @@ static int download(context *c) {
         else
             strcpy(c->destination, PARTS "/store.ast");
         snprintf(c->part, sizeof(c->part), PARTS "/%s.part", c->digest);
-        if (static_source) snprintf(c->url, sizeof(c->url), "%s/%s", c->static_base, expected_url);
-        else snprintf(c->url, sizeof(c->url), "%s%s", c->server, expected_url);
+        if (static_source)
+            snprintf(c->url, sizeof(c->url), "%s/%s", c->static_base, expected_url);
+        else
+            snprintf(c->url, sizeof(c->url), "%s%s", c->server, expected_url);
         progress(c->completed, c->total, i + 1, path);
         if ((rc = fetch(c, bytes, i + 1)))
             return rc;
@@ -685,7 +770,9 @@ static int download(context *c) {
     fs_unlink(PARTS "/store.ast");
     return 0;
 }
-static void worker_impl(void *a, void *b, void *d) {
+
+static void worker_impl(void *a, void *b, void *d)
+{
     (void)a;
     (void)b;
     (void)d;
@@ -755,7 +842,8 @@ static void worker_impl(void *a, void *b, void *d) {
             /* The platform loads/queues its saved profile before this worker.
              * last_ssid() may return EBUSY during that boot join; that does not
              * mean the profile is missing. Wait for the asynchronous join. */
-            if (((!force && configured_source) || use_saved_source) && aster_setup_server_url(saved.server)) {
+            if (((!force && configured_source) || use_saved_source) &&
+                aster_setup_server_url(saved.server)) {
                 welcome = false;
                 strcpy(c->server, saved.server);
                 phase(ASTER_SETUP_CONNECT);
@@ -829,15 +917,22 @@ static void worker_impl(void *a, void *b, void *d) {
         }
     }
 }
-static void worker(void *a,void *b,void *d)
+
+static void worker(void *a, void *b, void *d)
 {
- if(aster_power_activity_begin()){
-  k_mutex_lock(&lock,K_FOREVER);snapshot.state.error=-EBUSY;k_mutex_unlock(&lock);
-  phase(ASTER_SETUP_ERROR);return;
- }
- worker_impl(a,b,d);aster_power_activity_end();
+    if (aster_power_activity_begin()) {
+        k_mutex_lock(&lock, K_FOREVER);
+        snapshot.state.error = -EBUSY;
+        k_mutex_unlock(&lock);
+        phase(ASTER_SETUP_ERROR);
+        return;
+    }
+    worker_impl(a, b, d);
+    aster_power_activity_end();
 }
-bool aster_setup_poll(aster_setup_snapshot *out) {
+
+bool aster_setup_poll(aster_setup_snapshot *out)
+{
     if (started && !stack && snapshot.state.phase == ASTER_SETUP_ERROR && consume(&retry_command))
         started = false;
     if (started && consume(&repair_command)) {
@@ -880,7 +975,8 @@ bool aster_setup_poll(aster_setup_snapshot *out) {
             n >= sizeof(snapshot.server)) {
             strcpy(snapshot.server, ASTER_SETUP_DEFAULT_SOURCE);
             configured_source = false;
-        } else configured_source = aster_setup_server_url(snapshot.server);
+        } else
+            configured_source = aster_setup_server_url(snapshot.server);
         stack = aster_dram_alloc(K_KERNEL_STACK_LEN(STACK));
         if (!stack) {
             snapshot.state.required = true;
@@ -922,7 +1018,9 @@ bool aster_setup_poll(aster_setup_snapshot *out) {
     }
     return true;
 }
-void aster_setup_get(aster_setup_snapshot *out) {
+
+void aster_setup_get(aster_setup_snapshot *out)
+{
     k_mutex_lock(&lock, K_FOREVER);
     *out = snapshot;
     out->seconds = (k_uptime_get() - began) / 1000;

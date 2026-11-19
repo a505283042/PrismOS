@@ -1,4 +1,5 @@
 """Exercise runtime confirmation routing and the real close/confirm callbacks."""
+
 import unittest
 import re
 import subprocess
@@ -6,28 +7,56 @@ import tempfile
 from pathlib import Path
 from test_waveshare import ROOT
 
+
 def run_c(code):
     with tempfile.TemporaryDirectory() as directory:
-        executable=str(Path(directory)/'test')
-        result=subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror',
-            '-Wno-unused-function','-I'+str(ROOT/'platform'),
-            '-I'+str(ROOT/'systems/zephyr/ui'),'-I'+str(ROOT/'common/port'),
-            '-I'+str(ROOT/'platform'/'esp32s3'),'-I'+str(ROOT/'contract/include'),
-            '-x','c','-','-o',executable],input=code,text=True,capture_output=True)
-        if result.returncode: raise AssertionError(result.stderr)
-        subprocess.run([executable],check=True,timeout=5)
+        executable = str(Path(directory) / 'test')
+        result = subprocess.run(
+            [
+                'cc',
+                '-std=c11',
+                '-Wall',
+                '-Wextra',
+                '-Werror',
+                '-Wno-unused-function',
+                '-I' + str(ROOT / 'platform'),
+                '-I' + str(ROOT / 'systems/zephyr/ui'),
+                '-I' + str(ROOT / 'common/port'),
+                '-I' + str(ROOT / 'platform' / 'esp32s3'),
+                '-I' + str(ROOT / 'contract/include'),
+                '-x',
+                'c',
+                '-',
+                '-o',
+                executable,
+            ],
+            input=code,
+            text=True,
+            capture_output=True,
+        )
+        if result.returncode:
+            raise AssertionError(result.stderr)
+        subprocess.run([executable], check=True, timeout=5)
+
 
 def function(source, name):
-    start=re.search(r'^(?:static )?(?:void|bool|int) '+re.escape(name)+r'\(',source,re.M).start()
-    brace=source.index('{',start);depth=1;i=brace+1
+    start = re.search(
+        r'^(?:static )?(?:void|bool|int) ' + re.escape(name) + r'\(', source, re.M
+    ).start()
+    brace = source.index('{', start)
+    depth = 1
+    i = brace + 1
     while depth:
-        depth += (source[i]=='{')-(source[i]=='}');i+=1
-    return source[start:i]+'\n'
+        depth += (source[i] == '{') - (source[i] == '}')
+        i += 1
+    return source[start:i] + '\n'
+
 
 class ReturnConfirmation(unittest.TestCase):
     def test_touch_slot_cli_validation_and_snapshot(self):
-        source=(ROOT/'platform/esp32s3/hw_cmd.c').read_text()
-        run_c(r'''
+        source = (ROOT / 'platform/esp32s3/hw_cmd.c').read_text()
+        run_c(
+            r'''
 #include "aster_platform.h"
 #include <aster/event.h>
 #include <assert.h>
@@ -58,7 +87,9 @@ bool aster_plat_input_touch_available(void) {return true;}
 bool aster_plat_display_app_touch(uint32_t *x,uint32_t *y) {(void)x;(void)y;return true;}
 static void k_msleep(uint32_t ms) {(void)ms;}
 static uint64_t k_uptime_get(void) {return 0;}
-''' + function(source,'cmd_touch') + r'''
+'''
+            + function(source, 'cmd_touch')
+            + r'''
 int main(void) {
  const struct shell sh={0};
  char *valid[]={"touch","slot","1","down","120","240"};
@@ -90,18 +121,23 @@ int main(void) {
  }
  return 0;
 }
-''')
+'''
+        )
 
     def test_return_from_logical_bottom_only(self):
-        recognizer=(ROOT/'systems/zephyr/ui/gesture.c').read_text()
-        display=(ROOT/'platform/esp32s3/display.c').read_text()
-        run_c(r'''
+        recognizer = (ROOT / 'systems/zephyr/ui/gesture.c').read_text()
+        display = (ROOT / 'platform/esp32s3/display.c').read_text()
+        run_c(
+            r'''
 #include "gesture.h"
 #include <assert.h>
 static bool disp_dev=true;
 static int s_rot;
 static void panel_geom(uint32_t *w,uint32_t *h) {*w=240;*h=320;}
-''' + function(display,'panel_to_logical') + recognizer + r'''
+'''
+            + function(display, 'panel_to_logical')
+            + recognizer
+            + r'''
 static aster_gest_t app_point(uint32_t x,uint32_t y,bool pressed,int height) {
  panel_to_logical(&x,&y);
  return aster_gesture_feed(x,y,pressed,ASTER_GEST_ALLOW_PANEL|ASTER_GEST_ALLOW_EXIT,height);
@@ -146,15 +182,17 @@ int main(void) {
  assert(app_point(64,151,true,240)==ASTER_GEST_PANEL_UP);
  return 0;
 }
-''')
+'''
+        )
 
     def test_runtime_pull_up_does_not_quit_before_confirm(self):
-        s=(ROOT/'systems/zephyr/runtime/aster_runtime.c').read_text()
-        lifecycle=function(s,'sync_lifecycle_pause')
-        deliver=function(s,'deliver_touch_event')
-        code=function(s,'ui_service')
-        touch_ui=(ROOT/'platform/esp32s3/touch_ui.c').read_text()
-        run_c(r'''
+        s = (ROOT / 'systems/zephyr/runtime/aster_runtime.c').read_text()
+        lifecycle = function(s, 'sync_lifecycle_pause')
+        deliver = function(s, 'deliver_touch_event')
+        code = function(s, 'ui_service')
+        touch_ui = (ROOT / 'platform/esp32s3/touch_ui.c').read_text()
+        run_c(
+            r'''
 #include "aster_platform.h"
 #include "touch_ui.h"
 #include <assert.h>
@@ -232,7 +270,12 @@ static int call_fn(aster_app_ctx_t *ctx,void *fn,uint32_t argc,uint32_t *argv) {
  if(fn==(void*)2){resumes++;if(watch_order)resume_order=++order;return 0;}
  return 0;
 }
-''' + lifecycle + deliver + touch_ui + code + r'''
+'''
+            + lifecycle
+            + deliver
+            + touch_ui
+            + code
+            + r'''
 int main(void) {
  rec_t rec={"2048"};aster_app_ctx_t ctx={.id="aster.game.2048",.rec=&rec,.f_pause=(void*)1,.f_resume=(void*)2};
  aster_touch_ui_reset(&runtime_touch_ui);
@@ -266,12 +309,25 @@ int main(void) {
  assert(stopping.quit&&pauses==4&&pumps==prior_pumps);
  return 0;
 }
-''')
+'''
+        )
 
     def test_cancel_restores_glass_confirm_waits_for_runtime_and_teardown(self):
-        s=(ROOT/'systems/zephyr/ui/qpanel.c').read_text()
-        code='\n'.join(function(s,n) for n in ('aster_qpanel_close','aster_qpanel_dismiss','aster_qpanel_force_close','on_exit_cancel','on_exit_confirm','aster_qpanel_exit_is_open','aster_qpanel_take_exit_confirmed'))
-        run_c(r'''
+        s = (ROOT / 'systems/zephyr/ui/qpanel.c').read_text()
+        code = '\n'.join(
+            function(s, n)
+            for n in (
+                'aster_qpanel_close',
+                'aster_qpanel_dismiss',
+                'aster_qpanel_force_close',
+                'on_exit_cancel',
+                'on_exit_confirm',
+                'aster_qpanel_exit_is_open',
+                'aster_qpanel_take_exit_confirmed',
+            )
+        )
+        run_c(
+            r'''
 #include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -285,7 +341,9 @@ static void ui_teardown(void) {s_scrim=s_sheet=NULL;s_exit_mode=false;}
 static void lv_refr_now(void *p) {(void)p;refresh++;}
 static void aster_device_display_flush_drain(void) {drained++;}
 static void glass_put_back(void) {restored++;}
-''' + code + r'''
+'''
+            + code
+            + r'''
 static void open(void) {s_sheet=s_scrim=(void*)1;s_frozen=s_exit_mode=true;}
 int main(void) {
  open();assert(aster_qpanel_exit_is_open());on_exit_cancel(NULL);
@@ -297,4 +355,5 @@ int main(void) {
  open();on_exit_confirm(NULL);aster_qpanel_force_close();assert(!aster_qpanel_take_exit_confirmed());
  return 0;
 }
-''')
+'''
+        )

@@ -76,15 +76,22 @@ void aster_sysinfo_get(aster_system_info_t *info)
 	if (IS_ENABLED(CONFIG_ASTER_HAS_BT)) {
 		f |= 1ull << ASTER_FEATURE_BLUETOOTH;
 	}
-	if (IS_ENABLED(CONFIG_ASTER_NET)) f |= 1ull << ASTER_FEATURE_NETWORK;
-	if (IS_ENABLED(CONFIG_ASTER_HTTP)) f |= 1ull << ASTER_FEATURE_HTTP;
-	if (IS_ENABLED(CONFIG_ASTER_MQTT)) f |= 1ull << ASTER_FEATURE_MQTT;
-	if (IS_ENABLED(CONFIG_ASTER_WEBSOCKET)) f |= 1ull << ASTER_FEATURE_WEBSOCKET;
-	if (IS_ENABLED(CONFIG_ASTER_HTTP_TLS)) f |= 1ull << ASTER_FEATURE_TLS;
+	if (IS_ENABLED(CONFIG_ASTER_NET))
+		f |= 1ull << ASTER_FEATURE_NETWORK;
+	if (IS_ENABLED(CONFIG_ASTER_HTTP))
+		f |= 1ull << ASTER_FEATURE_HTTP;
+	if (IS_ENABLED(CONFIG_ASTER_MQTT))
+		f |= 1ull << ASTER_FEATURE_MQTT;
+	if (IS_ENABLED(CONFIG_ASTER_WEBSOCKET))
+		f |= 1ull << ASTER_FEATURE_WEBSOCKET;
+	if (IS_ENABLED(CONFIG_ASTER_HTTP_TLS))
+		f |= 1ull << ASTER_FEATURE_TLS;
 	if (IS_ENABLED(CONFIG_ASTER_AUDIO)) {
-		f |= (1ull << ASTER_FEATURE_AUDIO_STREAM) | (1ull << ASTER_FEATURE_AUDIO_EFFECTS) | (1ull << ASTER_FEATURE_AUDIO_EFFECTS_MEMORY);
+		f |= (1ull << ASTER_FEATURE_AUDIO_STREAM) | (1ull << ASTER_FEATURE_AUDIO_EFFECTS) |
+		     (1ull << ASTER_FEATURE_AUDIO_EFFECTS_MEMORY);
 	}
-	if(aster_player_service_available())f |= 1ull << ASTER_FEATURE_MEDIA_PLAYER;
+	if (aster_player_service_available())
+		f |= 1ull << ASTER_FEATURE_MEDIA_PLAYER;
 	info->feature_flags = f;
 }
 
@@ -100,33 +107,37 @@ bool aster_sysinfo_has_feature(uint32_t bit)
 
 bool aster_sysinfo_feature_by_name(const char *name)
 {
-	static const struct { const char *name; uint32_t bit; } map[] = {
-		{ "media-player", ASTER_FEATURE_MEDIA_PLAYER },
-		{ "display", ASTER_FEATURE_DISPLAY },
-		{ "touch", ASTER_FEATURE_TOUCH },
-		{ "mouse", ASTER_FEATURE_MOUSE },
-		{ "keyboard", ASTER_FEATURE_KEYBOARD },
-		{ "camera", ASTER_FEATURE_CAMERA },
-		{ "audio-in", ASTER_FEATURE_AUDIO_INPUT },
-		{ "audio-out", ASTER_FEATURE_AUDIO_OUTPUT },
-		{ "wifi", ASTER_FEATURE_WIFI },
-		{ "network", ASTER_FEATURE_NETWORK },
-		{ "http", ASTER_FEATURE_HTTP },
-		{ "mqtt", ASTER_FEATURE_MQTT },
-		{ "websocket", ASTER_FEATURE_WEBSOCKET },
-		{ "tls", ASTER_FEATURE_TLS },
-		{ "audio-stream", ASTER_FEATURE_AUDIO_STREAM },
-		{ "audio-effects", ASTER_FEATURE_AUDIO_EFFECTS },
-		{ "audio-effects-memory", ASTER_FEATURE_AUDIO_EFFECTS_MEMORY },
-		{ "bluetooth", ASTER_FEATURE_BLUETOOTH },
-		{ "accelerometer", ASTER_FEATURE_ACCELEROMETER },
-		{ "gyroscope", ASTER_FEATURE_GYROSCOPE },
-		{ "filesystem", ASTER_FEATURE_FILESYSTEM },
-		{ "storage.app", ASTER_FEATURE_FILESYSTEM },
-		{ "rtc", ASTER_FEATURE_RTC },
-		{ "psram", ASTER_FEATURE_PSRAM },
-		{ "framebuffer", ASTER_FEATURE_FRAMEBUFFER },
+	static const struct {
+		const char *name;
+		uint32_t bit;
+	} map[] = {
+	        {"media-player", ASTER_FEATURE_MEDIA_PLAYER},
+	        {"display", ASTER_FEATURE_DISPLAY},
+	        {"touch", ASTER_FEATURE_TOUCH},
+	        {"mouse", ASTER_FEATURE_MOUSE},
+	        {"keyboard", ASTER_FEATURE_KEYBOARD},
+	        {"camera", ASTER_FEATURE_CAMERA},
+	        {"audio-in", ASTER_FEATURE_AUDIO_INPUT},
+	        {"audio-out", ASTER_FEATURE_AUDIO_OUTPUT},
+	        {"wifi", ASTER_FEATURE_WIFI},
+	        {"network", ASTER_FEATURE_NETWORK},
+	        {"http", ASTER_FEATURE_HTTP},
+	        {"mqtt", ASTER_FEATURE_MQTT},
+	        {"websocket", ASTER_FEATURE_WEBSOCKET},
+	        {"tls", ASTER_FEATURE_TLS},
+	        {"audio-stream", ASTER_FEATURE_AUDIO_STREAM},
+	        {"audio-effects", ASTER_FEATURE_AUDIO_EFFECTS},
+	        {"audio-effects-memory", ASTER_FEATURE_AUDIO_EFFECTS_MEMORY},
+	        {"bluetooth", ASTER_FEATURE_BLUETOOTH},
+	        {"accelerometer", ASTER_FEATURE_ACCELEROMETER},
+	        {"gyroscope", ASTER_FEATURE_GYROSCOPE},
+	        {"filesystem", ASTER_FEATURE_FILESYSTEM},
+	        {"storage.app", ASTER_FEATURE_FILESYSTEM},
+	        {"rtc", ASTER_FEATURE_RTC},
+	        {"psram", ASTER_FEATURE_PSRAM},
+	        {"framebuffer", ASTER_FEATURE_FRAMEBUFFER},
 	};
+
 	for (size_t i = 0; i < ARRAY_SIZE(map); i++) {
 		if (strcmp(name, map[i].name) == 0) {
 			return aster_sysinfo_has_feature(map[i].bit);

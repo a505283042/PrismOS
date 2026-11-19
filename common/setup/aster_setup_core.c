@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: MIT */
 #include "aster_setup_core.h"
 #include <string.h>
-void aster_setup_core_init(aster_setup_state_t *s, bool storage, bool complete, bool configured) {
+
+void aster_setup_core_init(aster_setup_state_t *s, bool storage, bool complete, bool configured)
+{
     memset(s, 0, sizeof(*s));
     s->required = !storage || !complete;
     s->phase = !storage     ? ASTER_SETUP_STORAGE
@@ -9,25 +11,33 @@ void aster_setup_core_init(aster_setup_state_t *s, bool storage, bool complete, 
                : configured ? ASTER_SETUP_CONNECT
                             : ASTER_SETUP_WELCOME;
 }
-void aster_setup_core_step(aster_setup_state_t *s, aster_setup_phase_t next) {
+
+void aster_setup_core_step(aster_setup_state_t *s, aster_setup_phase_t next)
+{
     s->phase = next;
     s->error = 0;
     if (next == ASTER_SETUP_DONE)
         s->required = false;
 }
-void aster_setup_core_fail(aster_setup_state_t *s, int error) {
+
+void aster_setup_core_fail(aster_setup_state_t *s, int error)
+{
     s->failed_phase = s->phase;
     s->phase = ASTER_SETUP_ERROR;
     s->error = error;
     s->required = true;
 }
-void aster_setup_core_retry(aster_setup_state_t *s, bool connected) {
+
+void aster_setup_core_retry(aster_setup_state_t *s, bool connected)
+{
     s->phase = connected ? ASTER_SETUP_PLAN : ASTER_SETUP_PROVISION;
     s->error = 0;
     s->bytes = s->total = 0;
     s->file = s->files = 0;
 }
-unsigned aster_setup_core_percent(const aster_setup_state_t *s) {
+
+unsigned aster_setup_core_percent(const aster_setup_state_t *s)
+{
     if (s->phase == ASTER_SETUP_DONE)
         return 100;
     if (!s->total)
@@ -36,7 +46,9 @@ unsigned aster_setup_core_percent(const aster_setup_state_t *s) {
     /* Avoid overflow for malicious metadata; a setup release is <=1GiB. */
     return bytes > UINT64_MAX / 100 ? 0 : (unsigned)(bytes * 100 / s->total);
 }
-bool aster_setup_server_url(const char *url) {
+
+bool aster_setup_server_url(const char *url)
+{
     if (!url)
         return false;
     size_t n = strlen(url);
@@ -52,7 +64,9 @@ bool aster_setup_server_url(const char *url) {
             return false;
     return true;
 }
-bool aster_setup_credentials_valid(const aster_setup_credentials_t *c) {
+
+bool aster_setup_credentials_valid(const aster_setup_credentials_t *c)
+{
     if (!c || !memchr(c->ssid, 0, sizeof(c->ssid)) ||
         !memchr(c->password, 0, sizeof(c->password)) || !memchr(c->server, 0, sizeof(c->server)))
         return false;
@@ -69,11 +83,13 @@ bool aster_setup_credentials_valid(const aster_setup_credentials_t *c) {
                 return false;
     return true;
 }
-const char *aster_setup_phase_title(aster_setup_phase_t phase) {
+
+const char *aster_setup_phase_title(aster_setup_phase_t phase)
+{
     static const char *const titles[] = {"检查系统",     "检查存储卡",   "欢迎使用 Aster",
                                          "使用手机连接", "正在连接网络", "检查系统资源",
                                          "准备系统资源", "正在校验",     "正在安装商城",
-                                         "准备完成",     "需要你的帮助","正在格式化存储卡"};
+                                         "准备完成",     "需要你的帮助", "正在格式化存储卡"};
     return (unsigned)phase < sizeof(titles) / sizeof(*titles) ? titles[phase]
                                                               : titles[ASTER_SETUP_ERROR];
 }

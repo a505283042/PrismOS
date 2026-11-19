@@ -46,42 +46,77 @@
 #ifndef CONFIG_ASTER_FLUX_ART_CACHE
 #define CONFIG_ASTER_FLUX_ART_CACHE 0
 #endif
-static uint32_t art_bakes,art_hits;
+static uint32_t art_bakes, art_hits;
+
 enum { HOME, FILTERS, MIXER, FILES, CLOCK, SYSTEM };
-enum { ACT_NONE, ACT_BACK, ACT_FILTERS, ACT_MIXER, ACT_PREV, ACT_NEXT,
-       ACT_OPEN, ACT_WIFI, ACT_QUIET, ACT_MOTION, ACT_SYSTEM,
-       ACT_CANCEL, ACT_UNINSTALL, ACT_TIMEOUT, ACT_SCREEN_OFF, ACT_BT, ACT_RESTART, ACT_SHUTDOWN, ACT_SLEEP, ACT_USB_STORAGE, ACT_GROUP=32 };
-enum { ICON_SETTINGS, ICON_LEFT, ICON_RIGHT, ICON_CLOCK, ICON_FILES,
-       ICON_TERMINAL, ICON_BT, ICON_MOON, ICON_WIFI, ICON_MOVE, ICON_BATTERY, ICON_BOX, ICON_ARROW, ICON_ASTER };
+
+enum {
+    ACT_NONE,
+    ACT_BACK,
+    ACT_FILTERS,
+    ACT_MIXER,
+    ACT_PREV,
+    ACT_NEXT,
+    ACT_OPEN,
+    ACT_WIFI,
+    ACT_QUIET,
+    ACT_MOTION,
+    ACT_SYSTEM,
+    ACT_CANCEL,
+    ACT_UNINSTALL,
+    ACT_TIMEOUT,
+    ACT_SCREEN_OFF,
+    ACT_BT,
+    ACT_RESTART,
+    ACT_SHUTDOWN,
+    ACT_SLEEP,
+    ACT_USB_STORAGE,
+    ACT_GROUP = 32
+};
+
+enum {
+    ICON_SETTINGS,
+    ICON_LEFT,
+    ICON_RIGHT,
+    ICON_CLOCK,
+    ICON_FILES,
+    ICON_TERMINAL,
+    ICON_BT,
+    ICON_MOON,
+    ICON_WIFI,
+    ICON_MOVE,
+    ICON_BATTERY,
+    ICON_BOX,
+    ICON_ARROW,
+    ICON_ASTER
+};
 
 typedef struct {
- char id[64], name[40];
- const char *code;
- char description[ASTER_SERVICE_DESCRIPTION_MAX];
- uint32_t color;
- uint8_t group, builtin, icon;
+    char id[64], name[40];
+    const char *code;
+    char description[ASTER_SERVICE_DESCRIPTION_MAX];
+    uint32_t color;
+    uint8_t group, builtin, icon;
 } entry_t;
+
 typedef struct {
- const char *id, *code;
- uint32_t color;
- uint8_t group;
+    const char *id, *code;
+    uint32_t color;
+    uint8_t group;
 } known_t;
+
 static const known_t known[] = {
- {"aster.player","MUSIC",0xb6a4ff,1},
- {"aster.reader","READING",0x8debc1,1},
- {"aster.gallery","GALLERY",0xf3a8ef,1},
- {"aster.starcatch","PLAY",0xffce8e,2},
- {"aster.game.2048","PLAY",0xff9e6d,2},
- {"aster.snake","PLAY",0xc6e986,2},
- {"aster.imucube","SENSOR",0x76dbde,3},
- {"aster.chess","PLAY",0xffb3b7,2},
- {"aster.neon-duel","PLAY",0xbc99ff,2},
- {"aster.gfxshow","GRAPHICS",0xefafd4,3},
- {"aster.apitest","DEVICE",0x9ddde9,3},
+    {"aster.player", "MUSIC", 0xb6a4ff, 1},    {"aster.reader", "READING", 0x8debc1, 1},
+    {"aster.gallery", "GALLERY", 0xf3a8ef, 1}, {"aster.starcatch", "PLAY", 0xffce8e, 2},
+    {"aster.game.2048", "PLAY", 0xff9e6d, 2},  {"aster.snake", "PLAY", 0xc6e986, 2},
+    {"aster.imucube", "SENSOR", 0x76dbde, 3},  {"aster.chess", "PLAY", 0xffb3b7, 2},
+    {"aster.neon-duel", "PLAY", 0xbc99ff, 2},  {"aster.gfxshow", "GRAPHICS", 0xefafd4, 3},
+    {"aster.apitest", "DEVICE", 0x9ddde9, 3},
 };
-static const char *const group_names[]={"全部","媒体","玩乐","探索"};
-static const char *const group_codes[]={"FULL SPECTRUM","SOUND & LIGHT","PLAY FREQUENCY","NEW POSSIBILITIES"};
-static const uint32_t group_colors[]={ACCENT,0xaaadff,0xffa891,0x89eac6};
+static const char *const group_names[] = {"全部", "媒体", "玩乐", "探索"};
+static const char *const group_codes[] = {"FULL SPECTRUM", "SOUND & LIGHT", "PLAY FREQUENCY",
+                                          "NEW POSSIBILITIES"};
+static const uint32_t group_colors[] = {ACCENT, 0xaaadff, 0xffa891, 0x89eac6};
 /* Launcher state, not a DMA buffer. PSRAM so it does not sit in internal DRAM
  * for the whole time the desktop is up. */
 static entry_t entries[MAX_ENTRIES] __attribute__((section(".ext_ram.bss")));
@@ -96,83 +131,99 @@ static int view_w = 320, view_h = 480;
 /* Ribbon art is baked in the 360x140 design. The fused rotator only accepts
  * that size; a scaled bake falls through to an LVGL alloc that halts. */
 static int design_px;
+
 static int ax(int v)
 {
- if (design_px || !view_w) return v;
- return (int)((int64_t)v * view_w / 320);
+    if (design_px || !view_w)
+        return v;
+    return (int)((int64_t)v * view_w / 320);
 }
+
 static int ay(int v)
 {
- if (design_px || !view_h) return v;
- return (int)((int64_t)v * view_h / 480);
+    if (design_px || !view_h)
+        return v;
+    return (int)((int64_t)v * view_h / 480);
 }
+
 static int as(int v)
 {
- int64_t sx, sy, m;
- int r;
- if (design_px || !view_w || !view_h) return v;
- sx = (int64_t)view_w * 480; sy = (int64_t)view_h * 320;
- m = sx < sy ? sx : sy;
- r = (int)((int64_t)v * m / (320 * 480));
- return v && !r ? 1 : r;
+    int64_t sx, sy, m;
+    int r;
+    if (design_px || !view_w || !view_h)
+        return v;
+    sx = (int64_t)view_w * 480;
+    sy = (int64_t)view_h * 320;
+    m = sx < sy ? sx : sy;
+    r = (int)((int64_t)v * m / (320 * 480));
+    return v && !r ? 1 : r;
 }
+
 /* Uniform 256=1x fit. Both ribbon axes share it so the tilt stays square
  * and the fused drawer's tile skip remains valid. */
 static int fit256(void)
 {
- int sx, sy, f;
- if (!view_w || !view_h) return 256;
- sx = view_w * 256 / 320;
- sy = view_h * 256 / 480;
- f = sx < sy ? sx : sy;
- return f < 1 ? 1 : f;
+    int sx, sy, f;
+    if (!view_w || !view_h)
+        return 256;
+    sx = view_w * 256 / 320;
+    sy = view_h * 256 / 480;
+    f = sx < sy ? sx : sy;
+    return f < 1 ? 1 : f;
 }
+
 static void to_design(uint32_t *x, uint32_t *y)
 {
- if (!view_w || !view_h || !x || !y) return;
- *x = (uint32_t)((uint64_t)*x * 320 / (uint32_t)view_w);
- *y = (uint32_t)((uint64_t)*y * 480 / (uint32_t)view_h);
- if (*x > 319) *x = 319;
- if (*y > 479) *y = 479;
+    if (!view_w || !view_h || !x || !y)
+        return;
+    *x = (uint32_t)((uint64_t)*x * 320 / (uint32_t)view_w);
+    *y = (uint32_t)((uint64_t)*y * 480 / (uint32_t)view_h);
+    if (*x > 319)
+        *x = 319;
+    if (*y > 479)
+        *y = 479;
 }
-static unsigned scroll_duration=FLUX_SNAP_MS;
+
+static unsigned scroll_duration = FLUX_SNAP_MS;
 static bool coasting, draw_pending;
-static uint64_t animation_ms, last_draw, hold_ms, clock_sec=UINT64_MAX;
-static bool animating, launching, visible, initialized, want_show=true, motion=true, quiet;
+static uint64_t animation_ms, last_draw, hold_ms, clock_sec = UINT64_MAX;
+static bool animating, launching, visible, initialized, want_show = true, motion = true, quiet;
 static volatile bool dirty;
-static volatile int want_page=-1;
-static int page, prior_page, action, brightness=90, saved_volume=60;
-static int brightness_pending=-1, volume_pending=-1;
+static volatile int want_page = -1;
+static int page, prior_page, action, brightness = 90, saved_volume = 60;
+static int brightness_pending = -1, volume_pending = -1;
 static bool volume_save;
 static aster_launcher_slider_stats_t slider_stats;
 static uint64_t save_due;
 static char remove_id[64], remove_name[40];
-static lv_obj_t *root,*body,*stage,*bar_time,*description,*position,*pull_label,*handle;
-static lv_obj_t *filter_label,*modal,*toast,*clock_value,*clock_date,*wifi_state;
-static lv_obj_t *battery_label,*power_label,*timeout_button;
-static lv_obj_t *battery_body,*battery_terminal,*battery_fill;
+static lv_obj_t *root, *body, *stage, *bar_time, *description, *position, *pull_label, *handle;
+static lv_obj_t *filter_label, *modal, *toast, *clock_value, *clock_date, *wifi_state;
+static lv_obj_t *battery_label, *power_label, *timeout_button;
+static lv_obj_t *battery_body, *battery_terminal, *battery_fill;
 static bool battery_charging;
 static aster_power_idle_t power_idle;
 static uint8_t timeout_index;
 static bool power_contacts_down;
-static const uint32_t screen_timeouts[]={0,30000,60000,120000,300000};
-static const char *const screen_timeout_names[]={"永不","30 秒","1 分钟","2 分钟","5 分钟"};
+static const uint32_t screen_timeouts[] = {0, 30000, 60000, 120000, 300000};
+static const char *const screen_timeout_names[] = {"永不", "30 秒", "1 分钟", "2 分钟", "5 分钟"};
 static uint64_t toast_until;
 static lv_image_dsc_t chrome[ARRAY_SIZE(flux_icon_sizes)][ARRAY_SIZE(flux_icon_data[0])]
-	__attribute__((section(".ext_ram.bss")));
+    __attribute__((section(".ext_ram.bss")));
+
 static struct {
- lv_obj_t *obj;
- lv_image_dsc_t icon;
- lv_draw_buf_t *art;
- uint8_t *data;
- int entry;
- bool dirty_art;
+    lv_obj_t *obj;
+    lv_image_dsc_t icon;
+    lv_draw_buf_t *art;
+    uint8_t *data;
+    int entry;
+    bool dirty_art;
 } ribbons[RIBBONS];
+
 static struct {
- bool down, handle, moved, blocked, stopped;
- int x,y,axis,base,hit;
- uint64_t started;
- struct flux_velocity track;
+    bool down, handle, moved, blocked, stopped;
+    int x, y, axis, base, hit;
+    uint64_t started;
+    struct flux_velocity track;
 } drag;
 static struct aster_touch_ui_state launcher_touch_ui;
 static uint32_t launcher_touch_x, launcher_touch_y;
@@ -181,1280 +232,2057 @@ static void redraw(void);
 static void settle(int target);
 
 enum { S_TICK, S_TAP, S_OPEN, S_CLOSE, S_TUNE };
-static int sound_entry=-1, sound_group=-1, sound_phase;
+
+static int sound_entry = -1, sound_group = -1, sound_phase;
 static uint64_t sound_tick_ms, sound_sample_ms;
 static bool sound_return, sound_launch_started;
-static int sound_pending=-1;
+static int sound_pending = -1;
+
 static void sound_play(int which, int speed)
 {
- if(quiet || volume_pending==0 || !aster_device_audio_get_volume()) {
-  aster_device_audio_ui_stop();return;
- }
- const int16_t *pcm;size_t frames;unsigned gain=1000;
- uint64_t now=aster_os_uptime_ms();
- if(which==S_TICK) {
-  unsigned velocity=abs(speed);
-  if(sound_tick_ms && now-sound_tick_ms<(velocity>650?160:95)) return;
-  gain=MAX(350,1000-(int)velocity*4/10);
- }
- switch(which) {
-#define SOUND_CASE(id,name) case id:pcm=sound_##name;frames=ARRAY_SIZE(sound_##name);break
- SOUND_CASE(S_TICK,tick);SOUND_CASE(S_TAP,tap);SOUND_CASE(S_OPEN,open);
- SOUND_CASE(S_CLOSE,close);SOUND_CASE(S_TUNE,tune);
+    if (quiet || volume_pending == 0 || !aster_device_audio_get_volume()) {
+        aster_device_audio_ui_stop();
+        return;
+    }
+    const int16_t *pcm;
+    size_t frames;
+    unsigned gain = 1000;
+    uint64_t now = aster_os_uptime_ms();
+    if (which == S_TICK) {
+        unsigned velocity = abs(speed);
+        if (sound_tick_ms && now - sound_tick_ms < (velocity > 650 ? 160 : 95))
+            return;
+        gain = MAX(350, 1000 - (int)velocity * 4 / 10);
+    }
+    switch (which) {
+#define SOUND_CASE(id, name) \
+    case id: \
+        pcm = sound_##name; \
+        frames = ARRAY_SIZE(sound_##name); \
+        break
+        SOUND_CASE(S_TICK, tick);
+        SOUND_CASE(S_TAP, tap);
+        SOUND_CASE(S_OPEN, open);
+        SOUND_CASE(S_CLOSE, close);
+        SOUND_CASE(S_TUNE, tune);
 #undef SOUND_CASE
- default:return;
- }
- int err=aster_device_audio_ui_play(pcm,frames,gain,which==S_TICK?0:1);
- if(!err && which==S_TICK) sound_tick_ms=now;
+    default:
+        return;
+    }
+    int err = aster_device_audio_ui_play(pcm, frames, gain, which == S_TICK ? 0 : 1);
+    if (!err && which == S_TICK)
+        sound_tick_ms = now;
 }
 
-static lv_obj_t *box(lv_obj_t *parent,int x,int y,int w,int h,uint32_t color,int radius)
+static lv_obj_t *box(lv_obj_t *parent, int x, int y, int w, int h, uint32_t color, int radius)
 {
- lv_obj_t *o=lv_obj_create(parent);
- lv_obj_remove_style_all(o);
- lv_obj_set_pos(o,ax(x),ay(y));lv_obj_set_size(o,ax(w),ay(h));
- lv_obj_set_style_bg_color(o,lv_color_hex(color),0);
- lv_obj_set_style_bg_opa(o,LV_OPA_COVER,0);
- lv_obj_set_style_radius(o,as(radius),0);
- lv_obj_clear_flag(o,LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_CLICKABLE);
- return o;
+    lv_obj_t *o = lv_obj_create(parent);
+    lv_obj_remove_style_all(o);
+    lv_obj_set_pos(o, ax(x), ay(y));
+    lv_obj_set_size(o, ax(w), ay(h));
+    lv_obj_set_style_bg_color(o, lv_color_hex(color), 0);
+    lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(o, as(radius), 0);
+    lv_obj_clear_flag(o, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    return o;
 }
-static lv_obj_t *text(lv_obj_t *parent,const char *value,int x,int y,int w,uint32_t color,int size,int zoom)
+
+static lv_obj_t *text(lv_obj_t *parent, const char *value, int x, int y, int w, uint32_t color,
+                      int size, int zoom)
 {
- lv_obj_t *o=lv_label_create(parent);
- unsigned px=aster_flux_font_pixels(size,zoom,value);
- const lv_font_t *native=aster_flux_font((unsigned)as((int)px),value);
- lv_obj_set_pos(o,ax(x),ay(y));lv_obj_set_width(o,ax(w));
- lv_obj_set_style_text_font(o,native?native:aster_ui_font(size),0);
- lv_obj_set_user_data(o,(void *)(uintptr_t)((size<<24)|(zoom<<12)|w));
- lv_obj_set_style_text_color(o,lv_color_hex(color),0);
- lv_label_set_long_mode(o,LV_LABEL_LONG_DOT);lv_label_set_text(o,value);
- lv_obj_clear_flag(o,LV_OBJ_FLAG_CLICKABLE);
- if(!native) aster_ui_font_warm(size,value);
- return o;
+    lv_obj_t *o = lv_label_create(parent);
+    unsigned px = aster_flux_font_pixels(size, zoom, value);
+    const lv_font_t *native = aster_flux_font((unsigned)as((int)px), value);
+    lv_obj_set_pos(o, ax(x), ay(y));
+    lv_obj_set_width(o, ax(w));
+    lv_obj_set_style_text_font(o, native ? native : aster_ui_font(size), 0);
+    lv_obj_set_user_data(o, (void *)(uintptr_t)((size << 24) | (zoom << 12) | w));
+    lv_obj_set_style_text_color(o, lv_color_hex(color), 0);
+    lv_label_set_long_mode(o, LV_LABEL_LONG_DOT);
+    lv_label_set_text(o, value);
+    lv_obj_clear_flag(o, LV_OBJ_FLAG_CLICKABLE);
+    if (!native)
+        aster_ui_font_warm(size, value);
+    return o;
 }
-static void set_label_text(lv_obj_t *o,const char *value,bool uniform_caption)
+
+static void set_label_text(lv_obj_t *o, const char *value, bool uniform_caption)
 {
- if(o && strcmp(lv_label_get_text(o),value)) {
-  uintptr_t spec=(uintptr_t)lv_obj_get_user_data(o);int size=spec>>24,zoom=(spec>>12)&4095,width=spec&4095;
-  unsigned px=aster_flux_font_pixels(size,zoom,value);
-  /* Captions keep the same ppem for Latin and CJK package metadata. */
-  if(uniform_caption && px<14) px=14;
-  const lv_font_t *native=aster_flux_font((unsigned)as((int)px),value);
-  lv_obj_set_width(o,ax(width));
-  lv_obj_set_style_transform_scale_x(o,256,0);
-  lv_obj_set_style_transform_scale_y(o,256,0);
-  lv_obj_set_style_text_font(o,native?native:aster_ui_font(size),0);
-  if(!native) aster_ui_font_warm(size,value);
-  lv_label_set_text(o,value);
- }
+    if (o && strcmp(lv_label_get_text(o), value)) {
+        uintptr_t spec = (uintptr_t)lv_obj_get_user_data(o);
+        int size = spec >> 24, zoom = (spec >> 12) & 4095, width = spec & 4095;
+        unsigned px = aster_flux_font_pixels(size, zoom, value);
+        /* Captions keep the same ppem for Latin and CJK package metadata. */
+        if (uniform_caption && px < 14)
+            px = 14;
+        const lv_font_t *native = aster_flux_font((unsigned)as((int)px), value);
+        lv_obj_set_width(o, ax(width));
+        lv_obj_set_style_transform_scale_x(o, 256, 0);
+        lv_obj_set_style_transform_scale_y(o, 256, 0);
+        lv_obj_set_style_text_font(o, native ? native : aster_ui_font(size), 0);
+        if (!native)
+            aster_ui_font_warm(size, value);
+        lv_label_set_text(o, value);
+    }
 }
-static void set_text(lv_obj_t *o,const char *value) {set_label_text(o,value,false);}
-static void set_caption_text(lv_obj_t *o,const char *value) {set_label_text(o,value,true);}
-static lv_obj_t *icon(lv_obj_t *parent,int number,int x,int y,int size,uint32_t color)
+
+static void set_text(lv_obj_t *o, const char *value)
 {
- lv_obj_t *o=lv_image_create(parent);
- unsigned face=0;int want=as(size),bestd=10000;
- for(unsigned i=0;i<ARRAY_SIZE(flux_icon_sizes);i++) {
-  int d=flux_icon_sizes[i]-(unsigned)want;if(d<0) d=-d;
-  if(d<bestd) {bestd=d;face=i;}
- }
- lv_image_set_src(o,&chrome[face][number]);lv_obj_set_pos(o,ax(x),ay(y));
- lv_image_set_scale(o,256);lv_image_set_pivot(o,0,0);
- lv_obj_set_style_image_recolor(o,lv_color_hex(color),0);
- lv_obj_set_style_image_recolor_opa(o,LV_OPA_COVER,0);
- return o;
+    set_label_text(o, value, false);
 }
+
+static void set_caption_text(lv_obj_t *o, const char *value)
+{
+    set_label_text(o, value, true);
+}
+
+static lv_obj_t *icon(lv_obj_t *parent, int number, int x, int y, int size, uint32_t color)
+{
+    lv_obj_t *o = lv_image_create(parent);
+    unsigned face = 0;
+    int want = as(size), bestd = 10000;
+    for (unsigned i = 0; i < ARRAY_SIZE(flux_icon_sizes); i++) {
+        int d = flux_icon_sizes[i] - (unsigned)want;
+        if (d < 0)
+            d = -d;
+        if (d < bestd) {
+            bestd = d;
+            face = i;
+        }
+    }
+    lv_image_set_src(o, &chrome[face][number]);
+    lv_obj_set_pos(o, ax(x), ay(y));
+    lv_image_set_scale(o, 256);
+    lv_image_set_pivot(o, 0, 0);
+    lv_obj_set_style_image_recolor(o, lv_color_hex(color), 0);
+    lv_obj_set_style_image_recolor_opa(o, LV_OPA_COVER, 0);
+    return o;
+}
+
 static void clicked(lv_event_t *e)
 {
- action=(int)(intptr_t)lv_event_get_user_data(e);
- aster_service_logf(3,"flux: action %d",action);
+    action = (int)(intptr_t)lv_event_get_user_data(e);
+    aster_service_logf(3, "flux: action %d", action);
 }
-static lv_obj_t *button(lv_obj_t *parent,const char *label,int x,int y,int w,int h,uint32_t color,int act)
+
+static lv_obj_t *button(lv_obj_t *parent, const char *label, int x, int y, int w, int h,
+                        uint32_t color, int act)
 {
- lv_obj_t *o=box(parent,x,y,w,h,color,12);
- lv_obj_add_flag(o,LV_OBJ_FLAG_CLICKABLE);
- lv_obj_set_style_bg_opa(o,LV_OPA_80,LV_STATE_PRESSED);
- lv_obj_add_event_cb(o,clicked,LV_EVENT_CLICKED,(void *)(intptr_t)act);
- if(label) {
-  lv_obj_t *l=text(o,label,0,0,w,FG,16,256);
-  lv_obj_set_style_text_align(l,LV_TEXT_ALIGN_CENTER,0);lv_obj_center(l);
- }
- return o;
+    lv_obj_t *o = box(parent, x, y, w, h, color, 12);
+    lv_obj_add_flag(o, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_opa(o, LV_OPA_80, LV_STATE_PRESSED);
+    lv_obj_add_event_cb(o, clicked, LV_EVENT_CLICKED, (void *)(intptr_t)act);
+    if (label) {
+        lv_obj_t *l = text(o, label, 0, 0, w, FG, 16, 256);
+        lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_center(l);
+    }
+    return o;
 }
+
 static void notify(const char *value)
 {
- if(toast) lv_obj_delete(toast);
- toast=box(root,22,343,276,48,ACCENT,9);
- text(toast,value,12,13,252,0x354324,16,220);
- toast_until=aster_os_uptime_ms()+2200;
+    if (toast)
+        lv_obj_delete(toast);
+    toast = box(root, 22, 343, 276, 48, ACCENT, 9);
+    text(toast, value, 12, 13, 252, 0x354324, 16, 220);
+    toast_until = aster_os_uptime_ms() + 2200;
 }
-static int nearest(int p) {return (p+(p<0?-500:500))/1000;}
-static int wrap(int i,int n) { return n?((i%n)+n)%n:0; }
-static int distance(int index,int p,int n)
+
+static int nearest(int p)
 {
- if(n<=0) return 0;
- int span=n*1000,d=index*1000-p;
- while(d < -span/2) d+=span;
- while(d >= (span+1)/2) d-=span;
- return d;
+    return (p + (p < 0 ? -500 : 500)) / 1000;
 }
-static entry_t *current(void) { return count?&entries[ids[wrap(selected[group],count)]]:NULL; }
+
+static int wrap(int i, int n)
+{
+    return n ? ((i % n) + n) % n : 0;
+}
+
+static int distance(int index, int p, int n)
+{
+    if (n <= 0)
+        return 0;
+    int span = n * 1000, d = index * 1000 - p;
+    while (d < -span / 2)
+        d += span;
+    while (d >= (span + 1) / 2)
+        d -= span;
+    return d;
+}
+
+static entry_t *current(void)
+{
+    return count ? &entries[ids[wrap(selected[group], count)]] : NULL;
+}
+
 static void save_now(void)
 {
- uint8_t state[]={group,selected[0],selected[1],selected[2],selected[3],brightness,motion,quiet};
- (void)aster_service_kv_set(KV_ID,"state",state,sizeof(state));
- (void)aster_service_kv_set(KV_ID,"screen-timeout",&timeout_index,1);
- save_due=0;
+    uint8_t state[] = {group,       selected[0], selected[1], selected[2],
+                       selected[3], brightness,  motion,      quiet};
+    (void)aster_service_kv_set(KV_ID, "state", state, sizeof(state));
+    (void)aster_service_kv_set(KV_ID, "screen-timeout", &timeout_index, 1);
+    save_due = 0;
 }
+
 /* Coalesce preference writes until the gesture and settling finish. */
-static void save(void) {save_due=aster_os_uptime_ms()+750;}
+static void save(void)
+{
+    save_due = aster_os_uptime_ms() + 750;
+}
+
 static void read_entries(void)
 {
- entry_n=0;
- /* Known IDs retain theme ordering/colors; all application names and
+    entry_n = 0;
+    /* Known IDs retain theme ordering/colors; all application names and
   * introductions belong to package metadata, including known IDs. */
- for(size_t k=0;k<ARRAY_SIZE(known);k++) {
-  aster_service_app_t rec;
-  if(!aster_service_app_find(known[k].id,&rec)) continue;
-  const aster_service_app_t *r=&rec;
-  entry_t *e=&entries[entry_n++];memset(e,0,sizeof(*e));
-  snprintf(e->id,sizeof(e->id),"%.*s",(int)sizeof(e->id)-1,r->id);snprintf(e->name,sizeof(e->name),"%.*s",(int)sizeof(e->name)-1,r->name);
-  e->code=known[k].code;snprintf(e->description,sizeof(e->description),"%.*s",(int)sizeof(e->description)-1,r->description);e->color=known[k].color;e->group=known[k].group;e->icon=ICON_BOX;
- }
- for(int i=0;i<aster_service_app_count() && entry_n<MAX_ENTRIES-4;i++) {
-  aster_service_app_t rec;if(!aster_service_app_snapshot(i,&rec)) continue;
-  const aster_service_app_t *r=&rec;
-  bool present=false;for(int j=0;j<entry_n;j++) if(!strcmp(entries[j].id,r->id)) present=true;
-  if(present) continue;
-  entry_t *e=&entries[entry_n++];memset(e,0,sizeof(*e));
-  snprintf(e->id,sizeof(e->id),"%.*s",(int)sizeof(e->id)-1,r->id);snprintf(e->name,sizeof(e->name),"%.*s",(int)sizeof(e->name)-1,r->name);
-  e->group=!strcmp(r->category,"game")?2:3;e->code=e->group==2?"PLAY":"LOCAL APP";
-  snprintf(e->description,sizeof(e->description),"%.*s",(int)sizeof(e->description)-1,r->description);e->color=0xd8c0ff;e->icon=ICON_BOX;
- }
- const entry_t builtin[]={
-  {.id="files",.name="文件",.code="STORAGE",.description="每一份收藏，都有它的位置。",.color=0x8fbfff,.group=3,.builtin=FILES,.icon=ICON_FILES},
-  {.id="settings",.name="设置",.code="DEVICE MIXER",.description="调到你喜欢的频率。",.color=0xd8c0ff,.group=3,.builtin=MIXER,.icon=ICON_SETTINGS},
-  {.id="terminal",.name="系统日志",.code="SYSTEM",.description="系统的声音，从这里传来。",.color=0xb6e8ca,.group=3,.builtin=SYSTEM,.icon=ICON_TERMINAL},
-  {.id="clock",.name="时钟",.code="CLOCK",.description="留一点时间，给此刻。",.color=0xb0cbff,.group=3,.builtin=CLOCK,.icon=ICON_CLOCK},
- };
- for(size_t i=0;i<ARRAY_SIZE(builtin);i++) entries[entry_n++]=builtin[i];
- /* Application names come from package metadata and use the generic
+    for (size_t k = 0; k < ARRAY_SIZE(known); k++) {
+        aster_service_app_t rec;
+        if (!aster_service_app_find(known[k].id, &rec))
+            continue;
+        const aster_service_app_t *r = &rec;
+        entry_t *e = &entries[entry_n++];
+        memset(e, 0, sizeof(*e));
+        snprintf(e->id, sizeof(e->id), "%.*s", (int)sizeof(e->id) - 1, r->id);
+        snprintf(e->name, sizeof(e->name), "%.*s", (int)sizeof(e->name) - 1, r->name);
+        e->code = known[k].code;
+        snprintf(e->description, sizeof(e->description), "%.*s", (int)sizeof(e->description) - 1,
+                 r->description);
+        e->color = known[k].color;
+        e->group = known[k].group;
+        e->icon = ICON_BOX;
+    }
+    for (int i = 0; i < aster_service_app_count() && entry_n < MAX_ENTRIES - 4; i++) {
+        aster_service_app_t rec;
+        if (!aster_service_app_snapshot(i, &rec))
+            continue;
+        const aster_service_app_t *r = &rec;
+        bool present = false;
+        for (int j = 0; j < entry_n; j++)
+            if (!strcmp(entries[j].id, r->id))
+                present = true;
+        if (present)
+            continue;
+        entry_t *e = &entries[entry_n++];
+        memset(e, 0, sizeof(*e));
+        snprintf(e->id, sizeof(e->id), "%.*s", (int)sizeof(e->id) - 1, r->id);
+        snprintf(e->name, sizeof(e->name), "%.*s", (int)sizeof(e->name) - 1, r->name);
+        e->group = !strcmp(r->category, "game") ? 2 : 3;
+        e->code = e->group == 2 ? "PLAY" : "LOCAL APP";
+        snprintf(e->description, sizeof(e->description), "%.*s", (int)sizeof(e->description) - 1,
+                 r->description);
+        e->color = 0xd8c0ff;
+        e->icon = ICON_BOX;
+    }
+    const entry_t builtin[] = {
+        {.id = "files",
+         .name = "文件",
+         .code = "STORAGE",
+         .description = "每一份收藏，都有它的位置。",
+         .color = 0x8fbfff,
+         .group = 3,
+         .builtin = FILES,
+         .icon = ICON_FILES},
+        {.id = "settings",
+         .name = "设置",
+         .code = "DEVICE MIXER",
+         .description = "调到你喜欢的频率。",
+         .color = 0xd8c0ff,
+         .group = 3,
+         .builtin = MIXER,
+         .icon = ICON_SETTINGS},
+        {.id = "terminal",
+         .name = "系统日志",
+         .code = "SYSTEM",
+         .description = "系统的声音，从这里传来。",
+         .color = 0xb6e8ca,
+         .group = 3,
+         .builtin = SYSTEM,
+         .icon = ICON_TERMINAL},
+        {.id = "clock",
+         .name = "时钟",
+         .code = "CLOCK",
+         .description = "留一点时间，给此刻。",
+         .color = 0xb0cbff,
+         .group = 3,
+         .builtin = CLOCK,
+         .icon = ICON_CLOCK},
+    };
+    for (size_t i = 0; i < ARRAY_SIZE(builtin); i++)
+        entries[entry_n++] = builtin[i];
+    /* Application names come from package metadata and use the generic
   * SD face. Fixed system entries use existing UI fonts. Prewarm titles;
   * introductions warm when selected to avoid evicting the visible text. */
- for(int i=0;i<entry_n;i++)
-  if(!entries[i].builtin) aster_ui_font_warm(ASTER_FONT_UI_PX,entries[i].name);
-
+    for (int i = 0; i < entry_n; i++)
+        if (!entries[i].builtin)
+            aster_ui_font_warm(ASTER_FONT_UI_PX, entries[i].name);
 }
+
 static void filter_entries(void)
 {
- count=0;for(int i=0;i<entry_n;i++) if(!group || entries[i].group==group) ids[count++]=i;
- selected[group]=wrap(selected[group],count);phase=selected[group]*1000;
- animating=false;pull=0;
+    count = 0;
+    for (int i = 0; i < entry_n; i++)
+        if (!group || entries[i].group == group)
+            ids[count++] = i;
+    selected[group] = wrap(selected[group], count);
+    phase = selected[group] * 1000;
+    animating = false;
+    pull = 0;
 }
+
 /* Prewarm the same five-entry window used by the ribbon cache. Dynamic
  * captions and pull labels stay on the generic SD face; fetch them before
  * interaction rather than on the first selection crossing. */
 static void warm_visible_text(void)
 {
- if(!count) return;
- for(int rel=-2;rel<=2;rel++) {
-  entry_t *e=&entries[ids[wrap(nearest(phase)+rel,count)]];
-  if(e->builtin) continue;
-  char buf[64];
-  aster_ui_font_warm(ASTER_FONT_UI_PX,e->name);
-  if(e->description[0]) aster_ui_font_warm((uint8_t)as((int)aster_flux_font_pixels(16,160,"应用")),e->description);
-  snprintf(buf,sizeof(buf),"拉开%s",e->name);
-  aster_ui_font_warm((uint8_t)as((int)aster_flux_font_pixels(16,180,"应用")),buf);
- }
+    if (!count)
+        return;
+    for (int rel = -2; rel <= 2; rel++) {
+        entry_t *e = &entries[ids[wrap(nearest(phase) + rel, count)]];
+        if (e->builtin)
+            continue;
+        char buf[64];
+        aster_ui_font_warm(ASTER_FONT_UI_PX, e->name);
+        if (e->description[0])
+            aster_ui_font_warm((uint8_t)as((int)aster_flux_font_pixels(16, 160, "应用")),
+                               e->description);
+        snprintf(buf, sizeof(buf), "拉开%s", e->name);
+        aster_ui_font_warm((uint8_t)as((int)aster_flux_font_pixels(16, 180, "应用")), buf);
+    }
 }
+
 /* The baked ribbon is a 360x140 RGB565 image. It used to come out of the
  * LVGL pool via lv_snapshot_take(); five of them do not fit in the widget
  * pool, so the pixels live in the shared PSRAM heap and only the small
  * descriptor stays in the pool. */
 static void ribbon_art_drop(lv_draw_buf_t *art)
 {
- if(!art) return;
- aster_flux_draw_forget(art->data);
- aster_os_free_external(art->unaligned_data);
- lv_free(art);
+    if (!art)
+        return;
+    aster_flux_draw_forget(art->data);
+    aster_os_free_external(art->unaligned_data);
+    lv_free(art);
 }
 #if CONFIG_ASTER_FLUX_ART_CACHE > 0
 /* Only detached textures are cached. The five visible ribbons retain sole
  * ownership of their images; changing page/catalog/fonts clears old bakes. */
-static struct {int entry;lv_draw_buf_t *art;} art_cache[CONFIG_ASTER_FLUX_ART_CACHE];
+static struct {
+    int entry;
+    lv_draw_buf_t *art;
+} art_cache[CONFIG_ASTER_FLUX_ART_CACHE];
+
 static unsigned art_cursor;
+
 static void ribbon_cache_clear(void)
 {
- for(unsigned i=0;i<ARRAY_SIZE(art_cache);i++) {
-  ribbon_art_drop(art_cache[i].art);art_cache[i].art=NULL;
- }
- art_cursor=0;
+    for (unsigned i = 0; i < ARRAY_SIZE(art_cache); i++) {
+        ribbon_art_drop(art_cache[i].art);
+        art_cache[i].art = NULL;
+    }
+    art_cursor = 0;
 }
+
 static void ribbon_cache_store(int slot)
 {
- if(!ribbons[slot].art)return;
- unsigned chosen=art_cursor++%ARRAY_SIZE(art_cache);
- for(unsigned i=0;i<ARRAY_SIZE(art_cache);i++)if(!art_cache[i].art){chosen=i;break;}
- ribbon_art_drop(art_cache[chosen].art);
- art_cache[chosen].entry=ribbons[slot].entry;art_cache[chosen].art=ribbons[slot].art;
- aster_flux_draw_forget(ribbons[slot].art->data);ribbons[slot].art=NULL;
+    if (!ribbons[slot].art)
+        return;
+    unsigned chosen = art_cursor++ % ARRAY_SIZE(art_cache);
+    for (unsigned i = 0; i < ARRAY_SIZE(art_cache); i++)
+        if (!art_cache[i].art) {
+            chosen = i;
+            break;
+        }
+    ribbon_art_drop(art_cache[chosen].art);
+    art_cache[chosen].entry = ribbons[slot].entry;
+    art_cache[chosen].art = ribbons[slot].art;
+    aster_flux_draw_forget(ribbons[slot].art->data);
+    ribbons[slot].art = NULL;
 }
+
 static lv_draw_buf_t *ribbon_cache_take(int entry)
 {
- for(unsigned i=0;i<ARRAY_SIZE(art_cache);i++)if(art_cache[i].art && art_cache[i].entry==entry) {
-  lv_draw_buf_t *art=art_cache[i].art;art_cache[i].art=NULL;art_hits++;return art;
- }
- return NULL;
+    for (unsigned i = 0; i < ARRAY_SIZE(art_cache); i++)
+        if (art_cache[i].art && art_cache[i].entry == entry) {
+            lv_draw_buf_t *art = art_cache[i].art;
+            art_cache[i].art = NULL;
+            art_hits++;
+            return art;
+        }
+    return NULL;
 }
 #else
-static void ribbon_cache_clear(void) {}
-static void ribbon_cache_store(int slot) {(void)slot;}
-static lv_draw_buf_t *ribbon_cache_take(int entry) {(void)entry;return NULL;}
-#endif
-void aster_launcher_slider_stats(aster_launcher_slider_stats_t *out){if(out)*out=slider_stats;}
-void aster_launcher_art_stats(uint32_t *bakes,uint32_t *hits,uint32_t *cached_bytes)
+static void ribbon_cache_clear(void)
 {
- *bakes=art_bakes;*hits=art_hits;*cached_bytes=0;
+}
+
+static void ribbon_cache_store(int slot)
+{
+    (void)slot;
+}
+
+static lv_draw_buf_t *ribbon_cache_take(int entry)
+{
+    (void)entry;
+    return NULL;
+}
+#endif
+void aster_launcher_slider_stats(aster_launcher_slider_stats_t *out)
+{
+    if (out)
+        *out = slider_stats;
+}
+
+void aster_launcher_art_stats(uint32_t *bakes, uint32_t *hits, uint32_t *cached_bytes)
+{
+    *bakes = art_bakes;
+    *hits = art_hits;
+    *cached_bytes = 0;
 #if CONFIG_ASTER_FLUX_ART_CACHE > 0
- for(unsigned i=0;i<ARRAY_SIZE(art_cache);i++)if(art_cache[i].art)*cached_bytes+=art_cache[i].art->data_size;
+    for (unsigned i = 0; i < ARRAY_SIZE(art_cache); i++)
+        if (art_cache[i].art)
+            *cached_bytes += art_cache[i].art->data_size;
 #endif
 }
+
 static lv_draw_buf_t *ribbon_bake(lv_obj_t *obj)
 {
- int32_t w,h;
- uint32_t stride;
- size_t bytes;
- void *px;
- lv_draw_buf_t *db;
+    int32_t w, h;
+    uint32_t stride;
+    size_t bytes;
+    void *px;
+    lv_draw_buf_t *db;
 
- lv_obj_update_layout(obj);
- w=lv_obj_get_width(obj);
- h=lv_obj_get_height(obj);
- if(w<=0 || h<=0) return NULL;
- stride=lv_draw_buf_width_to_stride((uint32_t)w,LV_COLOR_FORMAT_RGB565);
- bytes=(size_t)stride*(size_t)h;
- px=aster_os_alloc_external(bytes);
- db=lv_malloc_zeroed(sizeof(*db));
- if(!px || !db ||
-    lv_draw_buf_init(db,(uint32_t)w,(uint32_t)h,LV_COLOR_FORMAT_RGB565,stride,px,(uint32_t)bytes)!=LV_RESULT_OK ||
-    lv_snapshot_take_to_draw_buf(obj,LV_COLOR_FORMAT_RGB565,db)!=LV_RESULT_OK) {
-  aster_service_logf(2,"ribbon bake failed (%dx%d)",(int)w,(int)h);
-  aster_os_free_external(px);
-  if(db) lv_free(db);
-  return NULL;
- }
- art_bakes++;return db;
+    lv_obj_update_layout(obj);
+    w = lv_obj_get_width(obj);
+    h = lv_obj_get_height(obj);
+    if (w <= 0 || h <= 0)
+        return NULL;
+    stride = lv_draw_buf_width_to_stride((uint32_t)w, LV_COLOR_FORMAT_RGB565);
+    bytes = (size_t)stride * (size_t)h;
+    px = aster_os_alloc_external(bytes);
+    db = lv_malloc_zeroed(sizeof(*db));
+    if (!px || !db ||
+        lv_draw_buf_init(db, (uint32_t)w, (uint32_t)h, LV_COLOR_FORMAT_RGB565, stride, px,
+                         (uint32_t)bytes) != LV_RESULT_OK ||
+        lv_snapshot_take_to_draw_buf(obj, LV_COLOR_FORMAT_RGB565, db) != LV_RESULT_OK) {
+        aster_service_logf(2, "ribbon bake failed (%dx%d)", (int)w, (int)h);
+        aster_os_free_external(px);
+        if (db)
+            lv_free(db);
+        return NULL;
+    }
+    art_bakes++;
+    return db;
 }
+
 static void release_icon(int i)
 {
- if(ribbons[i].art) {ribbon_art_drop(ribbons[i].art);ribbons[i].art=NULL;}
- if(ribbons[i].data) {
-  aster_os_free_external(ribbons[i].data);ribbons[i].data=NULL;
- }
-}
-static bool load_icon_locked(int i,const char *id)
-{
- char dir[192],path[224];aster_os_entry_t st;aster_os_file_t f;
- if(aster_service_app_code_dir(dir,sizeof(dir),id))return false;
- snprintf(path,sizeof(path),"%s/icon.bin",dir);
- if(aster_os_stat(path,&st) || st.size<ASTER_ICON_HDR_SIZE || st.size>65536) return false;
- uint8_t *data=aster_os_alloc_external(st.size);if(!data) return false;
- aster_os_file_init(&f);int err=aster_os_file_open(&f,path,ASTER_OS_READ);
- if(!err) {err=aster_os_file_read(&f,data,st.size);aster_os_file_close(&f);}
- aster_icon_hdr_t h;
- if(err<0 || (size_t)err!=st.size || aster_icon_parse(data,st.size,&h) || h.w>128 || h.h>128) {
-  aster_os_free_external(data);return false;
- }
- lv_color_format_t format=h.cf==ASTER_ICON_CF_A8?LV_COLOR_FORMAT_A8:
-  h.cf==ASTER_ICON_CF_RGB565?LV_COLOR_FORMAT_RGB565:
-  h.cf==ASTER_ICON_CF_RGB565A8?LV_COLOR_FORMAT_RGB565A8:LV_COLOR_FORMAT_UNKNOWN;
- if(format==LV_COLOR_FORMAT_UNKNOWN) {aster_os_free_external(data);return false;}
- ribbons[i].data=data;
- ribbons[i].icon=(lv_image_dsc_t){.header={.magic=LV_IMAGE_HEADER_MAGIC,.cf=format,.w=h.w,.h=h.h,.stride=h.w*(h.cf==ASTER_ICON_CF_A8?1:2)},.data_size=h.data_size,.data=data+ASTER_ICON_HDR_SIZE};
- return true;
-}
-static bool load_icon(int i,const char *id)
-{
- /* Keep an icon read on the generation selected by the registry, including
-  * the short interval in which an installer publishes and rescans. */
- aster_service_files_lock();
- bool loaded=load_icon_locked(i,id);
- aster_service_files_unlock();
- return loaded;
+    if (ribbons[i].art) {
+        ribbon_art_drop(ribbons[i].art);
+        ribbons[i].art = NULL;
+    }
+    if (ribbons[i].data) {
+        aster_os_free_external(ribbons[i].data);
+        ribbons[i].data = NULL;
+    }
 }
 
-static void bind_ribbon(int slot,int idx)
+static bool load_icon_locked(int i, const char *id)
 {
- bool same=ribbons[slot].entry==idx;
- if(same && !ribbons[slot].dirty_art) return;
- /* Take before retiring: a full cache must not evict the very texture
+    char dir[192], path[224];
+    aster_os_entry_t st;
+    aster_os_file_t f;
+    if (aster_service_app_code_dir(dir, sizeof(dir), id))
+        return false;
+    snprintf(path, sizeof(path), "%s/icon.bin", dir);
+    if (aster_os_stat(path, &st) || st.size < ASTER_ICON_HDR_SIZE || st.size > 65536)
+        return false;
+    uint8_t *data = aster_os_alloc_external(st.size);
+    if (!data)
+        return false;
+    aster_os_file_init(&f);
+    int err = aster_os_file_open(&f, path, ASTER_OS_READ);
+    if (!err) {
+        err = aster_os_file_read(&f, data, st.size);
+        aster_os_file_close(&f);
+    }
+    aster_icon_hdr_t h;
+    if (err < 0 || (size_t)err != st.size || aster_icon_parse(data, st.size, &h) || h.w > 128 ||
+        h.h > 128) {
+        aster_os_free_external(data);
+        return false;
+    }
+    lv_color_format_t format = h.cf == ASTER_ICON_CF_A8         ? LV_COLOR_FORMAT_A8
+                               : h.cf == ASTER_ICON_CF_RGB565   ? LV_COLOR_FORMAT_RGB565
+                               : h.cf == ASTER_ICON_CF_RGB565A8 ? LV_COLOR_FORMAT_RGB565A8
+                                                                : LV_COLOR_FORMAT_UNKNOWN;
+    if (format == LV_COLOR_FORMAT_UNKNOWN) {
+        aster_os_free_external(data);
+        return false;
+    }
+    ribbons[i].data = data;
+    ribbons[i].icon =
+        (lv_image_dsc_t){.header = {.magic = LV_IMAGE_HEADER_MAGIC,
+                                    .cf = format,
+                                    .w = h.w,
+                                    .h = h.h,
+                                    .stride = h.w * (h.cf == ASTER_ICON_CF_A8 ? 1 : 2)},
+                         .data_size = h.data_size,
+                         .data = data + ASTER_ICON_HDR_SIZE};
+    return true;
+}
+
+static bool load_icon(int i, const char *id)
+{
+    /* Keep an icon read on the generation selected by the registry, including
+  * the short interval in which an installer publishes and rescans. */
+    aster_service_files_lock();
+    bool loaded = load_icon_locked(i, id);
+    aster_service_files_unlock();
+    return loaded;
+}
+
+static void bind_ribbon(int slot, int idx)
+{
+    bool same = ribbons[slot].entry == idx;
+    if (same && !ribbons[slot].dirty_art)
+        return;
+    /* Take before retiring: a full cache must not evict the very texture
   * needed next when the five-card window wraps around the catalog. */
- lv_draw_buf_t *cached=same?NULL:ribbon_cache_take(idx);
- lv_image_set_src(ribbons[slot].obj,NULL);
- if(same) {
-  if(ribbons[slot].art) ribbon_art_drop(ribbons[slot].art);
-  ribbons[slot].art=NULL;
- } else {ribbon_cache_store(slot);release_icon(slot);}
- ribbons[slot].entry=idx;ribbons[slot].dirty_art=false;
- if(!same && (ribbons[slot].art=cached)) {
-  aster_flux_draw_prepare(ribbons[slot].art->data,ribbons[slot].art->header.stride);
-  lv_image_set_src(ribbons[slot].obj,ribbons[slot].art);return;
- }
- entry_t *e=&entries[idx];
- /* Bake text, color and original icon once per entry/font arrival.
+    lv_draw_buf_t *cached = same ? NULL : ribbon_cache_take(idx);
+    lv_image_set_src(ribbons[slot].obj, NULL);
+    if (same) {
+        if (ribbons[slot].art)
+            ribbon_art_drop(ribbons[slot].art);
+        ribbons[slot].art = NULL;
+    } else {
+        ribbon_cache_store(slot);
+        release_icon(slot);
+    }
+    ribbons[slot].entry = idx;
+    ribbons[slot].dirty_art = false;
+    if (!same && (ribbons[slot].art = cached)) {
+        aster_flux_draw_prepare(ribbons[slot].art->data, ribbons[slot].art->header.stride);
+        lv_image_set_src(ribbons[slot].obj, ribbons[slot].art);
+        return;
+    }
+    entry_t *e = &entries[idx];
+    /* Bake text, color and original icon once per entry/font arrival.
   * Move/rotate the resulting RGB565 image directly: no nested label
   * layers and no re-rasterizing a 360x140 object tree on every drag. */
- design_px=1;
- lv_obj_t *o=box(stage,0,0,360,140,e->color,0);
- char meta[64],code[96];int number=0;
- for(int i=0;i<count;i++) if(ids[i]==idx) number=i+1;
- snprintf(meta,sizeof(meta),"%02d / %s",number,e->code);
- text(o,meta,43,12,240,INK,16,128);
- if(!e->builtin && ((same && ribbons[slot].data) || load_icon(slot,e->id))) {
-  lv_obj_t *img=lv_image_create(o);lv_image_set_src(img,&ribbons[slot].icon);
-  /* SDK icons are normally 48px. Keep that native size rather than
+    design_px = 1;
+    lv_obj_t *o = box(stage, 0, 0, 360, 140, e->color, 0);
+    char meta[64], code[96];
+    int number = 0;
+    for (int i = 0; i < count; i++)
+        if (ids[i] == idx)
+            number = i + 1;
+    snprintf(meta, sizeof(meta), "%02d / %s", number, e->code);
+    text(o, meta, 43, 12, 240, INK, 16, 128);
+    if (!e->builtin && ((same && ribbons[slot].data) || load_icon(slot, e->id))) {
+        lv_obj_t *img = lv_image_create(o);
+        lv_image_set_src(img, &ribbons[slot].icon);
+        /* SDK icons are normally 48px. Keep that native size rather than
    * enlarging to 56px before the whole ribbon is transformed again. */
-  lv_image_set_pivot(img,0,0);lv_image_set_scale(img,48*256/ribbons[slot].icon.header.w);
-  lv_image_set_antialias(img,true);
-  lv_obj_set_pos(img,ax(47),ay(47));
-  if(ribbons[slot].icon.header.cf==LV_COLOR_FORMAT_A8) {
-   lv_obj_set_style_image_recolor(img,lv_color_hex(INK),0);lv_obj_set_style_image_recolor_opa(img,LV_OPA_COVER,0);
-  }
- } else icon(o,e->icon,51,51,40,INK);
- /* System titles use their UI font. Installed app titles are always
+        lv_image_set_pivot(img, 0, 0);
+        lv_image_set_scale(img, 48 * 256 / ribbons[slot].icon.header.w);
+        lv_image_set_antialias(img, true);
+        lv_obj_set_pos(img, ax(47), ay(47));
+        if (ribbons[slot].icon.header.cf == LV_COLOR_FORMAT_A8) {
+            lv_obj_set_style_image_recolor(img, lv_color_hex(INK), 0);
+            lv_obj_set_style_image_recolor_opa(img, LV_OPA_COVER, 0);
+        }
+    } else
+        icon(o, e->icon, 51, 51, 40, INK);
+    /* System titles use their UI font. Installed app titles are always
   * package metadata rendered by the generic SD face; no app glyphs need
   * to be added to, or compiled into, the firmware. */
- if(e->builtin) text(o,e->name,112,43,190,INK,20,384);
- else {
-  lv_obj_t *lab=lv_label_create(o);
-  aster_ui_font_warm(ASTER_FONT_UI_PX,e->name);
-  lv_obj_set_style_text_font(lab,aster_ui_font(ASTER_FONT_UI_PX),0);
-  lv_obj_set_style_text_color(lab,lv_color_hex(INK),0);
-  lv_label_set_long_mode(lab,LV_LABEL_LONG_DOT);
-  lv_obj_set_pos(lab,112,51);lv_obj_set_width(lab,190);
-  lv_label_set_text(lab,e->name);
-  lv_obj_clear_flag(lab,LV_OBJ_FLAG_CLICKABLE);
- }
- icon(o,ICON_ARROW,306,56,21,INK);
- snprintf(code,sizeof(code),"ASTER / %s",e->id);
- for(char *p=code;*p;p++) if(*p>='a' && *p<='z') *p-=32;
- text(o,code,43,113,274,INK,16,128);
- box(o,310,0,1,140,0x504354,0);box(o,323,0,1,140,0x504354,0);
- ribbons[slot].art=ribbon_bake(o);
- design_px=0;
- lv_obj_delete(o);
- if(ribbons[slot].art) {
-  aster_flux_draw_prepare(ribbons[slot].art->data,ribbons[slot].art->header.stride);
-  lv_image_set_src(ribbons[slot].obj,ribbons[slot].art);
- }
+    if (e->builtin)
+        text(o, e->name, 112, 43, 190, INK, 20, 384);
+    else {
+        lv_obj_t *lab = lv_label_create(o);
+        aster_ui_font_warm(ASTER_FONT_UI_PX, e->name);
+        lv_obj_set_style_text_font(lab, aster_ui_font(ASTER_FONT_UI_PX), 0);
+        lv_obj_set_style_text_color(lab, lv_color_hex(INK), 0);
+        lv_label_set_long_mode(lab, LV_LABEL_LONG_DOT);
+        lv_obj_set_pos(lab, 112, 51);
+        lv_obj_set_width(lab, 190);
+        lv_label_set_text(lab, e->name);
+        lv_obj_clear_flag(lab, LV_OBJ_FLAG_CLICKABLE);
+    }
+    icon(o, ICON_ARROW, 306, 56, 21, INK);
+    snprintf(code, sizeof(code), "ASTER / %s", e->id);
+    for (char *p = code; *p; p++)
+        if (*p >= 'a' && *p <= 'z')
+            *p -= 32;
+    text(o, code, 43, 113, 274, INK, 16, 128);
+    box(o, 310, 0, 1, 140, 0x504354, 0);
+    box(o, 323, 0, 1, 140, 0x504354, 0);
+    ribbons[slot].art = ribbon_bake(o);
+    design_px = 0;
+    lv_obj_delete(o);
+    if (ribbons[slot].art) {
+        aster_flux_draw_prepare(ribbons[slot].art->data, ribbons[slot].art->header.stride);
+        lv_image_set_src(ribbons[slot].obj, ribbons[slot].art);
+    }
 }
+
 static void caption(void)
 {
- entry_t *e=current();char buf[64];
- const char *desc=e?e->description:"这个频段还没有安装应用。";
- /* Package metadata and system entries share font, scaling and line metrics. */
- set_caption_text(description,desc);
- snprintf(buf,sizeof(buf),"%02d / %02d",count?selected[group]+1:0,count);set_text(position,buf);
- snprintf(buf,sizeof(buf),"拉开%s",e?e->name:"应用");
- set_caption_text(pull_label,buf);
- /* One-line captions fit the gap above the handle even on 240x320.
+    entry_t *e = current();
+    char buf[64];
+    const char *desc = e ? e->description : "这个频段还没有安装应用。";
+    /* Package metadata and system entries share font, scaling and line metrics. */
+    set_caption_text(description, desc);
+    snprintf(buf, sizeof(buf), "%02d / %02d", count ? selected[group] + 1 : 0, count);
+    set_text(position, buf);
+    snprintf(buf, sizeof(buf), "拉开%s", e ? e->name : "应用");
+    set_caption_text(pull_label, buf);
+    /* One-line captions fit the gap above the handle even on 240x320.
   * AUTO height would wrap long package text over the launch controls. */
- lv_obj_set_height(description,lv_font_get_line_height(lv_obj_get_style_text_font(description,0)));
- lv_obj_set_height(pull_label,lv_font_get_line_height(lv_obj_get_style_text_font(pull_label,0)));
- /* Both native UI and APP captions center using their actual line height.
+    lv_obj_set_height(description,
+                      lv_font_get_line_height(lv_obj_get_style_text_font(description, 0)));
+    lv_obj_set_height(pull_label,
+                      lv_font_get_line_height(lv_obj_get_style_text_font(pull_label, 0)));
+    /* Both native UI and APP captions center using their actual line height.
   * The label stays between the handle and arrow as the viewport changes. */
- lv_obj_set_style_text_align(pull_label,LV_TEXT_ALIGN_CENTER,0);
- lv_obj_center(pull_label);
- set_text(filter_label,group_names[group]);
+    lv_obj_set_style_text_align(pull_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_center(pull_label);
+    set_text(filter_label, group_names[group]);
 }
+
 /* Keep entries that remain in the five-ribbon window. Crossing an index
  * replaces only the one newcomer, not every slot's text/icon texture. */
-static int cache_slot(const int resident[RIBBONS],const int *wanted,int n,int entry)
+static int cache_slot(const int resident[RIBBONS], const int *wanted, int n, int entry)
 {
- for(int k=0;k<RIBBONS;k++) if(resident[k]==entry) return k;
- for(int k=0;k<RIBBONS;k++) {
-  bool keep=false;
-  for(int i=0;i<n;i++) if(resident[k]==wanted[i]) keep=true;
-  if(!keep) return k;
- }
- return -1;
+    for (int k = 0; k < RIBBONS; k++)
+        if (resident[k] == entry)
+            return k;
+    for (int k = 0; k < RIBBONS; k++) {
+        bool keep = false;
+        for (int i = 0; i < n; i++)
+            if (resident[k] == wanted[i])
+                keep = true;
+        if (!keep)
+            return k;
+    }
+    return -1;
 }
+
 static void ribbon_order(const int index[RIBBONS])
 {
- int order[RIBBONS],n=0;
- /* Hidden/unused images stay behind the visible cards. Preserve the
+    int order[RIBBONS], n = 0;
+    /* Hidden/unused images stay behind the visible cards. Preserve the
   * original far-to-near order and slot tie-break at selection crossings. */
- for(int k=0;k<RIBBONS;k++)
-  if(index[k]<0 || abs(distance(index[k],phase,count))/1000>3) order[n++]=k;
- for(int threshold=3;threshold>=0;threshold--) for(int k=0;k<RIBBONS;k++)
-  if(index[k]>=0 && abs(distance(index[k],phase,count))/1000==threshold) order[n++]=k;
- /* Moving every image to the foreground invalidates the whole stage
+    for (int k = 0; k < RIBBONS; k++)
+        if (index[k] < 0 || abs(distance(index[k], phase, count)) / 1000 > 3)
+            order[n++] = k;
+    for (int threshold = 3; threshold >= 0; threshold--)
+        for (int k = 0; k < RIBBONS; k++)
+            if (index[k] >= 0 && abs(distance(index[k], phase, count)) / 1000 == threshold)
+                order[n++] = k;
+    /* Moving every image to the foreground invalidates the whole stage
   * even when the final order is identical. Only move changed siblings.
   * The FLUX watermark remains below the five ribbon objects. */
- int base=(int)lv_obj_get_child_count(stage)-RIBBONS;
- for(int i=0;i<n;i++) lv_obj_move_to_index(ribbons[order[i]].obj,base+i);
+    int base = (int)lv_obj_get_child_count(stage) - RIBBONS;
+    for (int i = 0; i < n; i++)
+        lv_obj_move_to_index(ribbons[order[i]].obj, base + i);
 }
+
 static void redraw(void)
 {
- draw_pending=false;
- if(!stage || page!=HOME) return;
- int center=nearest(phase),wanted[RIBBONS],n=0;
- for(int rel=-2;rel<=2 && count;rel++) {
-  int idx=ids[wrap(center+rel,count)];bool duplicate=false;
-  for(int i=0;i<n;i++) if(wanted[i]==idx) duplicate=true;
-  if(!duplicate) wanted[n++]=idx;
- }
- for(int i=0;i<n;i++) {
-  int resident[RIBBONS];for(int k=0;k<RIBBONS;k++) resident[k]=ribbons[k].entry;
-  int slot=cache_slot(resident,wanted,n,wanted[i]);
-  if(slot>=0) bind_ribbon(slot,wanted[i]);
- }
- int index[RIBBONS];
- for(int k=0;k<RIBBONS;k++) {
-  index[k]=-1;lv_obj_t *o=ribbons[k].obj;
-  for(int i=0;i<count;i++) if(ids[i]==ribbons[k].entry) index[k]=i;
-  int idx=index[k],d=idx<0?INT32_MAX:distance(idx,phase,count);
-  int a=abs(d);
-  if(idx<0 || a>=2400 || !ribbons[k].art) {lv_obj_add_flag(o,LV_OBJ_FLAG_HIDDEN);continue;}
-  lv_obj_clear_flag(o,LV_OBJ_FLAG_HIDDEN);
-  int shift=idx==selected[group]?pull:0;
-  int zoom=MAX(174,256-a*41/1000);
-  int f=fit256();
-  int centered_x=(view_w-320*f/256)/2;
-  /* The selected ribbon settles on the native pixel grid: its already
+    draw_pending = false;
+    if (!stage || page != HOME)
+        return;
+    int center = nearest(phase), wanted[RIBBONS], n = 0;
+    for (int rel = -2; rel <= 2 && count; rel++) {
+        int idx = ids[wrap(center + rel, count)];
+        bool duplicate = false;
+        for (int i = 0; i < n; i++)
+            if (wanted[i] == idx)
+                duplicate = true;
+        if (!duplicate)
+            wanted[n++] = idx;
+    }
+    for (int i = 0; i < n; i++) {
+        int resident[RIBBONS];
+        for (int k = 0; k < RIBBONS; k++)
+            resident[k] = ribbons[k].entry;
+        int slot = cache_slot(resident, wanted, n, wanted[i]);
+        if (slot >= 0)
+            bind_ribbon(slot, wanted[i]);
+    }
+    int index[RIBBONS];
+    for (int k = 0; k < RIBBONS; k++) {
+        index[k] = -1;
+        lv_obj_t *o = ribbons[k].obj;
+        for (int i = 0; i < count; i++)
+            if (ids[i] == ribbons[k].entry)
+                index[k] = i;
+        int idx = index[k], d = idx < 0 ? INT32_MAX : distance(idx, phase, count);
+        int a = abs(d);
+        if (idx < 0 || a >= 2400 || !ribbons[k].art) {
+            lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+        lv_obj_clear_flag(o, LV_OBJ_FLAG_HIDDEN);
+        int shift = idx == selected[group] ? pull : 0;
+        int zoom = MAX(174, 256 - a * 41 / 1000);
+        int f = fit256();
+        int centered_x = (view_w - 320 * f / 256) / 2;
+        /* The selected ribbon settles on the native pixel grid: its already
    * antialiased glyphs and icons must not get a second resampling pass.
    * Neighbours still fan out, and drag/settle motion remains continuous. */
-  lv_image_set_rotation(o,wrap(CLAMP(d*60/1000,-120,120),3600));
-  if(f==256) {
-   lv_obj_set_pos(o,centered_x-20+a*9/1000+shift,126+d*FLUX_RIBBON_PITCH/1000-70);
-   lv_image_set_pivot(o,180,70);
-   lv_image_set_scale(o,zoom);
-  } else {
-   int design_x=-20+a*9/1000+shift;
-   int design_y=126+d*FLUX_RIBBON_PITCH/1000-70;
-   int sc=zoom*f/256; if(sc<1) sc=1;
-   lv_obj_set_pos(o,centered_x+design_x*f/256-180+180*f/256,design_y*f/256-70+70*f/256);
-   lv_image_set_pivot(o,180,70);
-   lv_image_set_scale(o,(uint32_t)sc);
-  }
-  lv_obj_set_style_image_opa(o,MAX(46,255-a*97/1000),0);
- }
- ribbon_order(index);
- lv_obj_set_x(handle,ax(3+MIN(230,pull)));
- last_draw=aster_os_uptime_ms();
- aster_ui_lvgl_request_frame();
+        lv_image_set_rotation(o, wrap(CLAMP(d * 60 / 1000, -120, 120), 3600));
+        if (f == 256) {
+            lv_obj_set_pos(o, centered_x - 20 + a * 9 / 1000 + shift,
+                           126 + d * FLUX_RIBBON_PITCH / 1000 - 70);
+            lv_image_set_pivot(o, 180, 70);
+            lv_image_set_scale(o, zoom);
+        } else {
+            int design_x = -20 + a * 9 / 1000 + shift;
+            int design_y = 126 + d * FLUX_RIBBON_PITCH / 1000 - 70;
+            int sc = zoom * f / 256;
+            if (sc < 1)
+                sc = 1;
+            lv_obj_set_pos(o, centered_x + design_x * f / 256 - 180 + 180 * f / 256,
+                           design_y * f / 256 - 70 + 70 * f / 256);
+            lv_image_set_pivot(o, 180, 70);
+            lv_image_set_scale(o, (uint32_t)sc);
+        }
+        lv_obj_set_style_image_opa(o, MAX(46, 255 - a * 97 / 1000), 0);
+    }
+    ribbon_order(index);
+    lv_obj_set_x(handle, ax(3 + MIN(230, pull)));
+    last_draw = aster_os_uptime_ms();
+    aster_ui_lvgl_request_frame();
 }
+
 static void settle(int target)
 {
- selected[group]=wrap(nearest(target),count);
- from_phase=phase;target_phase=phase+distance(selected[group],phase,count);
- from_pull=pull;scroll_duration=FLUX_SNAP_MS;coasting=false;
- animation_ms=aster_os_uptime_ms();animating=motion && (target_phase!=phase || pull!=0);caption();save();
- if(!motion) {phase=target_phase;pull=0;draw_pending=true;}
+    selected[group] = wrap(nearest(target), count);
+    from_phase = phase;
+    target_phase = phase + distance(selected[group], phase, count);
+    from_pull = pull;
+    scroll_duration = FLUX_SNAP_MS;
+    coasting = false;
+    animation_ms = aster_os_uptime_ms();
+    animating = motion && (target_phase != phase || pull != 0);
+    caption();
+    save();
+    if (!motion) {
+        phase = target_phase;
+        pull = 0;
+        draw_pending = true;
+    }
 }
+
 static void release_scroll(uint64_t now)
 {
- struct flux_scroll_plan p=flux_scroll_plan(phase,flux_velocity_release(&drag.track,now),count);
- if(!motion || !p.coast) {settle(phase);return;}
- from_phase=phase;target_phase=p.target;from_pull=pull;
- scroll_duration=p.duration;animation_ms=now;coasting=true;animating=true;
- selected[group]=wrap(nearest(phase),count);caption();save();
- aster_service_logf(3,"flux coast: speed=%d px/s travel=%d duration=%u ms",drag.track.speed,target_phase-from_phase,scroll_duration);
+    struct flux_scroll_plan p =
+        flux_scroll_plan(phase, flux_velocity_release(&drag.track, now), count);
+    if (!motion || !p.coast) {
+        settle(phase);
+        return;
+    }
+    from_phase = phase;
+    target_phase = p.target;
+    from_pull = pull;
+    scroll_duration = p.duration;
+    animation_ms = now;
+    coasting = true;
+    animating = true;
+    selected[group] = wrap(nearest(phase), count);
+    caption();
+    save();
+    aster_service_logf(3, "flux coast: speed=%d px/s travel=%d duration=%u ms", drag.track.speed,
+                       target_phase - from_phase, scroll_duration);
 }
+
 /* Decide the stroke before LVGL's slider class sees PRESSING/RELEASED.
  * A vertical stroke must never briefly change the value (which would also
  * disable LVGL's vertical scroll chain). Taps retain normal track selection. */
 struct slider_axis_state {
- lv_point_t origin,last;uint8_t axis,horizontal_samples;int peak;
+    lv_point_t origin, last;
+    uint8_t axis, horizontal_samples;
+    int peak;
 };
 static struct slider_axis_state slider_axes[2];
+
 static void slider_axis_guard(lv_event_t *event)
 {
- lv_indev_t *indev=lv_indev_active();
- if(!indev||lv_indev_get_type(indev)!=LV_INDEV_TYPE_POINTER)return;
- struct slider_axis_state *state=lv_event_get_user_data(event);
- lv_event_code_t code=lv_event_get_code(event);
- if(code==LV_EVENT_PRESSED){
-  lv_indev_get_point(indev,&state->origin);
-  state->last=state->origin;state->axis=state->horizontal_samples=0;state->peak=0;return;
- }
- if(code!=LV_EVENT_PRESSING&&code!=LV_EVENT_RELEASED&&code!=LV_EVENT_PRESS_LOST)return;
- lv_point_t point;lv_indev_get_point(indev,&point);
- int dx=abs(point.x-state->origin.x),dy=abs(point.y-state->origin.y);
- state->peak=MAX(state->peak,MAX(dx,dy));
- if(!state->axis){
-  if(code==LV_EVENT_PRESS_LOST)state->axis=2;
-  else if(dy>=MAX(8,as(6))&&dy>=dx)state->axis=2;
-  else if(dx>=MAX(12,as(9))&&dx>=2*dy){
-   /* Timer repeats at one coordinate do not confirm a horizontal stroke. */
-   if(point.x!=state->last.x)state->horizontal_samples++;
-   if(state->horizontal_samples>=2||code==LV_EVENT_RELEASED)state->axis=1;
-  }else state->horizontal_samples=0;
-  /* A moved but undecided release is a canceled drag, never a track tap. */
-  if(code==LV_EVENT_RELEASED&&!state->axis&&state->peak>=MAX(8,as(6)))state->axis=2;
- }
- state->last=point;
- if(state->axis==2||(code==LV_EVENT_PRESSING&&!state->axis))lv_event_stop_processing(event);
+    lv_indev_t *indev = lv_indev_active();
+    if (!indev || lv_indev_get_type(indev) != LV_INDEV_TYPE_POINTER)
+        return;
+    struct slider_axis_state *state = lv_event_get_user_data(event);
+    lv_event_code_t code = lv_event_get_code(event);
+    if (code == LV_EVENT_PRESSED) {
+        lv_indev_get_point(indev, &state->origin);
+        state->last = state->origin;
+        state->axis = state->horizontal_samples = 0;
+        state->peak = 0;
+        return;
+    }
+    if (code != LV_EVENT_PRESSING && code != LV_EVENT_RELEASED && code != LV_EVENT_PRESS_LOST)
+        return;
+    lv_point_t point;
+    lv_indev_get_point(indev, &point);
+    int dx = abs(point.x - state->origin.x), dy = abs(point.y - state->origin.y);
+    state->peak = MAX(state->peak, MAX(dx, dy));
+    if (!state->axis) {
+        if (code == LV_EVENT_PRESS_LOST)
+            state->axis = 2;
+        else if (dy >= MAX(8, as(6)) && dy >= dx)
+            state->axis = 2;
+        else if (dx >= MAX(12, as(9)) && dx >= 2 * dy) {
+            /* Timer repeats at one coordinate do not confirm a horizontal stroke. */
+            if (point.x != state->last.x)
+                state->horizontal_samples++;
+            if (state->horizontal_samples >= 2 || code == LV_EVENT_RELEASED)
+                state->axis = 1;
+        } else
+            state->horizontal_samples = 0;
+        /* A moved but undecided release is a canceled drag, never a track tap. */
+        if (code == LV_EVENT_RELEASED && !state->axis && state->peak >= MAX(8, as(6)))
+            state->axis = 2;
+    }
+    state->last = point;
+    if (state->axis == 2 || (code == LV_EVENT_PRESSING && !state->axis))
+        lv_event_stop_processing(event);
 }
+
 /* Large power controls must not turn a scrolling stroke into a click,
  * including at a scroll boundary where LVGL cannot move the container. */
-struct power_button_stroke {lv_point_t origin;bool moved;};
+struct power_button_stroke {
+    lv_point_t origin;
+    bool moved;
+};
 static struct power_button_stroke power_button_strokes[6];
+
 static void power_button_guard(lv_event_t *event)
 {
- lv_indev_t *indev=lv_indev_active();
- if(!indev||lv_indev_get_type(indev)!=LV_INDEV_TYPE_POINTER)return;
- struct power_button_stroke *stroke=lv_event_get_user_data(event);
- lv_event_code_t code=lv_event_get_code(event);
- if(code==LV_EVENT_PRESSED){
-  lv_indev_get_point(indev,&stroke->origin);stroke->moved=false;
- }else if(code==LV_EVENT_PRESSING||code==LV_EVENT_RELEASED){
-  lv_point_t point;lv_indev_get_point(indev,&point);
-  if(MAX(abs(point.x-stroke->origin.x),abs(point.y-stroke->origin.y))>=MAX(8,as(6)))stroke->moved=true;
- }else if(code==LV_EVENT_PRESS_LOST)stroke->moved=true;
- else if(code==LV_EVENT_CLICKED&&stroke->moved)lv_event_stop_processing(event);
+    lv_indev_t *indev = lv_indev_active();
+    if (!indev || lv_indev_get_type(indev) != LV_INDEV_TYPE_POINTER)
+        return;
+    struct power_button_stroke *stroke = lv_event_get_user_data(event);
+    lv_event_code_t code = lv_event_get_code(event);
+    if (code == LV_EVENT_PRESSED) {
+        lv_indev_get_point(indev, &stroke->origin);
+        stroke->moved = false;
+    } else if (code == LV_EVENT_PRESSING || code == LV_EVENT_RELEASED) {
+        lv_point_t point;
+        lv_indev_get_point(indev, &point);
+        if (MAX(abs(point.x - stroke->origin.x), abs(point.y - stroke->origin.y)) >= MAX(8, as(6)))
+            stroke->moved = true;
+    } else if (code == LV_EVENT_PRESS_LOST)
+        stroke->moved = true;
+    else if (code == LV_EVENT_CLICKED && stroke->moved)
+        lv_event_stop_processing(event);
 }
+
 static void slider_changed(lv_event_t *e)
 {
- int kind=(int)(intptr_t)lv_event_get_user_data(e);
- if(lv_event_get_code(e)==LV_EVENT_PRESSED){if(kind==1)slider_stats.presses++;return;}
- int v=lv_slider_get_value(lv_event_get_target(e));
- if(kind==1){slider_stats.value=v;if(lv_event_get_code(e)==LV_EVENT_VALUE_CHANGED)slider_stats.changes++;}
- if(kind==0) {brightness=v;brightness_pending=v;} else volume_pending=v;
- lv_obj_t *l=lv_obj_get_user_data(lv_event_get_target(e));char value[16];
- snprintf(value,sizeof(value),"%d%%",v);set_text(l,value);
- if(lv_event_get_code(e)==LV_EVENT_RELEASED) {
-  save();
-  if(kind==1) volume_save=true;
-  if(kind==1)slider_stats.releases++;
- }
+    int kind = (int)(intptr_t)lv_event_get_user_data(e);
+    if (lv_event_get_code(e) == LV_EVENT_PRESSED) {
+        if (kind == 1)
+            slider_stats.presses++;
+        return;
+    }
+    int v = lv_slider_get_value(lv_event_get_target(e));
+    if (kind == 1) {
+        slider_stats.value = v;
+        if (lv_event_get_code(e) == LV_EVENT_VALUE_CHANGED)
+            slider_stats.changes++;
+    }
+    if (kind == 0) {
+        brightness = v;
+        brightness_pending = v;
+    } else
+        volume_pending = v;
+    lv_obj_t *l = lv_obj_get_user_data(lv_event_get_target(e));
+    char value[16];
+    snprintf(value, sizeof(value), "%d%%", v);
+    set_text(l, value);
+    if (lv_event_get_code(e) == LV_EVENT_RELEASED) {
+        save();
+        if (kind == 1)
+            volume_save = true;
+        if (kind == 1)
+            slider_stats.releases++;
+    }
 }
-static void slider_card(int y,const char *name,const char *hint,uint32_t color,int value,int kind)
+
+static void slider_card(int y, const char *name, const char *hint, uint32_t color, int value,
+                        int kind)
 {
- lv_obj_t *card=box(body,17,y,286,111,0x191f18,17);
- text(card,name,15,10,60,color,20,280);
- char buf[16];snprintf(buf,sizeof(buf),"%d%%",value);
- lv_obj_t *out=text(card,buf,205,16,65,DIM,16,220);
- lv_obj_t *s=lv_slider_create(card);int track_h=MAX(1,ay(8));
- lv_obj_set_pos(s,ax(15),ay(55));lv_obj_set_size(s,ax(250),track_h);
- /* A generous hit target stays usable; axis arbitration lets vertical
+    lv_obj_t *card = box(body, 17, y, 286, 111, 0x191f18, 17);
+    text(card, name, 15, 10, 60, color, 20, 280);
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%d%%", value);
+    lv_obj_t *out = text(card, buf, 205, 16, 65, DIM, 16, 220);
+    lv_obj_t *s = lv_slider_create(card);
+    int track_h = MAX(1, ay(8));
+    lv_obj_set_pos(s, ax(15), ay(55));
+    lv_obj_set_size(s, ax(250), track_h);
+    /* A generous hit target stays usable; axis arbitration lets vertical
   * strokes scroll the page even when they begin on the track or knob. */
- lv_obj_set_ext_click_area(s,MAX(0,(44-track_h+1)/2));
- lv_obj_add_flag(s,LV_OBJ_FLAG_PRESS_LOCK|LV_OBJ_FLAG_SCROLL_CHAIN_VER);
- lv_obj_remove_flag(s,LV_OBJ_FLAG_ADV_HITTEST);
- lv_obj_add_event_cb(s,slider_axis_guard,LV_EVENT_ALL|LV_EVENT_PREPROCESS,&slider_axes[kind]);
- lv_slider_set_range(s,kind==0?25:0,100);lv_slider_set_value(s,value,LV_ANIM_OFF);
- lv_obj_set_style_bg_color(s,lv_color_hex(0x394330),LV_PART_MAIN);
- lv_obj_set_style_bg_color(s,lv_color_hex(color),LV_PART_INDICATOR);
- lv_obj_set_style_bg_color(s,lv_color_hex(color),LV_PART_KNOB);
- lv_obj_set_style_pad_all(s,as(5),LV_PART_KNOB);
- lv_obj_set_user_data(s,out);
- lv_obj_add_event_cb(s,slider_changed,LV_EVENT_PRESSED,(void *)(intptr_t)kind);
- lv_obj_add_event_cb(s,slider_changed,LV_EVENT_VALUE_CHANGED,(void *)(intptr_t)kind);
- lv_obj_add_event_cb(s,slider_changed,LV_EVENT_RELEASED,(void *)(intptr_t)kind);
- text(card,hint,15,82,250,DIM,16,160);
+    lv_obj_set_ext_click_area(s, MAX(0, (44 - track_h + 1) / 2));
+    lv_obj_add_flag(s, LV_OBJ_FLAG_PRESS_LOCK | LV_OBJ_FLAG_SCROLL_CHAIN_VER);
+    lv_obj_remove_flag(s, LV_OBJ_FLAG_ADV_HITTEST);
+    lv_obj_add_event_cb(s, slider_axis_guard, LV_EVENT_ALL | LV_EVENT_PREPROCESS,
+                        &slider_axes[kind]);
+    lv_slider_set_range(s, kind == 0 ? 25 : 0, 100);
+    lv_slider_set_value(s, value, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(s, lv_color_hex(0x394330), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s, lv_color_hex(color), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(s, lv_color_hex(color), LV_PART_KNOB);
+    lv_obj_set_style_pad_all(s, as(5), LV_PART_KNOB);
+    lv_obj_set_user_data(s, out);
+    lv_obj_add_event_cb(s, slider_changed, LV_EVENT_PRESSED, (void *)(intptr_t)kind);
+    lv_obj_add_event_cb(s, slider_changed, LV_EVENT_VALUE_CHANGED, (void *)(intptr_t)kind);
+    lv_obj_add_event_cb(s, slider_changed, LV_EVENT_RELEASED, (void *)(intptr_t)kind);
+    text(card, hint, 15, 82, 250, DIM, 16, 160);
 }
+
 static void build_home(void)
 {
- bool lckfb=(view_w<320);
- text(body,"流光",16,0,110,FG,20,320);
- lv_obj_t *filter=button(body,NULL,lckfb?236:250,lckfb?0:8,lckfb?68:53,lckfb?36:25,0x22261f,ACT_FILTERS);
- lv_obj_set_style_border_width(filter,1,0);lv_obj_set_style_border_color(filter,lv_color_hex(0x394330),0);
- filter_label=text(filter,group_names[group],9,5,lckfb?56:32,DIM,16,lckfb?288:160);
- if(lckfb) {
-  lv_obj_set_style_text_align(filter_label,LV_TEXT_ALIGN_CENTER,0);
-  lv_obj_center(filter_label);
-  lv_obj_set_ext_click_area(filter,4);
- }
- lv_obj_t *subtitle=text(body,"SCROLL THE MOMENT",17,38,190,0x91a184,16,128);
- position=text(body,"",lckfb?211:250,38,lckfb?92:55,0x91a184,16,128);
- stage=box(body,0,53,320,280,BG,0);
- /* Native fonts do not shrink continuously with design coordinates.
+    bool lckfb = (view_w < 320);
+    text(body, "流光", 16, 0, 110, FG, 20, 320);
+    lv_obj_t *filter = button(body, NULL, lckfb ? 236 : 250, lckfb ? 0 : 8, lckfb ? 68 : 53,
+                              lckfb ? 36 : 25, 0x22261f, ACT_FILTERS);
+    lv_obj_set_style_border_width(filter, 1, 0);
+    lv_obj_set_style_border_color(filter, lv_color_hex(0x394330), 0);
+    filter_label =
+        text(filter, group_names[group], 9, 5, lckfb ? 56 : 32, DIM, 16, lckfb ? 288 : 160);
+    if (lckfb) {
+        lv_obj_set_style_text_align(filter_label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_center(filter_label);
+        lv_obj_set_ext_click_area(filter, 4);
+    }
+    lv_obj_t *subtitle = text(body, "SCROLL THE MOMENT", 17, 38, 190, 0x91a184, 16, 128);
+    position = text(body, "", lckfb ? 211 : 250, 38, lckfb ? 92 : 55, 0x91a184, 16, 128);
+    stage = box(body, 0, 53, 320, 280, BG, 0);
+    /* Native fonts do not shrink continuously with design coordinates.
   * Reserve both labels' actual line heights on every panel, including
   * square resolutions below the 480px reference height. */
- int subtitle_h=lv_font_get_line_height(lv_obj_get_style_text_font(subtitle,0));
- int position_h=lv_font_get_line_height(lv_obj_get_style_text_font(position,0));
- int stage_top=MAX(ay(53),ay(38)+MAX(subtitle_h,position_h)+as(6));
- lv_obj_set_y(stage,stage_top);
- lv_obj_set_height(stage,MAX(1,ay(333)-stage_top));
- lv_obj_set_style_text_align(position,LV_TEXT_ALIGN_RIGHT,0);
- text(stage,"FLUX",18,3,130,0x24202c,20,600);
- for(int k=0;k<RIBBONS;k++) {
-  ribbons[k].entry=-1;ribbons[k].obj=lv_image_create(stage);
-  lv_obj_clear_flag(ribbons[k].obj,LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_set_style_radius(ribbons[k].obj,0,0);
-  lv_image_set_antialias(ribbons[k].obj,true);
- }
- lv_obj_t *rail=box(body,4,164,4,13,ACCENT,2);lv_obj_move_foreground(rail);
- box(body,312,173,4,4,ACCENT,2);
- description=text(body,"",17,335,215,0xa0ac91,16,160);
- icon(body,ICON_MOVE,243,337,11,0x91a184);
- text(body,"上下拨动",257,337,59,0x91a184,16,128);
- lv_obj_t *track=box(body,17,364,286,43,0x24291d,24);
- lv_obj_set_style_border_width(track,1,0);lv_obj_set_style_border_color(track,lv_color_hex(0x4b5934),0);
- box(track,52,21,190,1,0x485335,0);
- pull_label=text(track,"",65,13,178,0xa9bb8b,16,180);
- handle=box(track,3,3,40,35,ACCENT,20);icon(handle,ICON_RIGHT,11,9,18,0x334121);
- icon(track,ICON_ARROW,261,13,15,DIM);
- lv_obj_t *prev=button(body,NULL,16,410,29,26,BG,ACT_PREV);icon(prev,ICON_LEFT,8,6,13,0x819b64);
- lv_obj_t *next=button(body,NULL,275,410,29,26,BG,ACT_NEXT);icon(next,ICON_RIGHT,8,6,13,0x819b64);
- text(body,"SDK APP / ORIGINAL ICON",66,419,200,0x8b9c7a,16,112);
- caption();redraw();
+    int subtitle_h = lv_font_get_line_height(lv_obj_get_style_text_font(subtitle, 0));
+    int position_h = lv_font_get_line_height(lv_obj_get_style_text_font(position, 0));
+    int stage_top = MAX(ay(53), ay(38) + MAX(subtitle_h, position_h) + as(6));
+    lv_obj_set_y(stage, stage_top);
+    lv_obj_set_height(stage, MAX(1, ay(333) - stage_top));
+    lv_obj_set_style_text_align(position, LV_TEXT_ALIGN_RIGHT, 0);
+    text(stage, "FLUX", 18, 3, 130, 0x24202c, 20, 600);
+    for (int k = 0; k < RIBBONS; k++) {
+        ribbons[k].entry = -1;
+        ribbons[k].obj = lv_image_create(stage);
+        lv_obj_clear_flag(ribbons[k].obj, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_style_radius(ribbons[k].obj, 0, 0);
+        lv_image_set_antialias(ribbons[k].obj, true);
+    }
+    lv_obj_t *rail = box(body, 4, 164, 4, 13, ACCENT, 2);
+    lv_obj_move_foreground(rail);
+    box(body, 312, 173, 4, 4, ACCENT, 2);
+    description = text(body, "", 17, 335, 215, 0xa0ac91, 16, 160);
+    icon(body, ICON_MOVE, 243, 337, 11, 0x91a184);
+    text(body, "上下拨动", 257, 337, 59, 0x91a184, 16, 128);
+    lv_obj_t *track = box(body, 17, 364, 286, 43, 0x24291d, 24);
+    lv_obj_set_style_border_width(track, 1, 0);
+    lv_obj_set_style_border_color(track, lv_color_hex(0x4b5934), 0);
+    box(track, 52, 21, 190, 1, 0x485335, 0);
+    pull_label = text(track, "", 65, 13, 178, 0xa9bb8b, 16, 180);
+    handle = box(track, 3, 3, 40, 35, ACCENT, 20);
+    icon(handle, ICON_RIGHT, 11, 9, 18, 0x334121);
+    icon(track, ICON_ARROW, 261, 13, 15, DIM);
+    lv_obj_t *prev = button(body, NULL, 16, 410, 29, 26, BG, ACT_PREV);
+    icon(prev, ICON_LEFT, 8, 6, 13, 0x819b64);
+    lv_obj_t *next = button(body, NULL, 275, 410, 29, 26, BG, ACT_NEXT);
+    icon(next, ICON_RIGHT, 8, 6, 13, 0x819b64);
+    text(body, "SDK APP / ORIGINAL ICON", 66, 419, 200, 0x8b9c7a, 16, 112);
+    caption();
+    redraw();
 }
+
 static void build_filters(void)
 {
- text(body,"TUNE YOUR FLOW",17,15,280,DIM,16,128);
- text(body,"选择一段流光",17,37,286,FG,20,280);
- text(body,"只改变浏览范围，不改变安装内容。",17,73,286,DIM,16,160);
- for(int g=0;g<4;g++) {
-  int n=0;for(int j=0;j<entry_n;j++) if(!g || entries[j].group==g) n++;
-  lv_obj_t *b=button(body,NULL,17,110+g*74,286,65,group_colors[g],ACT_GROUP+g);
-  lv_obj_set_style_radius(b,3,0);
-  text(b,group_codes[g],15,8,245,0x253223,16,128);
-  text(b,group_names[g],15,29,90,0x253223,20,256);
-  char count_text[32];snprintf(count_text,sizeof(count_text),"%d 个入口",n);
-  text(b,count_text,98,35,138,0x46533d,16,160);
-  if(g==group) box(b,257,27,7,7,0x253223,4);
-  else icon(b,ICON_ARROW,253,24,18,0x253223);
- }
- text(body,"安装后自动加入光带，未知应用归入探索。",17,415,286,0x91a184,16,144);
+    text(body, "TUNE YOUR FLOW", 17, 15, 280, DIM, 16, 128);
+    text(body, "选择一段流光", 17, 37, 286, FG, 20, 280);
+    text(body, "只改变浏览范围，不改变安装内容。", 17, 73, 286, DIM, 16, 160);
+    for (int g = 0; g < 4; g++) {
+        int n = 0;
+        for (int j = 0; j < entry_n; j++)
+            if (!g || entries[j].group == g)
+                n++;
+        lv_obj_t *b = button(body, NULL, 17, 110 + g * 74, 286, 65, group_colors[g], ACT_GROUP + g);
+        lv_obj_set_style_radius(b, 3, 0);
+        text(b, group_codes[g], 15, 8, 245, 0x253223, 16, 128);
+        text(b, group_names[g], 15, 29, 90, 0x253223, 20, 256);
+        char count_text[32];
+        snprintf(count_text, sizeof(count_text), "%d 个入口", n);
+        text(b, count_text, 98, 35, 138, 0x46533d, 16, 160);
+        if (g == group)
+            box(b, 257, 27, 7, 7, 0x253223, 4);
+        else
+            icon(b, ICON_ARROW, 253, 24, 18, 0x253223);
+    }
+    text(body, "安装后自动加入光带，未知应用归入探索。", 17, 415, 286, 0x91a184, 16, 144);
 }
+
 static void build_mixer(void)
 {
- lv_obj_add_flag(body,LV_OBJ_FLAG_SCROLLABLE);lv_obj_set_scroll_dir(body,LV_DIR_VER);
- text(body,"DEVICE MIXER",17,15,280,DIM,16,128);
- text(body,"调到你的节奏。",17,36,286,FG,20,280);
- bool bt=aster_bluetooth_settings_available();
- const char *names[]={"Wi-Fi","蓝牙","静谧"};int acts[]={ACT_WIFI,ACT_BT,ACT_QUIET};
- int art[]={ICON_WIFI,ICON_BT,ICON_MOON};
- for(int i=0,column=0;i<3;i++) {
-  if(i==1&&!bt)continue;
-  int columns=bt?3:2,width=bt?90:139;
-  uint32_t color=(i==2 && quiet)?ACCENT:0x252d22;
-  lv_obj_t *b=button(body,NULL,17+column++*(286/columns+3),89,width,68,color,acts[i]);
-  icon(b,art[i],12,8,19,color==ACCENT?0x394b20:DIM);
-  text(b,names[i],12,30,70,color==ACCENT?0x394b20:FG,16,180);
-   lv_obj_t *status=text(b,i==0?"读取状态":i==1?"设备连接":quiet?"已开启":"已关闭",12,49,74,DIM,16,128);
-  if(i==0) wifi_state=status;
-
- }
- slider_card(172,"光","屏幕亮度",ACCENT,brightness,0);
- int volume=volume_pending>=0?volume_pending:aster_device_audio_get_volume();slider_card(297,"声","输出音量",0xffb8a5,MAX(0,volume),1);
- aster_power_caps_t power={0};(void)aster_power_caps(&power);
- if(power.battery){
-  icon(body,ICON_BATTERY,17,420,15,DIM);
-  power_label=text(body,"正在读取电池状态",38,422,220,DIM,16,160);
- }
- int y=465;
- int power_height=MAX(76,(56*480+view_h-1)/view_h),power_gap=MAX(24,(18*480+view_h-1)/view_h);
- if(power.modes&ASTER_POWER_SCREEN_OFF){
-  char title[64];snprintf(title,sizeof(title),"自动熄屏   %s",screen_timeout_names[timeout_index]);
-  /* Keep at least 56 physical pixels of height and 18 of separation on
+    lv_obj_add_flag(body, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(body, LV_DIR_VER);
+    text(body, "DEVICE MIXER", 17, 15, 280, DIM, 16, 128);
+    text(body, "调到你的节奏。", 17, 36, 286, FG, 20, 280);
+    bool bt = aster_bluetooth_settings_available();
+    const char *names[] = {"Wi-Fi", "蓝牙", "静谧"};
+    int acts[] = {ACT_WIFI, ACT_BT, ACT_QUIET};
+    int art[] = {ICON_WIFI, ICON_BT, ICON_MOON};
+    for (int i = 0, column = 0; i < 3; i++) {
+        if (i == 1 && !bt)
+            continue;
+        int columns = bt ? 3 : 2, width = bt ? 90 : 139;
+        uint32_t color = (i == 2 && quiet) ? ACCENT : 0x252d22;
+        lv_obj_t *b =
+            button(body, NULL, 17 + column++ * (286 / columns + 3), 89, width, 68, color, acts[i]);
+        icon(b, art[i], 12, 8, 19, color == ACCENT ? 0x394b20 : DIM);
+        text(b, names[i], 12, 30, 70, color == ACCENT ? 0x394b20 : FG, 16, 180);
+        lv_obj_t *status = text(b,
+                                i == 0   ? "读取状态"
+                                : i == 1 ? "设备连接"
+                                : quiet  ? "已开启"
+                                         : "已关闭",
+                                12, 49, 74, DIM, 16, 128);
+        if (i == 0)
+            wifi_state = status;
+    }
+    slider_card(172, "光", "屏幕亮度", ACCENT, brightness, 0);
+    int volume = volume_pending >= 0 ? volume_pending : aster_device_audio_get_volume();
+    slider_card(297, "声", "输出音量", 0xffb8a5, MAX(0, volume), 1);
+    aster_power_caps_t power = {0};
+    (void)aster_power_caps(&power);
+    if (power.battery) {
+        icon(body, ICON_BATTERY, 17, 420, 15, DIM);
+        power_label = text(body, "正在读取电池状态", 38, 422, 220, DIM, 16, 160);
+    }
+    int y = 465;
+    int power_height = MAX(76, (56 * 480 + view_h - 1) / view_h),
+        power_gap = MAX(24, (18 * 480 + view_h - 1) / view_h);
+    if (power.modes & ASTER_POWER_SCREEN_OFF) {
+        char title[64];
+        snprintf(title, sizeof(title), "自动熄屏   %s", screen_timeout_names[timeout_index]);
+        /* Keep at least 56 physical pixels of height and 18 of separation on
    * compact portrait panels too, rather than shrinking every touch target. */
-  int height=MAX(76,(56*480+view_h-1)/view_h);
-  int gap=MAX(24,(18*480+view_h-1)/view_h);
-  timeout_button=button(body,title,17,y,286,height,0x252d22,ACT_TIMEOUT);y+=height+gap;
-  lv_obj_t *off_button=button(body,"立即熄屏",17,y,286,height,0x191f18,ACT_SCREEN_OFF);y+=height+gap;
-  lv_obj_set_style_border_width(off_button,MAX(1,as(1)),0);
-  lv_obj_set_style_border_color(off_button,lv_color_hex(0x394330),0);
-  lv_obj_add_flag(timeout_button,LV_OBJ_FLAG_PRESS_LOCK);
-  lv_obj_add_flag(off_button,LV_OBJ_FLAG_PRESS_LOCK);
-  lv_obj_add_event_cb(timeout_button,power_button_guard,LV_EVENT_ALL|LV_EVENT_PREPROCESS,&power_button_strokes[0]);
-  lv_obj_add_event_cb(off_button,power_button_guard,LV_EVENT_ALL|LV_EVENT_PREPROCESS,&power_button_strokes[1]);
-  text(body,(power.screen_wake&(ASTER_WAKE_TOUCH|ASTER_WAKE_KEY))==(ASTER_WAKE_TOUCH|ASTER_WAKE_KEY)?"轻触屏幕或按设备按键唤醒":power.screen_wake&ASTER_WAKE_TOUCH?"轻触屏幕唤醒":"按设备按键唤醒",17,y,286,DIM,16,160);y+=40;
- }
- const uint32_t modes[]={ASTER_POWER_LIGHT_SLEEP,ASTER_POWER_RESTART,ASTER_POWER_SHUTDOWN,ASTER_POWER_USB_STORAGE};
- const int actions[]={ACT_SLEEP,ACT_RESTART,ACT_SHUTDOWN,ACT_USB_STORAGE};
- const char *titles[]={"浅休眠","重新启动","关机","USB 读卡器"};
- for(unsigned i=0;i<ARRAY_SIZE(modes);i++)if(power.modes&modes[i]){
-  lv_obj_t *control=button(body,titles[i],17,y,286,power_height,0x252d22,actions[i]);y+=power_height+power_gap;
-  lv_obj_add_flag(control,LV_OBJ_FLAG_PRESS_LOCK);
-  lv_obj_add_event_cb(control,power_button_guard,LV_EVENT_ALL|LV_EVENT_PREPROCESS,&power_button_strokes[i+2]);
- }
- if(!power.modes)text(body,"暂无可配置的电源选项",17,y,286,DIM,16,160);
- lv_obj_t *settings=button(body,NULL,273,413,30,27,0x252d22,ACT_SYSTEM);
- icon(settings,ICON_SETTINGS,6,4,18,ACCENT);
+        int height = MAX(76, (56 * 480 + view_h - 1) / view_h);
+        int gap = MAX(24, (18 * 480 + view_h - 1) / view_h);
+        timeout_button = button(body, title, 17, y, 286, height, 0x252d22, ACT_TIMEOUT);
+        y += height + gap;
+        lv_obj_t *off_button =
+            button(body, "立即熄屏", 17, y, 286, height, 0x191f18, ACT_SCREEN_OFF);
+        y += height + gap;
+        lv_obj_set_style_border_width(off_button, MAX(1, as(1)), 0);
+        lv_obj_set_style_border_color(off_button, lv_color_hex(0x394330), 0);
+        lv_obj_add_flag(timeout_button, LV_OBJ_FLAG_PRESS_LOCK);
+        lv_obj_add_flag(off_button, LV_OBJ_FLAG_PRESS_LOCK);
+        lv_obj_add_event_cb(timeout_button, power_button_guard, LV_EVENT_ALL | LV_EVENT_PREPROCESS,
+                            &power_button_strokes[0]);
+        lv_obj_add_event_cb(off_button, power_button_guard, LV_EVENT_ALL | LV_EVENT_PREPROCESS,
+                            &power_button_strokes[1]);
+        text(body,
+             (power.screen_wake & (ASTER_WAKE_TOUCH | ASTER_WAKE_KEY)) ==
+                     (ASTER_WAKE_TOUCH | ASTER_WAKE_KEY)
+                 ? "轻触屏幕或按设备按键唤醒"
+             : power.screen_wake & ASTER_WAKE_TOUCH ? "轻触屏幕唤醒"
+                                                    : "按设备按键唤醒",
+             17, y, 286, DIM, 16, 160);
+        y += 40;
+    }
+    const uint32_t modes[] = {ASTER_POWER_LIGHT_SLEEP, ASTER_POWER_RESTART, ASTER_POWER_SHUTDOWN,
+                              ASTER_POWER_USB_STORAGE};
+    const int actions[] = {ACT_SLEEP, ACT_RESTART, ACT_SHUTDOWN, ACT_USB_STORAGE};
+    const char *titles[] = {"浅休眠", "重新启动", "关机", "USB 读卡器"};
+    for (unsigned i = 0; i < ARRAY_SIZE(modes); i++)
+        if (power.modes & modes[i]) {
+            lv_obj_t *control =
+                button(body, titles[i], 17, y, 286, power_height, 0x252d22, actions[i]);
+            y += power_height + power_gap;
+            lv_obj_add_flag(control, LV_OBJ_FLAG_PRESS_LOCK);
+            lv_obj_add_event_cb(control, power_button_guard, LV_EVENT_ALL | LV_EVENT_PREPROCESS,
+                                &power_button_strokes[i + 2]);
+        }
+    if (!power.modes)
+        text(body, "暂无可配置的电源选项", 17, y, 286, DIM, 16, 160);
+    lv_obj_t *settings = button(body, NULL, 273, 413, 30, 27, 0x252d22, ACT_SYSTEM);
+    icon(settings, ICON_SETTINGS, 6, 4, 18, ACCENT);
 }
+
 static void build_files(void)
 {
- text(body,"LOCAL STORAGE",17,15,280,DIM,16,128);
- text(body,"文件",17,38,286,FG,20,320);
- text(body,aster_service_storage_mounted()?"SD 卡 /SD:":"SD 卡未挂载",17,85,286,DIM,16,256);
- lv_obj_t *list=box(body,17,125,286,295,0x191d1a,12);
- lv_obj_add_flag(list,LV_OBJ_FLAG_SCROLLABLE);lv_obj_set_scroll_dir(list,LV_DIR_VER);
- aster_os_dir_t d;aster_os_dir_init(&d);int row=0;
- if(!aster_os_dir_open(&d,"/SD:")) {
-  aster_os_entry_t ent;
-  while(row<24 && !aster_os_dir_read(&d,&ent) && ent.name[0]) {
-   char line[sizeof(ent.name)+16];snprintf(line,sizeof(line),"%s  %s",ent.type==ASTER_OS_DIRECTORY?"+":"·",ent.name);
-   text(list,line,12,12+row++*32,262,FG,16,220);
-  }
-  aster_os_dir_close(&d);
- }
- if(!row) text(list,"没有可读取的文件。",12,18,262,DIM,16,220);
+    text(body, "LOCAL STORAGE", 17, 15, 280, DIM, 16, 128);
+    text(body, "文件", 17, 38, 286, FG, 20, 320);
+    text(body, aster_service_storage_mounted() ? "SD 卡 /SD:" : "SD 卡未挂载", 17, 85, 286, DIM, 16,
+         256);
+    lv_obj_t *list = box(body, 17, 125, 286, 295, 0x191d1a, 12);
+    lv_obj_add_flag(list, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(list, LV_DIR_VER);
+    aster_os_dir_t d;
+    aster_os_dir_init(&d);
+    int row = 0;
+    if (!aster_os_dir_open(&d, "/SD:")) {
+        aster_os_entry_t ent;
+        while (row < 24 && !aster_os_dir_read(&d, &ent) && ent.name[0]) {
+            char line[sizeof(ent.name) + 16];
+            snprintf(line, sizeof(line), "%s  %s", ent.type == ASTER_OS_DIRECTORY ? "+" : "·",
+                     ent.name);
+            text(list, line, 12, 12 + row++ * 32, 262, FG, 16, 220);
+        }
+        aster_os_dir_close(&d);
+    }
+    if (!row)
+        text(list, "没有可读取的文件。", 12, 18, 262, DIM, 16, 220);
 }
+
 static void build_system(void)
 {
- aster_system_info_t profile={0};(void)aster_service_system_info(&profile);
- text(body,"SYSTEM / ASTER",17,15,280,DIM,16,128);
- text(body,"设备与运行状态",17,38,286,FG,20,280);
- char info[480];
- snprintf(info,sizeof(info),"%s\n\n显示   %u × %u\nABI     %u.%u.%u\n应用   %d 个已安装\nSD       %s\n运行   %llu 秒\n\n启动与错误日志通过 USB shell 查看。",profile.board,(unsigned)aster_ui_lvgl_width(),(unsigned)aster_ui_lvgl_height(),(unsigned)(profile.abi_version>>16),(unsigned)((profile.abi_version>>8)&255),(unsigned)(profile.abi_version&255),aster_service_app_count(),aster_service_storage_mounted()?"已挂载":"未挂载",(unsigned long long)(aster_os_uptime_ms()/1000));
- text(body,info,17,100,286,FG,16,256);
+    aster_system_info_t profile = {0};
+    (void)aster_service_system_info(&profile);
+    text(body, "SYSTEM / ASTER", 17, 15, 280, DIM, 16, 128);
+    text(body, "设备与运行状态", 17, 38, 286, FG, 20, 280);
+    char info[480];
+    snprintf(
+        info, sizeof(info),
+        "%s\n\n显示   %u × %u\nABI     %u.%u.%u\n应用   %d 个已安装\nSD       %s\n运行   %llu 秒\n\n启动与错误日志通过 USB shell 查看。",
+        profile.board, (unsigned)aster_ui_lvgl_width(), (unsigned)aster_ui_lvgl_height(),
+        (unsigned)(profile.abi_version >> 16), (unsigned)((profile.abi_version >> 8) & 255),
+        (unsigned)(profile.abi_version & 255), aster_service_app_count(),
+        aster_service_storage_mounted() ? "已挂载" : "未挂载",
+        (unsigned long long)(aster_os_uptime_ms() / 1000));
+    text(body, info, 17, 100, 286, FG, 16, 256);
 }
+
 static void show_page(int next)
 {
- ribbon_cache_clear();
- /* Desktop pages share one cache owner; keep hot glyphs until APP entry. */
- if(next!=HOME) {animating=false;coasting=false;phase=selected[group]*1000;pull=0;}
- for(int i=0;i<RIBBONS;i++) {ribbons[i].obj=NULL;ribbons[i].entry=-1;}
- if(body) lv_obj_delete(body);
- for(int i=0;i<RIBBONS;i++) release_icon(i);
- stage=description=position=pull_label=handle=filter_label=wifi_state=clock_value=clock_date=power_label=timeout_button=NULL;
- page=next;body=box(root,0,40,320,440,next==HOME?BG:0x181b18,0);
- lv_obj_t *brand=lv_obj_get_child(root,0);
- /* Top bar is independent of page destruction. */
- lv_obj_t *back=lv_obj_get_child(brand,0),*name=lv_obj_get_child(brand,1),*mark=lv_obj_get_child(brand,2);
- if(next==HOME) {lv_obj_add_flag(back,LV_OBJ_FLAG_HIDDEN);lv_obj_clear_flag(name,LV_OBJ_FLAG_HIDDEN);lv_obj_clear_flag(mark,LV_OBJ_FLAG_HIDDEN);}
- else {lv_obj_clear_flag(back,LV_OBJ_FLAG_HIDDEN);lv_obj_add_flag(name,LV_OBJ_FLAG_HIDDEN);lv_obj_add_flag(mark,LV_OBJ_FLAG_HIDDEN);}
- if(next==HOME) build_home();else if(next==FILTERS) build_filters();
- else if(next==MIXER) build_mixer();else if(next==FILES) build_files();
- else if(next==SYSTEM) build_system();else {
-  text(body,"A MOMENT / CLOCK",17,15,286,DIM,16,128);
-  clock_value=text(body,"--:--",47,130,256,FG,20,640);
-  clock_date=text(body,"",47,230,256,DIM,16,256);
- }
- clock_sec=UINT64_MAX;lv_obj_invalidate(root);
+    ribbon_cache_clear();
+    /* Desktop pages share one cache owner; keep hot glyphs until APP entry. */
+    if (next != HOME) {
+        animating = false;
+        coasting = false;
+        phase = selected[group] * 1000;
+        pull = 0;
+    }
+    for (int i = 0; i < RIBBONS; i++) {
+        ribbons[i].obj = NULL;
+        ribbons[i].entry = -1;
+    }
+    if (body)
+        lv_obj_delete(body);
+    for (int i = 0; i < RIBBONS; i++)
+        release_icon(i);
+    stage = description = position = pull_label = handle = filter_label = wifi_state = clock_value =
+        clock_date = power_label = timeout_button = NULL;
+    page = next;
+    body = box(root, 0, 40, 320, 440, next == HOME ? BG : 0x181b18, 0);
+    lv_obj_t *brand = lv_obj_get_child(root, 0);
+    /* Top bar is independent of page destruction. */
+    lv_obj_t *back = lv_obj_get_child(brand, 0), *name = lv_obj_get_child(brand, 1),
+             *mark = lv_obj_get_child(brand, 2);
+    if (next == HOME) {
+        lv_obj_add_flag(back, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(name, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(mark, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_clear_flag(back, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(name, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(mark, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (next == HOME)
+        build_home();
+    else if (next == FILTERS)
+        build_filters();
+    else if (next == MIXER)
+        build_mixer();
+    else if (next == FILES)
+        build_files();
+    else if (next == SYSTEM)
+        build_system();
+    else {
+        text(body, "A MOMENT / CLOCK", 17, 15, 286, DIM, 16, 128);
+        clock_value = text(body, "--:--", 47, 130, 256, FG, 20, 640);
+        clock_date = text(body, "", 47, 230, 256, DIM, 16, 256);
+    }
+    clock_sec = UINT64_MAX;
+    lv_obj_invalidate(root);
 }
+
 static void open_current(void)
 {
- entry_t *e=current();if(!e) return;
- if(e->builtin) {prior_page=HOME;show_page(e->builtin);return;}
- int err=aster_service_app_start(e->id);
- aster_service_logf(3,"flux: launch %s -> %d",e->id,err);
- if(err) {launching=false;pull=0;notify("应用启动失败，请查看日志。 ");redraw();}
+    entry_t *e = current();
+    if (!e)
+        return;
+    if (e->builtin) {
+        prior_page = HOME;
+        show_page(e->builtin);
+        return;
+    }
+    int err = aster_service_app_start(e->id);
+    aster_service_logf(3, "flux: launch %s -> %d", e->id, err);
+    if (err) {
+        launching = false;
+        pull = 0;
+        notify("应用启动失败，请查看日志。 ");
+        redraw();
+    }
 }
+
 static void removal(void)
 {
- entry_t *e=current();if(!e || e->builtin) return;
- snprintf(remove_id,sizeof(remove_id),"%s",e->id);snprintf(remove_name,sizeof(remove_name),"%s",e->name);
- modal=box(root,0,0,320,480,0x000000,0);lv_obj_set_style_bg_opa(modal,LV_OPA_70,0);
- lv_obj_add_flag(modal,LV_OBJ_FLAG_CLICKABLE);
- lv_obj_t *card=box(modal,17,113,286,252,0x242a20,17);
- text(card,"卸载应用",16,18,254,ACCENT,20,256);
- text(card,remove_name,16,62,254,FG,20,256);
- text(card,"应用和目录数据将删除。\n此操作无法撤销。",16,108,254,DIM,16,230);
- button(card,"取消",16,190,118,43,0x343e2b,ACT_CANCEL);
- button(card,"卸载",151,190,118,43,0x5d3933,ACT_UNINSTALL);
- aster_service_logf(3,"flux: uninstall prompt %s",remove_id);
+    entry_t *e = current();
+    if (!e || e->builtin)
+        return;
+    snprintf(remove_id, sizeof(remove_id), "%s", e->id);
+    snprintf(remove_name, sizeof(remove_name), "%s", e->name);
+    modal = box(root, 0, 0, 320, 480, 0x000000, 0);
+    lv_obj_set_style_bg_opa(modal, LV_OPA_70, 0);
+    lv_obj_add_flag(modal, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_t *card = box(modal, 17, 113, 286, 252, 0x242a20, 17);
+    text(card, "卸载应用", 16, 18, 254, ACCENT, 20, 256);
+    text(card, remove_name, 16, 62, 254, FG, 20, 256);
+    text(card, "应用和目录数据将删除。\n此操作无法撤销。", 16, 108, 254, DIM, 16, 230);
+    button(card, "取消", 16, 190, 118, 43, 0x343e2b, ACT_CANCEL);
+    button(card, "卸载", 151, 190, 118, 43, 0x5d3933, ACT_UNINSTALL);
+    aster_service_logf(3, "flux: uninstall prompt %s", remove_id);
 }
-static int ribbon_hit(int x,int y)
+
+static int ribbon_hit(int x, int y)
 {
- int found=-1,best=INT32_MAX;
- for(int k=0;k<RIBBONS;k++) {
-  lv_obj_t *o=ribbons[k].obj;
-  if(!o || !ribbons[k].art || lv_obj_has_flag(o,LV_OBJ_FLAG_HIDDEN)) continue;
-  lv_area_t area;lv_obj_get_coords(o,&area);
-  int bw=ribbons[k].art->header.w,bh=ribbons[k].art->header.h;
-  lv_point_t p={x-area.x1,y-area.y1},pivot={bw/2,bh/2};
-  int zx=lv_image_get_scale_x(o),zy=lv_image_get_scale_y(o);
-  if(zx<1 || zy<1) continue;
-  lv_point_transform(&p,-lv_image_get_rotation(o),65536/zx,65536/zy,&pivot,false);
-  if(p.x<0 || p.x>=bw || p.y<0 || p.y>=bh) continue;
-  for(int i=0;i<count;i++) if(ids[i]==ribbons[k].entry) {
-   int d=abs(distance(i,phase,count));
-   if(d<best) {best=d;found=i;}
-  }
- }
- return found;
+    int found = -1, best = INT32_MAX;
+    for (int k = 0; k < RIBBONS; k++) {
+        lv_obj_t *o = ribbons[k].obj;
+        if (!o || !ribbons[k].art || lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN))
+            continue;
+        lv_area_t area;
+        lv_obj_get_coords(o, &area);
+        int bw = ribbons[k].art->header.w, bh = ribbons[k].art->header.h;
+        lv_point_t p = {x - area.x1, y - area.y1}, pivot = {bw / 2, bh / 2};
+        int zx = lv_image_get_scale_x(o), zy = lv_image_get_scale_y(o);
+        if (zx < 1 || zy < 1)
+            continue;
+        lv_point_transform(&p, -lv_image_get_rotation(o), 65536 / zx, 65536 / zy, &pivot, false);
+        if (p.x < 0 || p.x >= bw || p.y < 0 || p.y >= bh)
+            continue;
+        for (int i = 0; i < count; i++)
+            if (ids[i] == ribbons[k].entry) {
+                int d = abs(distance(i, phase, count));
+                if (d < best) {
+                    best = d;
+                    found = i;
+                }
+            }
+    }
+    return found;
 }
+
 /* Reuse the physical edge thresholds: top pull opens the mixer; bottom
  * pull closes it. Slider strokes start outside the bottom band. Claiming a
  * pull suppresses widget clicks; the launcher never maps it to APP exit. */
 static bool header_touch(const aster_touch_evt_t *raw)
 {
- bool pressed=raw->action!=ASTER_TOUCH_UP;
- bool enabled=visible && !modal && !aster_wifi_settings_is_open() && !aster_bluetooth_settings_is_open() &&
-              !aster_qpanel_is_open() && !launching;
- uint32_t allow=page==MIXER?0:ASTER_GEST_ALLOW_PANEL;
- aster_gest_t g=aster_gesture_feed(raw->x,raw->y,pressed,enabled?allow:0,view_h);
- if(!enabled || (page==MIXER?g!=ASTER_GEST_PANEL_UP:g!=ASTER_GEST_PANEL_DOWN)) return false;
- aster_ui_lvgl_pointer(raw->x,raw->y,pressed);
- lv_indev_wait_release(aster_ui_lvgl_indev());
- memset(&drag,0,sizeof(drag));
- action=ACT_MIXER;
- return true;
+    bool pressed = raw->action != ASTER_TOUCH_UP;
+    bool enabled = visible && !modal && !aster_wifi_settings_is_open() &&
+                   !aster_bluetooth_settings_is_open() && !aster_qpanel_is_open() && !launching;
+    uint32_t allow = page == MIXER ? 0 : ASTER_GEST_ALLOW_PANEL;
+    aster_gest_t g = aster_gesture_feed(raw->x, raw->y, pressed, enabled ? allow : 0, view_h);
+    if (!enabled || (page == MIXER ? g != ASTER_GEST_PANEL_UP : g != ASTER_GEST_PANEL_DOWN))
+        return false;
+    aster_ui_lvgl_pointer(raw->x, raw->y, pressed);
+    lv_indev_wait_release(aster_ui_lvgl_indev());
+    memset(&drag, 0, sizeof(drag));
+    action = ACT_MIXER;
+    return true;
 }
+
 static void touch(const aster_touch_evt_t *raw)
 {
- if(header_touch(raw)) return;
- aster_touch_evt_t mapped=*raw;
- to_design(&mapped.x,&mapped.y);
- const aster_touch_evt_t *e=&mapped;
- bool pressed=e->action!=ASTER_TOUCH_UP;
- bool owned=visible && page==HOME && !modal && !aster_wifi_settings_is_open() && !aster_bluetooth_settings_is_open();
- if(e->action==ASTER_TOUCH_DOWN) {
-  memset(&drag,0,sizeof(drag));
-  if(owned && ((e->y>=93 && e->y<373) || (e->y>=404 && e->y<=447))) {
-   aster_ui_lvgl_pointer(raw->x,raw->y,false);
-   drag.down=true;drag.handle=e->y>=404;drag.x=e->x;drag.y=e->y;
-   drag.hit=drag.handle?-1:ribbon_hit(raw->x,raw->y);
-   drag.stopped=animating && !drag.handle;
-   drag.base=phase;drag.started=aster_os_uptime_ms();animating=false;coasting=false;
-   selected[group]=wrap(nearest(phase),count);caption();
-   flux_velocity_reset(&drag.track,e->y,drag.started);
-  }
- }
- if(!drag.down) {
-  aster_ui_lvgl_pointer(raw->x,raw->y,pressed);
-  /* Consume every mixer input edge before the next sample overwrites the
+    if (header_touch(raw))
+        return;
+    aster_touch_evt_t mapped = *raw;
+    to_design(&mapped.x, &mapped.y);
+    const aster_touch_evt_t *e = &mapped;
+    bool pressed = e->action != ASTER_TOUCH_UP;
+    bool owned = visible && page == HOME && !modal && !aster_wifi_settings_is_open() &&
+                 !aster_bluetooth_settings_is_open();
+    if (e->action == ASTER_TOUCH_DOWN) {
+        memset(&drag, 0, sizeof(drag));
+        if (owned && ((e->y >= 93 && e->y < 373) || (e->y >= 404 && e->y <= 447))) {
+            aster_ui_lvgl_pointer(raw->x, raw->y, false);
+            drag.down = true;
+            drag.handle = e->y >= 404;
+            drag.x = e->x;
+            drag.y = e->y;
+            drag.hit = drag.handle ? -1 : ribbon_hit(raw->x, raw->y);
+            drag.stopped = animating && !drag.handle;
+            drag.base = phase;
+            drag.started = aster_os_uptime_ms();
+            animating = false;
+            coasting = false;
+            selected[group] = wrap(nearest(phase), count);
+            caption();
+            flux_velocity_reset(&drag.track, e->y, drag.started);
+        }
+    }
+    if (!drag.down) {
+        aster_ui_lvgl_pointer(raw->x, raw->y, pressed);
+        /* Consume every mixer input edge before the next sample overwrites the
    * platform pointer snapshot. Otherwise a fast/batched stroke can lose its
    * real DOWN position and appear to LVGL as a track tap on release. */
-  if(page==MIXER)lv_indev_read(aster_ui_lvgl_indev());
-  return;
- }
- int dx=(int)e->x-drag.x,dy=(int)e->y-drag.y;
- if(!drag.axis && dx*dx+dy*dy>36) {
-  drag.axis=drag.handle?1:abs(dy)>=6?2:3;drag.moved=true;
- }
- /* Horizontal jitter on a card cannot claim the launch gesture. */
- if(!drag.handle && drag.axis==3 && abs(dy)>=6) drag.axis=2;
- if(!drag.blocked) {
-  if(drag.axis==2) {
-   flux_velocity_sample(&drag.track,e->y,aster_os_uptime_ms());
-   phase=drag.base-dy*1000/FLUX_RIBBON_PITCH;
-   {int sel=wrap(nearest(phase),count);
-    if(sel!=selected[group]) {selected[group]=sel;caption();}}
-   draw_pending=true;
-  } else if(drag.axis==1 && pressed) {pull=CLAMP(dx,0,240);draw_pending=true;}
- }
- if(!pressed) {
-  if(!drag.blocked) {
-   if(drag.axis==2) {
-    release_scroll(aster_os_uptime_ms());
-   } else if(drag.handle && drag.axis==1 && dx>95 && abs(dy)<24) {
-    launching=true;animation_ms=aster_os_uptime_ms();from_pull=pull;
-   } else if(drag.moved || drag.stopped) settle(nearest(phase)*1000);
-   else if(aster_os_uptime_ms()-drag.started>300) settle(nearest(phase)*1000);
-   else if(drag.handle) action=ACT_OPEN;
-   else {
-    if(drag.hit>=0 && ribbon_hit(raw->x,raw->y)==drag.hit) {
-     if(drag.hit==selected[group]) action=ACT_OPEN;else settle(drag.hit*1000);
+        if (page == MIXER)
+            lv_indev_read(aster_ui_lvgl_indev());
+        return;
     }
-   }
-  }
-  drag.down=false;
- }
+    int dx = (int)e->x - drag.x, dy = (int)e->y - drag.y;
+    if (!drag.axis && dx * dx + dy * dy > 36) {
+        drag.axis = drag.handle ? 1 : abs(dy) >= 6 ? 2 : 3;
+        drag.moved = true;
+    }
+    /* Horizontal jitter on a card cannot claim the launch gesture. */
+    if (!drag.handle && drag.axis == 3 && abs(dy) >= 6)
+        drag.axis = 2;
+    if (!drag.blocked) {
+        if (drag.axis == 2) {
+            flux_velocity_sample(&drag.track, e->y, aster_os_uptime_ms());
+            phase = drag.base - dy * 1000 / FLUX_RIBBON_PITCH;
+            {
+                int sel = wrap(nearest(phase), count);
+                if (sel != selected[group]) {
+                    selected[group] = sel;
+                    caption();
+                }
+            }
+            draw_pending = true;
+        } else if (drag.axis == 1 && pressed) {
+            pull = CLAMP(dx, 0, 240);
+            draw_pending = true;
+        }
+    }
+    if (!pressed) {
+        if (!drag.blocked) {
+            if (drag.axis == 2) {
+                release_scroll(aster_os_uptime_ms());
+            } else if (drag.handle && drag.axis == 1 && dx > 95 && abs(dy) < 24) {
+                launching = true;
+                animation_ms = aster_os_uptime_ms();
+                from_pull = pull;
+            } else if (drag.moved || drag.stopped)
+                settle(nearest(phase) * 1000);
+            else if (aster_os_uptime_ms() - drag.started > 300)
+                settle(nearest(phase) * 1000);
+            else if (drag.handle)
+                action = ACT_OPEN;
+            else {
+                if (drag.hit >= 0 && ribbon_hit(raw->x, raw->y) == drag.hit) {
+                    if (drag.hit == selected[group])
+                        action = ACT_OPEN;
+                    else
+                        settle(drag.hit * 1000);
+                }
+            }
+        }
+        drag.down = false;
+    }
 }
+
 /* Geometry, rather than a font glyph: consistent even before SD fonts are
  * ready, with a real charge-level fill and a separate charging indicator. */
 static void battery_graphic_update(const aster_power_battery_t *battery)
 {
- if(!battery_body)return;
- bool present=battery&&(battery->flags&ASTER_POWER_BATTERY_PRESENT);
- if(!present){
-  lv_obj_add_flag(battery_body,LV_OBJ_FLAG_HIDDEN);
-  lv_obj_add_flag(battery_terminal,LV_OBJ_FLAG_HIDDEN);return;
- }
- lv_obj_remove_flag(battery_body,LV_OBJ_FLAG_HIDDEN);
- lv_obj_remove_flag(battery_terminal,LV_OBJ_FLAG_HIDDEN);
- bool valid=battery->flags&ASTER_POWER_PERCENT_VALID;
- bool charging=battery->flags&ASTER_POWER_CHARGING;
- uint32_t color=charging?ACCENT:valid&&battery->percent<=15?0xff927f:DIM;
- lv_obj_set_style_border_color(battery_body,lv_color_hex(color),0);
- lv_obj_set_style_bg_color(battery_terminal,lv_color_hex(color),0);
- lv_obj_set_style_bg_color(battery_fill,lv_color_hex(color),0);
- if(valid&&battery->percent){
-  lv_obj_set_width(battery_fill,MAX(1,ax(14)*(int)battery->percent/100));
-  lv_obj_remove_flag(battery_fill,LV_OBJ_FLAG_HIDDEN);
- }else lv_obj_add_flag(battery_fill,LV_OBJ_FLAG_HIDDEN);
- if(charging!=battery_charging){battery_charging=charging;lv_obj_invalidate(battery_body);}
+    if (!battery_body)
+        return;
+    bool present = battery && (battery->flags & ASTER_POWER_BATTERY_PRESENT);
+    if (!present) {
+        lv_obj_add_flag(battery_body, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(battery_terminal, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    lv_obj_remove_flag(battery_body, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(battery_terminal, LV_OBJ_FLAG_HIDDEN);
+    bool valid = battery->flags & ASTER_POWER_PERCENT_VALID;
+    bool charging = battery->flags & ASTER_POWER_CHARGING;
+    uint32_t color = charging ? ACCENT : valid && battery->percent <= 15 ? 0xff927f : DIM;
+    lv_obj_set_style_border_color(battery_body, lv_color_hex(color), 0);
+    lv_obj_set_style_bg_color(battery_terminal, lv_color_hex(color), 0);
+    lv_obj_set_style_bg_color(battery_fill, lv_color_hex(color), 0);
+    if (valid && battery->percent) {
+        lv_obj_set_width(battery_fill, MAX(1, ax(14) * (int)battery->percent / 100));
+        lv_obj_remove_flag(battery_fill, LV_OBJ_FLAG_HIDDEN);
+    } else
+        lv_obj_add_flag(battery_fill, LV_OBJ_FLAG_HIDDEN);
+    if (charging != battery_charging) {
+        battery_charging = charging;
+        lv_obj_invalidate(battery_body);
+    }
 }
+
 static void battery_graphic_draw(lv_event_t *event)
 {
- if(!battery_charging)return;
- lv_area_t a;lv_obj_get_coords(lv_event_get_target(event),&a);
- const int x[]={11,7,11,7},y[]={1,6,6,10};
- lv_draw_line_dsc_t line;lv_draw_line_dsc_init(&line);
- line.color=lv_color_hex(0xffa347);line.width=MAX(1,as(2));
- for(unsigned i=1;i<4;i++){
-  line.p1=(lv_point_precise_t){a.x1+ax(x[i-1]),a.y1+ay(y[i-1])};
-  line.p2=(lv_point_precise_t){a.x1+ax(x[i]),a.y1+ay(y[i])};
-  lv_draw_line(lv_event_get_layer(event),&line);
- }
+    if (!battery_charging)
+        return;
+    lv_area_t a;
+    lv_obj_get_coords(lv_event_get_target(event), &a);
+    const int x[] = {11, 7, 11, 7}, y[] = {1, 6, 6, 10};
+    lv_draw_line_dsc_t line;
+    lv_draw_line_dsc_init(&line);
+    line.color = lv_color_hex(0xffa347);
+    line.width = MAX(1, as(2));
+    for (unsigned i = 1; i < 4; i++) {
+        line.p1 = (lv_point_precise_t){a.x1 + ax(x[i - 1]), a.y1 + ay(y[i - 1])};
+        line.p2 = (lv_point_precise_t){a.x1 + ax(x[i]), a.y1 + ay(y[i])};
+        lv_draw_line(lv_event_get_layer(event), &line);
+    }
 }
+
 static void battery_graphic_create(lv_obj_t *group)
 {
- lv_obj_t *graphic=box(group,0,0,20,13,BG,0);
- lv_obj_align(graphic,LV_ALIGN_RIGHT_MID,0,0);
- battery_body=box(graphic,0,0,18,13,BG,2);
- lv_obj_set_style_border_width(battery_body,MAX(1,as(1)),0);
- lv_obj_set_style_border_opa(battery_body,LV_OPA_COVER,0);
- battery_fill=box(battery_body,1,1,14,9,DIM,1);
- battery_terminal=box(graphic,18,4,2,5,DIM,1);
- battery_charging=false;
- lv_obj_add_event_cb(battery_body,battery_graphic_draw,LV_EVENT_DRAW_POST,NULL);
- battery_graphic_update(NULL);
+    lv_obj_t *graphic = box(group, 0, 0, 20, 13, BG, 0);
+    lv_obj_align(graphic, LV_ALIGN_RIGHT_MID, 0, 0);
+    battery_body = box(graphic, 0, 0, 18, 13, BG, 2);
+    lv_obj_set_style_border_width(battery_body, MAX(1, as(1)), 0);
+    lv_obj_set_style_border_opa(battery_body, LV_OPA_COVER, 0);
+    battery_fill = box(battery_body, 1, 1, 14, 9, DIM, 1);
+    battery_terminal = box(graphic, 18, 4, 2, 5, DIM, 1);
+    battery_charging = false;
+    lv_obj_add_event_cb(battery_body, battery_graphic_draw, LV_EVENT_DRAW_POST, NULL);
+    battery_graphic_update(NULL);
 }
+
 static void tick_clock(void)
 {
- uint64_t sec=aster_os_uptime_ms()/1000;if(sec==clock_sec) return;clock_sec=sec;
- aster_time_info_t t={0};char value[48];
- if(!aster_os_wall_clock(&t)) snprintf(value,sizeof(value),"%02u:%02u",(unsigned)t.hour,(unsigned)t.minute);
- else snprintf(value,sizeof(value),"--:--");
- set_text(bar_time,value);set_text(clock_value,value);
- snprintf(value,sizeof(value),"%04d-%02u-%02u%s",(int)t.year,(unsigned)t.month,(unsigned)t.day,(t.flags&ASTER_TIME_FLAG_SYNCED)?"":" · 默认时间");set_text(clock_date,value);
- aster_power_battery_t battery;
- if(!aster_power_battery(&battery)){
-  char short_text[24],long_text[80];
-  if(battery.flags&ASTER_POWER_PERCENT_VALID){
-   snprintf(short_text,sizeof(short_text),"%u%%",(unsigned)battery.percent);
-   snprintf(long_text,sizeof(long_text),"电量 %u%% · %s",(unsigned)battery.percent,
-    battery.flags&ASTER_POWER_CHARGING?"正在充电":battery.flags&ASTER_POWER_EXTERNAL_PRESENT?"外部供电":"电池供电");
-  }else{
-   snprintf(short_text,sizeof(short_text),"%s",battery.flags&ASTER_POWER_EXTERNAL_PRESENT?"USB":"--");
-   snprintf(long_text,sizeof(long_text),"%s",battery.flags&ASTER_POWER_BATTERY_PRESENT?"电池电量暂不可用":battery.flags&ASTER_POWER_EXTERNAL_PRESENT?"USB 供电 · 未检测到电池":"未检测到电池");
-  }
-  battery_graphic_update(&battery);
-  set_text(battery_label,short_text);set_text(power_label,long_text);
- }else{battery_graphic_update(NULL);set_text(battery_label,"");set_text(power_label,"设备未提供电池状态");}
- if(wifi_state) {
-  aster_wifi_status_t s={0};int err=aster_device_wifi_status(&s);
-  set_text(wifi_state,err || !s.ip[0]?"未连接":"已连接");
- }
+    uint64_t sec = aster_os_uptime_ms() / 1000;
+    if (sec == clock_sec)
+        return;
+    clock_sec = sec;
+    aster_time_info_t t = {0};
+    char value[48];
+    if (!aster_os_wall_clock(&t))
+        snprintf(value, sizeof(value), "%02u:%02u", (unsigned)t.hour, (unsigned)t.minute);
+    else
+        snprintf(value, sizeof(value), "--:--");
+    set_text(bar_time, value);
+    set_text(clock_value, value);
+    snprintf(value, sizeof(value), "%04d-%02u-%02u%s", (int)t.year, (unsigned)t.month,
+             (unsigned)t.day, (t.flags & ASTER_TIME_FLAG_SYNCED) ? "" : " · 默认时间");
+    set_text(clock_date, value);
+    aster_power_battery_t battery;
+    if (!aster_power_battery(&battery)) {
+        char short_text[24], long_text[80];
+        if (battery.flags & ASTER_POWER_PERCENT_VALID) {
+            snprintf(short_text, sizeof(short_text), "%u%%", (unsigned)battery.percent);
+            snprintf(long_text, sizeof(long_text), "电量 %u%% · %s", (unsigned)battery.percent,
+                     battery.flags & ASTER_POWER_CHARGING           ? "正在充电"
+                     : battery.flags & ASTER_POWER_EXTERNAL_PRESENT ? "外部供电"
+                                                                    : "电池供电");
+        } else {
+            snprintf(short_text, sizeof(short_text), "%s",
+                     battery.flags & ASTER_POWER_EXTERNAL_PRESENT ? "USB" : "--");
+            snprintf(long_text, sizeof(long_text), "%s",
+                     battery.flags & ASTER_POWER_BATTERY_PRESENT ? "电池电量暂不可用"
+                     : battery.flags & ASTER_POWER_EXTERNAL_PRESENT ? "USB 供电 · 未检测到电池"
+                                                                    : "未检测到电池");
+        }
+        battery_graphic_update(&battery);
+        set_text(battery_label, short_text);
+        set_text(power_label, long_text);
+    } else {
+        battery_graphic_update(NULL);
+        set_text(battery_label, "");
+        set_text(power_label, "设备未提供电池状态");
+    }
+    if (wifi_state) {
+        aster_wifi_status_t s = {0};
+        int err = aster_device_wifi_status(&s);
+        set_text(wifi_state, err || !s.ip[0] ? "未连接" : "已连接");
+    }
 }
+
 static void palette(aster_qpanel_palette_t *p)
-{ *p=(aster_qpanel_palette_t){.bg=0x181b18,.fg=FG,.dim=DIM,.surface=0x252d22,.accent=ACCENT}; }
-static const aster_qpanel_theme_ops_t theme={.palette=palette};
+{
+    *p = (aster_qpanel_palette_t){
+        .bg = 0x181b18, .fg = FG, .dim = DIM, .surface = 0x252d22, .accent = ACCENT};
+}
+
+static const aster_qpanel_theme_ops_t theme = {.palette = palette};
+
 int aster_launcher_init(void)
 {
- if(initialized) return 0;
- initialized=true;
- aster_power_default_init();aster_power_seal();
- size_t timeout_bytes=0;uint8_t saved_timeout=0;
- if(!aster_service_kv_get(KV_ID,"screen-timeout",&saved_timeout,1,&timeout_bytes)&&timeout_bytes==1&&saved_timeout<ARRAY_SIZE(screen_timeouts))timeout_index=saved_timeout;
- aster_power_idle_init(&power_idle,aster_os_uptime_ms(),screen_timeouts[timeout_index],230);
- aster_touch_ui_reset(&launcher_touch_ui);
- for(size_t face=0;face<ARRAY_SIZE(flux_icon_sizes);face++) for(size_t i=0;i<ARRAY_SIZE(chrome[face]);i++) {
-  unsigned px=flux_icon_sizes[face];
-  chrome[face][i]=(lv_image_dsc_t){.header={.magic=LV_IMAGE_HEADER_MAGIC,.cf=LV_COLOR_FORMAT_A8,.w=px,.h=px,.stride=px},.data_size=px*px,.data=flux_icon_data[face][i]};
- }
- for(int i=0;i<RIBBONS;i++) ribbons[i].entry=-1;
- aster_service_registry_callback(aster_launcher_on_registry_change);aster_qpanel_bind_theme(&theme);
- uint8_t s[8];size_t n=0;
- if(!aster_service_kv_get(KV_ID,"state",s,sizeof(s),&n) && n==sizeof(s)) {
-  group=MIN(s[0],3);for(int i=0;i<4;i++) selected[i]=s[i+1];brightness=CLAMP(s[5],25,100);motion=s[6]!=0;quiet=s[7]!=0;
- }
- power_idle.brightness=(uint8_t)(brightness*255/100);
- return 0;
+    if (initialized)
+        return 0;
+    initialized = true;
+    aster_power_default_init();
+    aster_power_seal();
+    size_t timeout_bytes = 0;
+    uint8_t saved_timeout = 0;
+    if (!aster_service_kv_get(KV_ID, "screen-timeout", &saved_timeout, 1, &timeout_bytes) &&
+        timeout_bytes == 1 && saved_timeout < ARRAY_SIZE(screen_timeouts))
+        timeout_index = saved_timeout;
+    aster_power_idle_init(&power_idle, aster_os_uptime_ms(), screen_timeouts[timeout_index], 230);
+    aster_touch_ui_reset(&launcher_touch_ui);
+    for (size_t face = 0; face < ARRAY_SIZE(flux_icon_sizes); face++)
+        for (size_t i = 0; i < ARRAY_SIZE(chrome[face]); i++) {
+            unsigned px = flux_icon_sizes[face];
+            chrome[face][i] = (lv_image_dsc_t){.header = {.magic = LV_IMAGE_HEADER_MAGIC,
+                                                          .cf = LV_COLOR_FORMAT_A8,
+                                                          .w = px,
+                                                          .h = px,
+                                                          .stride = px},
+                                               .data_size = px * px,
+                                               .data = flux_icon_data[face][i]};
+        }
+    for (int i = 0; i < RIBBONS; i++)
+        ribbons[i].entry = -1;
+    aster_service_registry_callback(aster_launcher_on_registry_change);
+    aster_qpanel_bind_theme(&theme);
+    uint8_t s[8];
+    size_t n = 0;
+    if (!aster_service_kv_get(KV_ID, "state", s, sizeof(s), &n) && n == sizeof(s)) {
+        group = MIN(s[0], 3);
+        for (int i = 0; i < 4; i++)
+            selected[i] = s[i + 1];
+        brightness = CLAMP(s[5], 25, 100);
+        motion = s[6] != 0;
+        quiet = s[7] != 0;
+    }
+    power_idle.brightness = (uint8_t)(brightness * 255 / 100);
+    return 0;
 }
+
 void aster_launcher_show(void)
 {
- if(visible || !aster_ui_lvgl_screen()) return;
- aster_launcher_init();aster_touch_ui_reset(&launcher_touch_ui);aster_qpanel_force_close();aster_gesture_reset();
- if(aster_device_display_orientation_get()!=ASTER_ORIENT_PORTRAIT) (void)aster_device_display_orientation_set(ASTER_ORIENT_PORTRAIT);
- aster_ui_lvgl_resync_window();
- view_w=(int)aster_ui_lvgl_width();view_h=(int)aster_ui_lvgl_height();
- if(view_w<1) view_w=320;
- if(view_h<1) view_h=480;
- aster_ui_fonts_prepare(view_w,view_h,"流光");
- lv_obj_clean(aster_ui_lvgl_screen());
- aster_ui_lvgl_pointer(0,0,0);lv_indev_reset(aster_ui_lvgl_indev(),NULL);
- read_entries();filter_entries();warm_visible_text();visible=true;dirty=false;launching=false;memset(&drag,0,sizeof(drag));
- root=box(aster_ui_lvgl_screen(),0,0,320,480,BG,0);
- lv_obj_t *bar=box(root,0,0,320,40,BG,0);
- lv_obj_t *back=button(bar,NULL,10,5,75,29,BG,ACT_BACK);
- icon(back,ICON_LEFT,9,7,14,FG);
- text(back,"收回",29,6,40,FG,16,256);
- lv_obj_set_style_bg_opa(back,LV_OPA_TRANSP,0);
- bool lckfb=(view_w<320);
- lv_obj_t *brand_name=text(bar,"aster",lckfb?36:32,lckfb?0:11,105,0xd4e6b2,16,lckfb?288:192);
- lv_obj_t *brand_mark=icon(bar,ICON_ASTER,15,lckfb?0:13,lckfb?18:12,0xd4e6b2);
- if(lckfb) {
-  lv_obj_align(brand_name,LV_ALIGN_LEFT_MID,ax(36),0);
-  lv_obj_align(brand_mark,LV_ALIGN_LEFT_MID,ax(15),0);
- }
- /* A shared 40px-high group keeps the number and graphic centered together.
+    if (visible || !aster_ui_lvgl_screen())
+        return;
+    aster_launcher_init();
+    aster_touch_ui_reset(&launcher_touch_ui);
+    aster_qpanel_force_close();
+    aster_gesture_reset();
+    if (aster_device_display_orientation_get() != ASTER_ORIENT_PORTRAIT)
+        (void)aster_device_display_orientation_set(ASTER_ORIENT_PORTRAIT);
+    aster_ui_lvgl_resync_window();
+    view_w = (int)aster_ui_lvgl_width();
+    view_h = (int)aster_ui_lvgl_height();
+    if (view_w < 1)
+        view_w = 320;
+    if (view_h < 1)
+        view_h = 480;
+    aster_ui_fonts_prepare(view_w, view_h, "流光");
+    lv_obj_clean(aster_ui_lvgl_screen());
+    aster_ui_lvgl_pointer(0, 0, 0);
+    lv_indev_reset(aster_ui_lvgl_indev(), NULL);
+    read_entries();
+    filter_entries();
+    warm_visible_text();
+    visible = true;
+    dirty = false;
+    launching = false;
+    memset(&drag, 0, sizeof(drag));
+    root = box(aster_ui_lvgl_screen(), 0, 0, 320, 480, BG, 0);
+    lv_obj_t *bar = box(root, 0, 0, 320, 40, BG, 0);
+    lv_obj_t *back = button(bar, NULL, 10, 5, 75, 29, BG, ACT_BACK);
+    icon(back, ICON_LEFT, 9, 7, 14, FG);
+    text(back, "收回", 29, 6, 40, FG, 16, 256);
+    lv_obj_set_style_bg_opa(back, LV_OPA_TRANSP, 0);
+    bool lckfb = (view_w < 320);
+    lv_obj_t *brand_name =
+        text(bar, "aster", lckfb ? 36 : 32, lckfb ? 0 : 11, 105, 0xd4e6b2, 16, lckfb ? 288 : 192);
+    lv_obj_t *brand_mark = icon(bar, ICON_ASTER, 15, lckfb ? 0 : 13, lckfb ? 18 : 12, 0xd4e6b2);
+    if (lckfb) {
+        lv_obj_align(brand_name, LV_ALIGN_LEFT_MID, ax(36), 0);
+        lv_obj_align(brand_mark, LV_ALIGN_LEFT_MID, ax(15), 0);
+    }
+    /* A shared 40px-high group keeps the number and graphic centered together.
   * Right-aligned numbers retain a two-design-pixel gap for 1/2/3 digits. */
- lv_obj_t *battery_group=box(bar,269,0,49,40,BG,0);
- battery_label=text(battery_group,"",0,0,27,DIM,16,144);
- lv_obj_set_style_text_align(battery_label,LV_TEXT_ALIGN_RIGHT,0);
- lv_obj_align(battery_label,LV_ALIGN_LEFT_MID,0,0);
- battery_graphic_create(battery_group);
- bar_time=text(bar,"--:--",205,lckfb?0:14,60,DIM,16,lckfb?288:160);
- if(lckfb) {
-  lv_obj_align(bar_time,LV_ALIGN_LEFT_MID,ax(205),0);
- }
- body=NULL;show_page(HOME);tick_clock();
- aster_qpanel_restore_volume();brightness_pending=brightness;
- saved_volume=aster_device_audio_get_volume();
- if(quiet) volume_pending=0;
- sound_entry=current()?(int)(current()-entries):-1;sound_group=group;
- sound_phase=phase;sound_sample_ms=aster_os_uptime_ms();sound_launch_started=false;
- if(sound_return) {sound_pending=S_CLOSE;sound_return=false;}
- aster_service_logf(3,"FLUX Rev.04: 320x480, %d entries (%d installed)",entry_n,aster_service_app_count());
+    lv_obj_t *battery_group = box(bar, 269, 0, 49, 40, BG, 0);
+    battery_label = text(battery_group, "", 0, 0, 27, DIM, 16, 144);
+    lv_obj_set_style_text_align(battery_label, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_align(battery_label, LV_ALIGN_LEFT_MID, 0, 0);
+    battery_graphic_create(battery_group);
+    bar_time = text(bar, "--:--", 205, lckfb ? 0 : 14, 60, DIM, 16, lckfb ? 288 : 160);
+    if (lckfb) {
+        lv_obj_align(bar_time, LV_ALIGN_LEFT_MID, ax(205), 0);
+    }
+    body = NULL;
+    show_page(HOME);
+    tick_clock();
+    aster_qpanel_restore_volume();
+    brightness_pending = brightness;
+    saved_volume = aster_device_audio_get_volume();
+    if (quiet)
+        volume_pending = 0;
+    sound_entry = current() ? (int)(current() - entries) : -1;
+    sound_group = group;
+    sound_phase = phase;
+    sound_sample_ms = aster_os_uptime_ms();
+    sound_launch_started = false;
+    if (sound_return) {
+        sound_pending = S_CLOSE;
+        sound_return = false;
+    }
+    aster_service_logf(3, "FLUX Rev.04: 320x480, %d entries (%d installed)", entry_n,
+                       aster_service_app_count());
 }
+
 void aster_launcher_hide(void)
 {
- if(!visible) return;
- lv_indev_wait_release(aster_ui_lvgl_indev());
- aster_ui_lvgl_pointer(launcher_touch_x,launcher_touch_y,false);
- aster_touch_ui_reset(&launcher_touch_ui);
- aster_qpanel_force_close();save_now();aster_gesture_reset();
- aster_device_audio_ui_release();
- lv_obj_clean(aster_ui_lvgl_screen());
- for(int i=0;i<RIBBONS;i++) {release_icon(i);ribbons[i].obj=NULL;}
- ribbon_cache_clear();
- sound_return=true;
- root=body=stage=bar_time=battery_label=power_label=battery_body=battery_terminal=battery_fill=modal=toast=NULL;visible=false;hold_ms=0;clock_sec=UINT64_MAX;
+    if (!visible)
+        return;
+    lv_indev_wait_release(aster_ui_lvgl_indev());
+    aster_ui_lvgl_pointer(launcher_touch_x, launcher_touch_y, false);
+    aster_touch_ui_reset(&launcher_touch_ui);
+    aster_qpanel_force_close();
+    save_now();
+    aster_gesture_reset();
+    aster_device_audio_ui_release();
+    lv_obj_clean(aster_ui_lvgl_screen());
+    for (int i = 0; i < RIBBONS; i++) {
+        release_icon(i);
+        ribbons[i].obj = NULL;
+    }
+    ribbon_cache_clear();
+    sound_return = true;
+    root = body = stage = bar_time = battery_label = power_label = battery_body = battery_terminal =
+        battery_fill = modal = toast = NULL;
+    visible = false;
+    hold_ms = 0;
+    clock_sec = UINT64_MAX;
 }
-void aster_launcher_request_show(void) {want_show=true;}
-void aster_launcher_on_registry_change(void) {dirty=true;}
-void aster_launcher_show_page(int p) {want_page=p?FILTERS:HOME;}
-void aster_launcher_step_page(int dir) {if(visible && page==HOME) settle((selected[group]+(dir>0?1:-1))*1000);}
+
+void aster_launcher_request_show(void)
+{
+    want_show = true;
+}
+
+void aster_launcher_on_registry_change(void)
+{
+    dirty = true;
+}
+
+void aster_launcher_show_page(int p)
+{
+    want_page = p ? FILTERS : HOME;
+}
+
+void aster_launcher_step_page(int dir)
+{
+    if (visible && page == HOME)
+        settle((selected[group] + (dir > 0 ? 1 : -1)) * 1000);
+}
+
 uint32_t aster_launcher_idle_wait_ms(void)
 {
- if(power_idle.screen_off)return 25;
- return visible && (drag.down || animating || launching)?1:10;
+    if (power_idle.screen_off)
+        return 25;
+    return visible && (drag.down || animating || launching) ? 1 : 10;
 }
+
 void aster_launcher_pump_idle(void)
 {
- static bool boot_image_started;
- if(!aster_device_display_count()) return;
- if(!boot_image_started){
-  boot_image_started=true;
-  if(!visible)aster_splash_boot();
- }
+    static bool boot_image_started;
+    if (!aster_device_display_count())
+        return;
+    if (!boot_image_started) {
+        boot_image_started = true;
+        if (!visible)
+            aster_splash_boot();
+    }
 #if defined(CONFIG_ASTER_FIRST_BOOT)
- if(aster_setup_ui_tick()){aster_splash_tick();return;}
+    if (aster_setup_ui_tick()) {
+        aster_splash_tick();
+        return;
+    }
 #endif
- if(!power_idle.screen_off && aster_ui_fonts_poll() && aster_ui_lvgl_screen()) {
-  ribbon_cache_clear();
-  /* Rebaking during a flick is the hitch between cards. Glyphs that
+    if (!power_idle.screen_off && aster_ui_fonts_poll() && aster_ui_lvgl_screen()) {
+        ribbon_cache_clear();
+        /* Rebaking during a flick is the hitch between cards. Glyphs that
    * arrive mid-gesture wait until the ribbon has settled. */
-  if(stage && page==HOME && !drag.down && !animating && !launching) {
-   for(int i=0;i<RIBBONS;i++) ribbons[i].dirty_art=true;
-   redraw();
-  }
-  lv_obj_invalidate(aster_ui_lvgl_screen());
- }
- if(!visible && want_show) {
-  uint64_t now=aster_os_uptime_ms();if(!hold_ms) hold_ms=now?now:1;
-  /* Stay on the splash until the SD face can accept a warm, the installed
+        if (stage && page == HOME && !drag.down && !animating && !launching) {
+            for (int i = 0; i < RIBBONS; i++)
+                ribbons[i].dirty_art = true;
+            redraw();
+        }
+        lv_obj_invalidate(aster_ui_lvgl_screen());
+    }
+    if (!visible && want_show) {
+        uint64_t now = aster_os_uptime_ms();
+        if (!hold_ms)
+            hold_ms = now ? now : 1;
+        /* Stay on the splash until the SD face can accept a warm, the installed
    * names and descriptions have been queued, and those bitmaps have landed.
    * Marking the catalog warm before the face is READY used to skip the
    * animation entirely. */
-  if(!aster_font_sd_streaming() && aster_font_sd_get(ASTER_FONT_UI_PX) && !catalog_warmed) {
-   read_entries();catalog_warmed=1;
-  }
-  if(aster_splash_minimum_pending() ||
-     ((aster_font_sd_streaming() || !aster_font_sd_get(ASTER_FONT_UI_PX) ||
-       aster_font_sd_busy() || !catalog_warmed) && now-hold_ms<12000)) {
-   aster_splash_boot();aster_splash_tick();return;
-  }
-  aster_splash_off();aster_launcher_show();
- }
- if(!visible) return;
- if(dirty && !modal) {aster_launcher_hide();sound_return=false;aster_launcher_show();}
- aster_touch_evt_t events[ASTER_PLAT_TOUCH_EVENT_QUEUE];
- int n=aster_device_input_poll(events,ARRAY_SIZE(events));
- uint32_t masks[ASTER_PLAT_TOUCH_EVENT_QUEUE];
- for(int i=0;i<n;i++) masks[i]=events[i].contact_mask;
- aster_touch_ui_begin_batch(&launcher_touch_ui,masks,(uint8_t)n);
- for(int i=0;i<n;i++) {
-  if(aster_launcher_power_touch(events[i].contact_mask!=0))continue;
-  struct aster_touch_ui_decision ui=aster_touch_ui_accept(&launcher_touch_ui,(uint8_t)i,
-   events[i].action,events[i].slot,events[i].contact_mask);
-  if(ui.reset_gesture) {
-   aster_gesture_reset();memset(&drag,0,sizeof(drag));pull=0;
-  }
-  if(ui.release_pointer) {
-   lv_indev_wait_release(aster_ui_lvgl_indev());
-   aster_ui_lvgl_pointer(launcher_touch_x,launcher_touch_y,false);
-  }
-  if(ui.route) {
-   launcher_touch_x=events[i].x;launcher_touch_y=events[i].y;
-   touch(&events[i]);
-  }
- }
- aster_key_evt_t keys[ASTER_PLAT_MAX_KEYS];while(aster_device_input_keys_poll(keys,ASTER_PLAT_MAX_KEYS)>0) {}
- if(power_idle.screen_off){
-  aster_launcher_power_tick();
-  if(power_idle.screen_off)return;
- }
- uint64_t now=aster_os_uptime_ms();
- if(drag.down && !drag.moved && !drag.handle && !drag.blocked && now-drag.started>=650 && drag.hit==selected[group] && current() && !current()->builtin) {
-  drag.blocked=true;removal();
- }
- int a=action;action=ACT_NONE;
- if(a>=ACT_GROUP && a<ACT_GROUP+4) {group=a-ACT_GROUP;filter_entries();show_page(HOME);save();sound_pending=S_TUNE;}
- else if(a==ACT_BACK) {if(page==SYSTEM && prior_page==MIXER) {prior_page=HOME;show_page(MIXER);} else show_page(HOME);sound_pending=S_CLOSE;}
- else if(a==ACT_FILTERS) {show_page(FILTERS);sound_pending=S_TAP;}
- else if(a==ACT_MIXER) {prior_page=HOME;sound_pending=page==MIXER?S_CLOSE:S_TAP;show_page(page==MIXER?HOME:MIXER);}
- else if(a==ACT_PREV || a==ACT_NEXT) settle((selected[group]+(a==ACT_PREV?-1:1))*1000);
- else if(a==ACT_OPEN) {launching=true;animation_ms=now;from_pull=pull;}
- else if(a==ACT_SYSTEM) {prior_page=MIXER;show_page(SYSTEM);sound_pending=S_TAP;}
- else if(a==ACT_WIFI) {aster_wifi_settings_open(root,NULL);sound_pending=S_TAP;}
- else if(a==ACT_BT) {aster_bluetooth_settings_open(root,NULL);sound_pending=S_TAP;}
- else if(a==ACT_TIMEOUT){
-  timeout_index=(timeout_index+1)%ARRAY_SIZE(screen_timeouts);
-  power_idle.timeout_ms=screen_timeouts[timeout_index];save();
-  char title[64];snprintf(title,sizeof(title),"自动熄屏   %s",screen_timeout_names[timeout_index]);
-  if(timeout_button)set_text(lv_obj_get_child(timeout_button,0),title);
- }
- else if(a==ACT_SCREEN_OFF){
-  aster_power_caps_t caps={0};(void)aster_power_caps(&caps);
-  aster_power_request_t r={sizeof(r),ASTER_POWER_API_VERSION,ASTER_POWER_SCREEN_OFF,caps.screen_wake,0};
-  if(!aster_power_transition(&r,power_idle.brightness))power_idle.screen_off=true;
-  else notify("当前设备无法熄屏。");
- }
- else if(a==ACT_RESTART||a==ACT_SHUTDOWN||a==ACT_SLEEP||a==ACT_USB_STORAGE){
-  aster_power_request_t request={.size=sizeof(request),.version=ASTER_POWER_API_VERSION,
-   .mode=a==ACT_RESTART?ASTER_POWER_RESTART:a==ACT_SHUTDOWN?ASTER_POWER_SHUTDOWN:
-         a==ACT_USB_STORAGE?ASTER_POWER_USB_STORAGE:ASTER_POWER_LIGHT_SLEEP};
-  if(a==ACT_SLEEP){aster_power_caps_t caps={0};(void)aster_power_caps(&caps);request.wake_sources=caps.light_wake&(ASTER_WAKE_TOUCH|ASTER_WAKE_KEY);}
-  int r=aster_power_schedule(&request);if(r)notify("当前无法执行，请稍后再试。");
- }
- else if(a==ACT_QUIET) {
-  quiet=!quiet;
-  if(quiet) {saved_volume=aster_device_audio_get_volume();volume_pending=0;} else volume_pending=saved_volume;
-  if(quiet) aster_device_audio_ui_stop();else sound_pending=S_TAP;
-  show_page(MIXER);save();
- } else if(a==ACT_MOTION) {motion=!motion;save();sound_pending=S_TAP;}
- else if(a==ACT_CANCEL && modal) {lv_obj_delete(modal);modal=NULL;}
- else if(a==ACT_UNINSTALL && modal) {
-  char id[64];snprintf(id,sizeof(id),"%s",remove_id);lv_obj_delete(modal);modal=NULL;
-  int err=aster_service_app_uninstall(id);aster_service_logf(3,"flux: uninstall %s -> %d",id,err);
-  if(err) notify("卸载失败，请查看系统日志。");
- }
- if(want_page>=0) {int p=want_page;want_page=-1;show_page(p);}
- if(animating && now-last_draw>=FLUX_FRAME_MS) {
-  int ease=flux_scroll_ease(now-animation_ms,scroll_duration,coasting);
-  phase=from_phase+(target_phase-from_phase)*ease/1000;pull=from_pull*(1000-ease)/1000;
-  if(coasting) {
-   int index=wrap(nearest(phase),count);
-   if(index!=selected[group]) {selected[group]=index;caption();}
-  }
-  if(now-animation_ms>=scroll_duration) {
-   animating=false;coasting=false;selected[group]=wrap(nearest(target_phase),count);
-   phase=selected[group]*1000;pull=0;caption();save();
-  }
-  draw_pending=true;
- }
- if(!launching) sound_launch_started=false;
- if(launching && !sound_launch_started) {sound_pending=S_OPEN;sound_launch_started=true;}
- if(sound_pending>=0 && volume_pending<0) {sound_play(sound_pending,0);sound_pending=-1;}
- if(launching && page==HOME && now-last_draw>=FLUX_FRAME_MS) {
-  int t=motion?MIN(1000,(int)(now-animation_ms)*1000/350):1000;
-  pull=from_pull+(370-from_pull)*t/1000;redraw();
-  if(t==1000) {launching=false;pull=0;open_current();}
- }
- if(draw_pending) redraw();
- if(brightness_pending>=0) {
-  power_idle.brightness=brightness_pending*255/100;
-  if(!power_idle.screen_off)(void)aster_device_backlight_set(true,power_idle.brightness);
-  brightness_pending=-1;
- }
- if(volume_pending>=0) {
-  uint32_t since=aster_os_cycle_us();(void)aster_device_audio_set_volume(volume_pending);volume_pending=-1;
-  uint32_t elapsed=aster_os_cycle_us()-since;if(elapsed>slider_stats.max_set_us)slider_stats.max_set_us=elapsed;
- }
- if(volume_save) {
-  uint8_t value=CLAMP(aster_device_audio_get_volume(),0,100);
-  uint32_t since=aster_os_uptime32();
-  (void)aster_service_kv_set("aster.qpanel","volume",&value,1);volume_save=false;
-  uint32_t elapsed=aster_os_uptime32()-since;slider_stats.saves++;
-  if(elapsed>slider_stats.max_save_ms)slider_stats.max_save_ms=elapsed;
- }
- int sound_now=current()?(int)(current()-entries):-1;
- if(sound_pending>=0) {sound_play(sound_pending,0);sound_pending=-1;}
- else if(visible && page==HOME && !launching && sound_group==group && sound_now!=sound_entry) {
-  int speed=drag.down?drag.track.speed:
-   now>sound_sample_ms?(int)((int64_t)(phase-sound_phase)*FLUX_RIBBON_PITCH/(now-sound_sample_ms)):0;
-  sound_play(S_TICK,speed);
- }
- sound_entry=sound_now;sound_group=group;sound_phase=phase;sound_sample_ms=now;
- if(toast && now>=toast_until) {lv_obj_delete(toast);toast=NULL;}
- if(save_due && now>=save_due && !drag.down && !animating && !launching) save_now();
- if(!power_idle.screen_off){
-  tick_clock();aster_wifi_settings_tick();aster_qpanel_tick();
-  if(!power_idle.screen_off)aster_ui_lvgl_pump();
- }
+        if (!aster_font_sd_streaming() && aster_font_sd_get(ASTER_FONT_UI_PX) && !catalog_warmed) {
+            read_entries();
+            catalog_warmed = 1;
+        }
+        if (aster_splash_minimum_pending() ||
+            ((aster_font_sd_streaming() || !aster_font_sd_get(ASTER_FONT_UI_PX) ||
+              aster_font_sd_busy() || !catalog_warmed) &&
+             now - hold_ms < 12000)) {
+            aster_splash_boot();
+            aster_splash_tick();
+            return;
+        }
+        aster_splash_off();
+        aster_launcher_show();
+    }
+    if (!visible)
+        return;
+    if (dirty && !modal) {
+        aster_launcher_hide();
+        sound_return = false;
+        aster_launcher_show();
+    }
+    aster_touch_evt_t events[ASTER_PLAT_TOUCH_EVENT_QUEUE];
+    int n = aster_device_input_poll(events, ARRAY_SIZE(events));
+    uint32_t masks[ASTER_PLAT_TOUCH_EVENT_QUEUE];
+    for (int i = 0; i < n; i++)
+        masks[i] = events[i].contact_mask;
+    aster_touch_ui_begin_batch(&launcher_touch_ui, masks, (uint8_t)n);
+    for (int i = 0; i < n; i++) {
+        if (aster_launcher_power_touch(events[i].contact_mask != 0))
+            continue;
+        struct aster_touch_ui_decision ui =
+            aster_touch_ui_accept(&launcher_touch_ui, (uint8_t)i, events[i].action, events[i].slot,
+                                  events[i].contact_mask);
+        if (ui.reset_gesture) {
+            aster_gesture_reset();
+            memset(&drag, 0, sizeof(drag));
+            pull = 0;
+        }
+        if (ui.release_pointer) {
+            lv_indev_wait_release(aster_ui_lvgl_indev());
+            aster_ui_lvgl_pointer(launcher_touch_x, launcher_touch_y, false);
+        }
+        if (ui.route) {
+            launcher_touch_x = events[i].x;
+            launcher_touch_y = events[i].y;
+            touch(&events[i]);
+        }
+    }
+    aster_key_evt_t keys[ASTER_PLAT_MAX_KEYS];
+    while (aster_device_input_keys_poll(keys, ASTER_PLAT_MAX_KEYS) > 0) {
+    }
+    if (power_idle.screen_off) {
+        aster_launcher_power_tick();
+        if (power_idle.screen_off)
+            return;
+    }
+    uint64_t now = aster_os_uptime_ms();
+    if (drag.down && !drag.moved && !drag.handle && !drag.blocked && now - drag.started >= 650 &&
+        drag.hit == selected[group] && current() && !current()->builtin) {
+        drag.blocked = true;
+        removal();
+    }
+    int a = action;
+    action = ACT_NONE;
+    if (a >= ACT_GROUP && a < ACT_GROUP + 4) {
+        group = a - ACT_GROUP;
+        filter_entries();
+        show_page(HOME);
+        save();
+        sound_pending = S_TUNE;
+    } else if (a == ACT_BACK) {
+        if (page == SYSTEM && prior_page == MIXER) {
+            prior_page = HOME;
+            show_page(MIXER);
+        } else
+            show_page(HOME);
+        sound_pending = S_CLOSE;
+    } else if (a == ACT_FILTERS) {
+        show_page(FILTERS);
+        sound_pending = S_TAP;
+    } else if (a == ACT_MIXER) {
+        prior_page = HOME;
+        sound_pending = page == MIXER ? S_CLOSE : S_TAP;
+        show_page(page == MIXER ? HOME : MIXER);
+    } else if (a == ACT_PREV || a == ACT_NEXT)
+        settle((selected[group] + (a == ACT_PREV ? -1 : 1)) * 1000);
+    else if (a == ACT_OPEN) {
+        launching = true;
+        animation_ms = now;
+        from_pull = pull;
+    } else if (a == ACT_SYSTEM) {
+        prior_page = MIXER;
+        show_page(SYSTEM);
+        sound_pending = S_TAP;
+    } else if (a == ACT_WIFI) {
+        aster_wifi_settings_open(root, NULL);
+        sound_pending = S_TAP;
+    } else if (a == ACT_BT) {
+        aster_bluetooth_settings_open(root, NULL);
+        sound_pending = S_TAP;
+    } else if (a == ACT_TIMEOUT) {
+        timeout_index = (timeout_index + 1) % ARRAY_SIZE(screen_timeouts);
+        power_idle.timeout_ms = screen_timeouts[timeout_index];
+        save();
+        char title[64];
+        snprintf(title, sizeof(title), "自动熄屏   %s", screen_timeout_names[timeout_index]);
+        if (timeout_button)
+            set_text(lv_obj_get_child(timeout_button, 0), title);
+    } else if (a == ACT_SCREEN_OFF) {
+        aster_power_caps_t caps = {0};
+        (void)aster_power_caps(&caps);
+        aster_power_request_t r = {sizeof(r), ASTER_POWER_API_VERSION, ASTER_POWER_SCREEN_OFF,
+                                   caps.screen_wake, 0};
+        if (!aster_power_transition(&r, power_idle.brightness))
+            power_idle.screen_off = true;
+        else
+            notify("当前设备无法熄屏。");
+    } else if (a == ACT_RESTART || a == ACT_SHUTDOWN || a == ACT_SLEEP || a == ACT_USB_STORAGE) {
+        aster_power_request_t request = {.size = sizeof(request),
+                                         .version = ASTER_POWER_API_VERSION,
+                                         .mode = a == ACT_RESTART       ? ASTER_POWER_RESTART
+                                                 : a == ACT_SHUTDOWN    ? ASTER_POWER_SHUTDOWN
+                                                 : a == ACT_USB_STORAGE ? ASTER_POWER_USB_STORAGE
+                                                                        : ASTER_POWER_LIGHT_SLEEP};
+        if (a == ACT_SLEEP) {
+            aster_power_caps_t caps = {0};
+            (void)aster_power_caps(&caps);
+            request.wake_sources = caps.light_wake & (ASTER_WAKE_TOUCH | ASTER_WAKE_KEY);
+        }
+        int r = aster_power_schedule(&request);
+        if (r)
+            notify("当前无法执行，请稍后再试。");
+    } else if (a == ACT_QUIET) {
+        quiet = !quiet;
+        if (quiet) {
+            saved_volume = aster_device_audio_get_volume();
+            volume_pending = 0;
+        } else
+            volume_pending = saved_volume;
+        if (quiet)
+            aster_device_audio_ui_stop();
+        else
+            sound_pending = S_TAP;
+        show_page(MIXER);
+        save();
+    } else if (a == ACT_MOTION) {
+        motion = !motion;
+        save();
+        sound_pending = S_TAP;
+    } else if (a == ACT_CANCEL && modal) {
+        lv_obj_delete(modal);
+        modal = NULL;
+    } else if (a == ACT_UNINSTALL && modal) {
+        char id[64];
+        snprintf(id, sizeof(id), "%s", remove_id);
+        lv_obj_delete(modal);
+        modal = NULL;
+        int err = aster_service_app_uninstall(id);
+        aster_service_logf(3, "flux: uninstall %s -> %d", id, err);
+        if (err)
+            notify("卸载失败，请查看系统日志。");
+    }
+    if (want_page >= 0) {
+        int p = want_page;
+        want_page = -1;
+        show_page(p);
+    }
+    if (animating && now - last_draw >= FLUX_FRAME_MS) {
+        int ease = flux_scroll_ease(now - animation_ms, scroll_duration, coasting);
+        phase = from_phase + (target_phase - from_phase) * ease / 1000;
+        pull = from_pull * (1000 - ease) / 1000;
+        if (coasting) {
+            int index = wrap(nearest(phase), count);
+            if (index != selected[group]) {
+                selected[group] = index;
+                caption();
+            }
+        }
+        if (now - animation_ms >= scroll_duration) {
+            animating = false;
+            coasting = false;
+            selected[group] = wrap(nearest(target_phase), count);
+            phase = selected[group] * 1000;
+            pull = 0;
+            caption();
+            save();
+        }
+        draw_pending = true;
+    }
+    if (!launching)
+        sound_launch_started = false;
+    if (launching && !sound_launch_started) {
+        sound_pending = S_OPEN;
+        sound_launch_started = true;
+    }
+    if (sound_pending >= 0 && volume_pending < 0) {
+        sound_play(sound_pending, 0);
+        sound_pending = -1;
+    }
+    if (launching && page == HOME && now - last_draw >= FLUX_FRAME_MS) {
+        int t = motion ? MIN(1000, (int)(now - animation_ms) * 1000 / 350) : 1000;
+        pull = from_pull + (370 - from_pull) * t / 1000;
+        redraw();
+        if (t == 1000) {
+            launching = false;
+            pull = 0;
+            open_current();
+        }
+    }
+    if (draw_pending)
+        redraw();
+    if (brightness_pending >= 0) {
+        power_idle.brightness = brightness_pending * 255 / 100;
+        if (!power_idle.screen_off)
+            (void)aster_device_backlight_set(true, power_idle.brightness);
+        brightness_pending = -1;
+    }
+    if (volume_pending >= 0) {
+        uint32_t since = aster_os_cycle_us();
+        (void)aster_device_audio_set_volume(volume_pending);
+        volume_pending = -1;
+        uint32_t elapsed = aster_os_cycle_us() - since;
+        if (elapsed > slider_stats.max_set_us)
+            slider_stats.max_set_us = elapsed;
+    }
+    if (volume_save) {
+        uint8_t value = CLAMP(aster_device_audio_get_volume(), 0, 100);
+        uint32_t since = aster_os_uptime32();
+        (void)aster_service_kv_set("aster.qpanel", "volume", &value, 1);
+        volume_save = false;
+        uint32_t elapsed = aster_os_uptime32() - since;
+        slider_stats.saves++;
+        if (elapsed > slider_stats.max_save_ms)
+            slider_stats.max_save_ms = elapsed;
+    }
+    int sound_now = current() ? (int)(current() - entries) : -1;
+    if (sound_pending >= 0) {
+        sound_play(sound_pending, 0);
+        sound_pending = -1;
+    } else if (visible && page == HOME && !launching && sound_group == group &&
+               sound_now != sound_entry) {
+        int speed = drag.down               ? drag.track.speed
+                    : now > sound_sample_ms ? (int)((int64_t)(phase - sound_phase) *
+                                                    FLUX_RIBBON_PITCH / (now - sound_sample_ms))
+                                            : 0;
+        sound_play(S_TICK, speed);
+    }
+    sound_entry = sound_now;
+    sound_group = group;
+    sound_phase = phase;
+    sound_sample_ms = now;
+    if (toast && now >= toast_until) {
+        lv_obj_delete(toast);
+        toast = NULL;
+    }
+    if (save_due && now >= save_due && !drag.down && !animating && !launching)
+        save_now();
+    if (!power_idle.screen_off) {
+        tick_clock();
+        aster_wifi_settings_tick();
+        aster_qpanel_tick();
+        if (!power_idle.screen_off)
+            aster_ui_lvgl_pump();
+    }
 }
 
 /* Same owner as Launcher and APP event dispatch. The waking gesture is fully
  * consumed, preventing a wake tap from launching an APP or moving a slider. */
 bool aster_launcher_power_touch(bool contacts_down)
-{power_contacts_down=contacts_down;return aster_power_idle_activity(&power_idle,aster_os_uptime_ms(),contacts_down);}
+{
+    power_contacts_down = contacts_down;
+    return aster_power_idle_activity(&power_idle, aster_os_uptime_ms(), contacts_down);
+}
 
 static void dispatch_power_key(aster_power_key_action_t action)
 {
- if(action==ASTER_KEY_ACTION_SHUTDOWN){
-  aster_power_request_t request={sizeof(request),ASTER_POWER_API_VERSION,ASTER_POWER_SHUTDOWN,0,0};
-  if(aster_power_schedule(&request)&&visible)notify("当前无法执行，请稍后再试。");
- }else if(action==ASTER_KEY_ACTION_SCREEN){
-  aster_power_caps_t caps={0};(void)aster_power_caps(&caps);
-  aster_power_request_t request={sizeof(request),ASTER_POWER_API_VERSION,ASTER_POWER_SCREEN_OFF,caps.screen_wake,0};
-  if(!aster_power_transition(&request,power_idle.brightness))power_idle.screen_off=true;
- }else if(action==ASTER_KEY_ACTION_HOME){
-  if(visible)want_page=HOME;else aster_qpanel_request_exit("应用");
- }
+    if (action == ASTER_KEY_ACTION_SHUTDOWN) {
+        aster_power_request_t request = {sizeof(request), ASTER_POWER_API_VERSION,
+                                         ASTER_POWER_SHUTDOWN, 0, 0};
+        if (aster_power_schedule(&request) && visible)
+            notify("当前无法执行，请稍后再试。");
+    } else if (action == ASTER_KEY_ACTION_SCREEN) {
+        aster_power_caps_t caps = {0};
+        (void)aster_power_caps(&caps);
+        aster_power_request_t request = {sizeof(request), ASTER_POWER_API_VERSION,
+                                         ASTER_POWER_SCREEN_OFF, caps.screen_wake, 0};
+        if (!aster_power_transition(&request, power_idle.brightness))
+            power_idle.screen_off = true;
+    } else if (action == ASTER_KEY_ACTION_HOME) {
+        if (visible)
+            want_page = HOME;
+        else
+            aster_qpanel_request_exit("应用");
+    }
 }
 
 void aster_launcher_power_tick(void)
 {
- if(!power_idle.initialized)return;
- static struct {
-  uint64_t pressed_at;
-  uint32_t code;
-  bool down, woke, handled;
- } keys[8];
- uint64_t now=aster_os_uptime_ms();
- bool held=power_contacts_down;
- for(unsigned i=0;i<ARRAY_SIZE(keys);i++)held|=keys[i].down;
- (void)aster_power_idle_tick(&power_idle,now,held);
- const aster_power_ops_t *ops=aster_power_ops();
- if(!ops||!ops->map_key)return;
- aster_power_key_t events[8];int n=aster_power_keys(events,ARRAY_SIZE(events));
- for(int i=0;i<n;i++){
-  aster_power_key_t *e=&events[i];
-  unsigned slot=ARRAY_SIZE(keys), free_slot=ARRAY_SIZE(keys);
-  for(unsigned j=0;j<ARRAY_SIZE(keys);j++){
-   if(keys[j].down&&keys[j].code==e->code){slot=j;break;}
-   if(!keys[j].down&&free_slot==ARRAY_SIZE(keys))free_slot=j;
-  }
-  if(e->pressed){
-   if(slot!=ARRAY_SIZE(keys)||free_slot==ARRAY_SIZE(keys))continue;
-   keys[free_slot].down=true;
-   keys[free_slot].code=e->code;
-   keys[free_slot].pressed_at=e->timestamp_ms;
-   keys[free_slot].handled=false;
-   keys[free_slot].woke=aster_power_idle_activity(&power_idle,e->timestamp_ms,true);
-   continue;
-  }
-  if(slot==ARRAY_SIZE(keys))continue;
-  keys[slot].down=false;
-  bool consumed=aster_power_idle_activity(&power_idle,e->timestamp_ms,power_contacts_down);
-  if(keys[slot].handled)continue;
-  uint32_t duration=(uint32_t)(e->timestamp_ms-keys[slot].pressed_at);
-  aster_power_key_action_t action=aster_power_map_key(e->code,false,duration);
-  if(action==ASTER_KEY_ACTION_SHUTDOWN||(!keys[slot].woke&&!consumed))dispatch_power_key(action);
- }
- now=aster_os_uptime_ms();
- for(unsigned i=0;i<ARRAY_SIZE(keys);i++){
-  if(!keys[i].down||keys[i].handled)continue;
-  uint32_t duration=(uint32_t)(now-keys[i].pressed_at);
-  aster_power_key_action_t action=aster_power_map_key(keys[i].code,true,duration);
-  if(action!=ASTER_KEY_ACTION_NONE){
-   keys[i].handled=true;
-   dispatch_power_key(action);
-  }
- }
+    if (!power_idle.initialized)
+        return;
+
+    static struct {
+        uint64_t pressed_at;
+        uint32_t code;
+        bool down, woke, handled;
+    } keys[8];
+
+    uint64_t now = aster_os_uptime_ms();
+    bool held = power_contacts_down;
+    for (unsigned i = 0; i < ARRAY_SIZE(keys); i++)
+        held |= keys[i].down;
+    (void)aster_power_idle_tick(&power_idle, now, held);
+    const aster_power_ops_t *ops = aster_power_ops();
+    if (!ops || !ops->map_key)
+        return;
+    aster_power_key_t events[8];
+    int n = aster_power_keys(events, ARRAY_SIZE(events));
+    for (int i = 0; i < n; i++) {
+        aster_power_key_t *e = &events[i];
+        unsigned slot = ARRAY_SIZE(keys), free_slot = ARRAY_SIZE(keys);
+        for (unsigned j = 0; j < ARRAY_SIZE(keys); j++) {
+            if (keys[j].down && keys[j].code == e->code) {
+                slot = j;
+                break;
+            }
+            if (!keys[j].down && free_slot == ARRAY_SIZE(keys))
+                free_slot = j;
+        }
+        if (e->pressed) {
+            if (slot != ARRAY_SIZE(keys) || free_slot == ARRAY_SIZE(keys))
+                continue;
+            keys[free_slot].down = true;
+            keys[free_slot].code = e->code;
+            keys[free_slot].pressed_at = e->timestamp_ms;
+            keys[free_slot].handled = false;
+            keys[free_slot].woke = aster_power_idle_activity(&power_idle, e->timestamp_ms, true);
+            continue;
+        }
+        if (slot == ARRAY_SIZE(keys))
+            continue;
+        keys[slot].down = false;
+        bool consumed =
+            aster_power_idle_activity(&power_idle, e->timestamp_ms, power_contacts_down);
+        if (keys[slot].handled)
+            continue;
+        uint32_t duration = (uint32_t)(e->timestamp_ms - keys[slot].pressed_at);
+        aster_power_key_action_t action = aster_power_map_key(e->code, false, duration);
+        if (action == ASTER_KEY_ACTION_SHUTDOWN || (!keys[slot].woke && !consumed))
+            dispatch_power_key(action);
+    }
+    now = aster_os_uptime_ms();
+    for (unsigned i = 0; i < ARRAY_SIZE(keys); i++) {
+        if (!keys[i].down || keys[i].handled)
+            continue;
+        uint32_t duration = (uint32_t)(now - keys[i].pressed_at);
+        aster_power_key_action_t action = aster_power_map_key(keys[i].code, true, duration);
+        if (action != ASTER_KEY_ACTION_NONE) {
+            keys[i].handled = true;
+            dispatch_power_key(action);
+        }
+    }
 }
 
 void aster_launcher_power_resume(void)
 {
- power_idle.screen_off=false;power_idle.last_activity_ms=aster_os_uptime_ms();power_idle.wake_gesture=true;
- (void)aster_power_screen_on(power_idle.brightness);
+    power_idle.screen_off = false;
+    power_idle.last_activity_ms = aster_os_uptime_ms();
+    power_idle.wake_gesture = true;
+    (void)aster_power_screen_on(power_idle.brightness);
 }

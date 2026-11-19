@@ -1,18 +1,23 @@
 """Compile all public ports without either embedded OS and exercise dispatch."""
+
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import unittest
-ROOT=Path(__file__).resolve().parents[1]
+
+ROOT = Path(__file__).resolve().parents[1]
+
 
 class Ports(unittest.TestCase):
     def test_os_services_network_without_embedded_headers(self):
-        cc=shutil.which('cc') or shutil.which('gcc')
-        if not cc:self.skipTest('C compiler required')
+        cc = shutil.which('cc') or shutil.which('gcc')
+        if not cc:
+            self.skipTest('C compiler required')
         with tempfile.TemporaryDirectory() as folder:
-            fixture=Path(folder)/'ports.c'
-            fixture.write_text(r'''
+            fixture = Path(folder) / 'ports.c'
+            fixture.write_text(
+                r'''
 #include "aster_os.h"
 #include "aster_services.h"
 #include "aster_network.h"
@@ -58,20 +63,55 @@ int main(void){
  aster_os_seal();aster_services_seal();aster_network_seal();
  assert(aster_os_bind(&aster_os_backend)==-EBUSY);assert(aster_services_bind(&aster_services_backend)==-EBUSY);assert(aster_network_bind(&aster_network_backend)==-EBUSY);
  return 0;
-}''')
-            binary=Path(folder)/'ports'
-            subprocess.run([cc,'-std=c11','-Wall','-Wextra','-Werror','-pedantic',
-                '-I'+str(ROOT/'common/port'),'-I'+str(ROOT/'common/net'),
-                '-I'+str(ROOT/'contract/include'),str(fixture),
-                *[str(ROOT/'common/port'/name) for name in ['aster_os.c','aster_services.c','aster_network.c']],
-                '-o',str(binary)],check=True)
-            subprocess.run([str(binary)],check=True)
+}'''
+            )
+            binary = Path(folder) / 'ports'
+            subprocess.run(
+                [
+                    cc,
+                    '-std=c11',
+                    '-Wall',
+                    '-Wextra',
+                    '-Werror',
+                    '-pedantic',
+                    '-I' + str(ROOT / 'common/port'),
+                    '-I' + str(ROOT / 'common/net'),
+                    '-I' + str(ROOT / 'contract/include'),
+                    str(fixture),
+                    *[
+                        str(ROOT / 'common/port' / name)
+                        for name in ['aster_os.c', 'aster_services.c', 'aster_network.c']
+                    ],
+                    '-o',
+                    str(binary),
+                ],
+                check=True,
+            )
+            subprocess.run([str(binary)], check=True)
 
     def test_ui_port_boundary(self):
-        ui=ROOT/'systems/zephyr/ui'
-        for name in ['launcher/flux.c','font_sd.c','ui_font.c','qpanel.c','wifi_settings.c','ui_splash.c','flux_draw.c','ui_wifi.h','ui_geom.h']:
-            source=(ui/name).read_text()
-            for forbidden in ['#include <zephyr/','#include "aster_app_mgr.h"','#include "aster_storage.h"','#include "aster_runtime.h"','#include "aster_kv.h"']:
-                self.assertNotIn(forbidden,source,name)
+        ui = ROOT / 'systems/zephyr/ui'
+        for name in [
+            'launcher/flux.c',
+            'font_sd.c',
+            'ui_font.c',
+            'qpanel.c',
+            'wifi_settings.c',
+            'ui_splash.c',
+            'flux_draw.c',
+            'ui_wifi.h',
+            'ui_geom.h',
+        ]:
+            source = (ui / name).read_text()
+            for forbidden in [
+                '#include <zephyr/',
+                '#include "aster_app_mgr.h"',
+                '#include "aster_storage.h"',
+                '#include "aster_runtime.h"',
+                '#include "aster_kv.h"',
+            ]:
+                self.assertNotIn(forbidden, source, name)
 
-if __name__=='__main__':unittest.main()
+
+if __name__ == '__main__':
+    unittest.main()

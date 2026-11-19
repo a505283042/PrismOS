@@ -19,7 +19,8 @@ static void drain_owner(uint64_t owner, unsigned *count, uint32_t states[])
 {
     uint32_t h, k, s;
     while (aster_net_event_take(owner, &h, &k, &s)) {
-        if (states && *count < 16) states[*count] = s;
+        if (states && *count < 16)
+            states[*count] = s;
         ++*count;
     }
 }
@@ -27,7 +28,7 @@ static void drain_owner(uint64_t owner, unsigned *count, uint32_t states[])
 int main(void)
 {
     uint32_t h = 0, k = 0, s = 0;
-    uint32_t states[16] = { 0 };
+    uint32_t states[16] = {0};
     unsigned n = 0;
 
     /* 1) empty ring */
@@ -37,18 +38,21 @@ int main(void)
     aster_net_event_post(11, 100, ASTER_NET_EVENT_TCP, 3u /* net CONNECTING */);
     aster_net_event_post(11, 100, ASTER_NET_EVENT_TCP, 3u /* net CONNECTING */);
     aster_net_event_post(11, 100, ASTER_NET_EVENT_TCP, 3u /* net CONNECTING */);
-    n = 0; drain_owner(11, &n, states);
+    n = 0;
+    drain_owner(11, &n, states);
     assert(n == 1 && states[0] == 3u /* net CONNECTING */);
 
     /* 3) a newer state replaces the pending one: newest wins, no queue buildup */
     aster_net_event_post(11, 100, ASTER_NET_EVENT_TCP, 3u /* net CONNECTING */);
     aster_net_event_post(11, 100, ASTER_NET_EVENT_TCP, 4u /* net READY */);
-    n = 0; drain_owner(11, &n, states);
+    n = 0;
+    drain_owner(11, &n, states);
     assert(n == 1 && states[0] == 4u /* net READY */);
 
     /* 4) owner isolation: an APP never observes another session's handle */
     aster_net_event_post(22, 200, ASTER_NET_EVENT_WS, 3u /* ws IDLE */);
-    n = 0; drain_owner(11, &n, NULL);
+    n = 0;
+    drain_owner(11, &n, NULL);
     assert(n == 0);
     assert(aster_net_event_take(22, &h, &k, &s));
     assert(h == 200 && k == ASTER_NET_EVENT_WS && s == 3u /* ws IDLE */);
@@ -62,7 +66,8 @@ int main(void)
     uint32_t seen_newest = 0;
     while (aster_net_event_take(33, &h, &k, &s)) {
         ++total;
-        if (h == 300 + ASTER_NET_EVENT_SLOTS + 3) seen_newest = 1;
+        if (h == 300 + ASTER_NET_EVENT_SLOTS + 3)
+            seen_newest = 1;
     }
     assert(total == ASTER_NET_EVENT_SLOTS);
     assert(seen_newest == 1);
@@ -71,7 +76,8 @@ int main(void)
     aster_net_event_post(44, 400, ASTER_NET_EVENT_MQTT, 4);
     aster_net_event_post(55, 500, ASTER_NET_EVENT_TCP, 4u /* net READY */);
     aster_net_event_drop_owner(44);
-    n = 0; drain_owner(44, &n, NULL);
+    n = 0;
+    drain_owner(44, &n, NULL);
     assert(n == 0);
     assert(aster_net_event_take(55, &h, &k, &s) && h == 500);
     aster_net_event_reset();

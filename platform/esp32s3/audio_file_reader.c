@@ -35,8 +35,7 @@ static void reader_main(void *a, void *b, void *c)
 			return;
 		}
 		size_t tail = (reader_ring.head + reader_ring.used) % reader_ring.cap;
-		size_t n = MIN(reader_ring.cap - tail,
-			       MIN(FILE_READ_CHUNK, reader_remaining));
+		size_t n = MIN(reader_ring.cap - tail, MIN(FILE_READ_CHUNK, reader_remaining));
 		/* Batch SD transactions rather than reading every small amount
 		 * released by a single decoded MP3 frame. */
 		if (reader_ring.cap - reader_ring.used < n) {
@@ -110,8 +109,8 @@ int audio_file_reader_start(struct fs_file_t *file, size_t remaining)
 	k_sem_reset(&reader_space);
 	reader_running = true;
 	k_thread_create(&reader_thread, stack,
-		K_KERNEL_STACK_LEN(FILE_READ_STACK) - K_KERNEL_STACK_RESERVED,
-		reader_main, NULL, NULL, NULL, K_PRIO_PREEMPT(7), 0, K_FOREVER);
+	                K_KERNEL_STACK_LEN(FILE_READ_STACK) - K_KERNEL_STACK_RESERVED, reader_main,
+	                NULL, NULL, NULL, K_PRIO_PREEMPT(7), 0, K_FOREVER);
 	k_thread_name_set(&reader_thread, "aster_aread");
 	k_thread_start(&reader_thread);
 	return 0;

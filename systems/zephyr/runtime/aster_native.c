@@ -34,7 +34,6 @@
 #include <zephyr/logging/log.h>
 #include <aster/aster.h>
 
-
 LOG_MODULE_REGISTER(aster_native, LOG_LEVEL_INF);
 
 /* Scratch budget for converting a non-RGB565 surface to RGB565 on present.
@@ -126,8 +125,7 @@ static int app_str(wasm_exec_env_t env, uint32_t off, uint32_t len, char *out, s
 		 * `off`. get_app_addr_range() reports that extent and, unlike
 		 * validate_app_addr(), fails without arming a wasm trap. */
 		uint64_t end = 0;
-		if (!wasm_runtime_get_app_addr_range(inst, off, NULL, &end) ||
-		    end <= off) {
+		if (!wasm_runtime_get_app_addr_range(inst, off, NULL, &end) || end <= off) {
 			return -1;
 		}
 		size_t avail = (size_t)(end - off); /* bytes readable at off */
@@ -260,7 +258,7 @@ static int32_t n_time_get(wasm_exec_env_t env, uint32_t out_off, uint32_t size)
 /* ============ timer ============ */
 
 static int32_t n_timer_create(wasm_exec_env_t env, uint32_t period_ms, uint32_t repeat,
-			      uint32_t user, uint32_t out_off)
+                              uint32_t user, uint32_t out_off)
 {
 	aster_app_ctx_t *ctx = ctx_of(env);
 	uint32_t *out = (uint32_t *)buf(env, out_off, 4);
@@ -273,7 +271,8 @@ static int32_t n_timer_create(wasm_exec_env_t env, uint32_t period_ms, uint32_t 
 			ctx->timers[i].period_ms = period_ms ? period_ms : 1;
 			ctx->timers[i].repeat = repeat;
 			ctx->timers[i].user = user;
-			ctx->timers[i].next_ms = (uint64_t)k_uptime_get() + ctx->timers[i].period_ms;
+			ctx->timers[i].next_ms =
+			        (uint64_t)k_uptime_get() + ctx->timers[i].period_ms;
 			*out = ASTER_HTYPE_TIMER | (uint32_t)(i + 1);
 			return ASTER_OK;
 		}
@@ -304,10 +303,11 @@ static int32_t n_display_count(wasm_exec_env_t env)
 }
 
 static int32_t n_display_get_info(wasm_exec_env_t env, uint32_t index, uint32_t info_off,
-				  uint32_t info_size)
+                                  uint32_t info_size)
 {
-	uint8_t *dst = buf(env, info_off, info_size < sizeof(aster_display_info_t)
-				   ? info_size : sizeof(aster_display_info_t));
+	uint8_t *dst = buf(env, info_off,
+	                   info_size < sizeof(aster_display_info_t) ? info_size
+	                                                            : sizeof(aster_display_info_t));
 	if (!dst) {
 		return ASTER_EINVAL;
 	}
@@ -324,12 +324,13 @@ static int32_t n_display_get_info(wasm_exec_env_t env, uint32_t index, uint32_t 
 /* ============ surface ============ */
 
 static int32_t n_surface_create(wasm_exec_env_t env, uint32_t desc_off, uint32_t desc_size,
-				uint32_t out_off)
+                                uint32_t out_off)
 {
 	aster_app_ctx_t *ctx = ctx_of(env);
-	const aster_surface_desc_t *desc = (const aster_surface_desc_t *)
-		buf(env, desc_off, desc_size < sizeof(aster_surface_desc_t)
-			    ? desc_size : sizeof(aster_surface_desc_t));
+	const aster_surface_desc_t *desc = (const aster_surface_desc_t *)buf(
+	        env, desc_off,
+	        desc_size < sizeof(aster_surface_desc_t) ? desc_size
+	                                                 : sizeof(aster_surface_desc_t));
 	uint32_t *out = (uint32_t *)buf(env, out_off, 4);
 	if (!ctx || !desc || !out) {
 		return ASTER_EINVAL;
@@ -369,8 +370,7 @@ static int32_t n_surface_create(wasm_exec_env_t env, uint32_t desc_off, uint32_t
 	 * present is written against the app space's own axes. A scale-fit
 	 * surface is the exception: its size is chosen by the app and mapped
 	 * onto the glass later, so it is not clipped to app space. */
-	if (w == 0 || h == 0 ||
-	    (scale_fit && (w > 4096u || h > 4096u)) ||
+	if (w == 0 || h == 0 || (scale_fit && (w > 4096u || h > 4096u)) ||
 	    (!scale_fit && !((w <= aw && h <= ah) || (w <= ah && h <= aw)))) {
 		return ASTER_EINVAL;
 	}
@@ -406,7 +406,7 @@ static int32_t n_surface_create(wasm_exec_env_t env, uint32_t desc_off, uint32_t
 	 * is scaling). The w/h test against di is therefore redundant on this
 	 * board and kept only because it is the cheap half. */
 	bool want_canvas = (desc->flags & ASTER_SURFACE_F_PANEL_CANVAS) &&
-			   fmt == ASTER_PIXEL_RGB565 && w == di.width && h == di.height;
+	                   fmt == ASTER_PIXEL_RGB565 && w == di.width && h == di.height;
 	bool fronts = false;
 
 	if (want_canvas && aster_plat_display_flip_acquire() == 0) {
@@ -425,8 +425,8 @@ static int32_t n_surface_create(wasm_exec_env_t env, uint32_t desc_off, uint32_t
 	 * presents are converted. Say it once, per surface. */
 	if (desc->flags & ASTER_SURFACE_F_PANEL_CANVAS) {
 		LOG_INF("surface: %ux%u panel-canvas requested -> %s", w, h,
-			canvas ? "granted (engine writes panel order)"
-			       : "denied, ordinary LE surface");
+		        canvas ? "granted (engine writes panel order)"
+		               : "denied, ordinary LE surface");
 	}
 
 	if (canvas) {
@@ -438,8 +438,8 @@ static int32_t n_surface_create(wasm_exec_env_t env, uint32_t desc_off, uint32_t
 			uint32_t offset = 0;
 
 			if (!canvas) {
-				offset = (uint32_t)wasm_runtime_module_malloc(
-					ctx->module_inst, size, &native);
+				offset = (uint32_t)wasm_runtime_module_malloc(ctx->module_inst,
+				                                              size, &native);
 				if (!offset || !native) {
 					return ASTER_ENOMEM;
 				}
@@ -474,14 +474,16 @@ static int32_t n_surface_destroy(wasm_exec_env_t env, uint32_t h)
 	if (i < 0) {
 		return ASTER_EBADF;
 	}
- if(ctx->gfx_frame.published_surface==h) ctx->gfx_frame.published_surface=0;
- if(ctx->gfx_frame.cache_surface==h) aster_frame_release_cache(&ctx->gfx_frame,aster_psram_free);
- if(ctx->gfx_published_surface==h) {
-  ctx->gfx_published_surface=0;
+	if (ctx->gfx_frame.published_surface == h)
+		ctx->gfx_frame.published_surface = 0;
+	if (ctx->gfx_frame.cache_surface == h)
+		aster_frame_release_cache(&ctx->gfx_frame, aster_psram_free);
+	if (ctx->gfx_published_surface == h) {
+		ctx->gfx_published_surface = 0;
 #if IS_ENABLED(CONFIG_ASTER_LVGL)
-  aster_gfx_note_committed_frame(NULL,0,0,0,false);
+		aster_gfx_note_committed_frame(NULL, 0, 0, 0, false);
 #endif
- }
+	}
 	if (ctx->surfaces[i].used) {
 		/* The flip path snapshots into its own front buffers, but a
 		 * still-queued send could in principle refer to app memory on
@@ -492,8 +494,7 @@ static int32_t n_surface_destroy(wasm_exec_env_t env, uint32_t h)
 			aster_plat_display_flip_release();
 		}
 		if (ctx->surfaces[i].app_offset) {
-			wasm_runtime_module_free(ctx->module_inst,
-						 ctx->surfaces[i].app_offset);
+			wasm_runtime_module_free(ctx->module_inst, ctx->surfaces[i].app_offset);
 		}
 		bool was_fit = ctx->surfaces[i].scale_fit;
 
@@ -508,11 +509,13 @@ static int32_t n_surface_destroy(wasm_exec_env_t env, uint32_t h)
 }
 
 static int32_t n_surface_acquire(wasm_exec_env_t env, uint32_t h, uint32_t buf_off,
-				 uint32_t buf_size)
+                                 uint32_t buf_size)
 {
 	aster_app_ctx_t *ctx = ctx_of(env);
-	uint8_t *dst = buf(env, buf_off, buf_size < sizeof(aster_surface_buffer_t)
-				   ? buf_size : sizeof(aster_surface_buffer_t));
+	uint8_t *dst =
+	        buf(env, buf_off,
+	            buf_size < sizeof(aster_surface_buffer_t) ? buf_size
+	                                                      : sizeof(aster_surface_buffer_t));
 	if (!ctx || !dst) {
 		return ASTER_EINVAL;
 	}
@@ -521,19 +524,20 @@ static int32_t n_surface_acquire(wasm_exec_env_t env, uint32_t h, uint32_t buf_o
 		return ASTER_EBADF;
 	}
 	aster_surface_buffer_t sb = {
-		.size = sizeof(sb),
-		.version = 1,
-		.ptr = ctx->surfaces[i].canvas
-			       ? NULL /* firmware-owned canvas */
-			       : (void *)(uintptr_t)ctx->surfaces[i].app_offset,
-		.width = ctx->surfaces[i].w,
-		.height = ctx->surfaces[i].h,
-		.pitch = ctx->surfaces[i].w * ((ctx->surfaces[i].format == ASTER_PIXEL_RGB565 ||
-						ctx->surfaces[i].format == ASTER_PIXEL_BGR565) ? 2
-					: (ctx->surfaces[i].format == ASTER_PIXEL_RGB888 ? 3 : 4)),
-		.format = ctx->surfaces[i].format,
-		.flags = (ctx->surfaces[i].canvas ? ASTER_SURFACE_F_PANEL_CANVAS : 0u) |
-			 (ctx->surfaces[i].scale_fit ? ASTER_SURFACE_F_SCALE_FIT : 0u),
+	        .size = sizeof(sb),
+	        .version = 1,
+	        .ptr = ctx->surfaces[i].canvas ? NULL /* firmware-owned canvas */
+	                                       : (void *)(uintptr_t)ctx->surfaces[i].app_offset,
+	        .width = ctx->surfaces[i].w,
+	        .height = ctx->surfaces[i].h,
+	        .pitch = ctx->surfaces[i].w *
+	                 ((ctx->surfaces[i].format == ASTER_PIXEL_RGB565 ||
+	                   ctx->surfaces[i].format == ASTER_PIXEL_BGR565)
+	                          ? 2
+	                          : (ctx->surfaces[i].format == ASTER_PIXEL_RGB888 ? 3 : 4)),
+	        .format = ctx->surfaces[i].format,
+	        .flags = (ctx->surfaces[i].canvas ? ASTER_SURFACE_F_PANEL_CANVAS : 0u) |
+	                 (ctx->surfaces[i].scale_fit ? ASTER_SURFACE_F_SCALE_FIT : 0u),
 	};
 	size_t n = buf_size < sizeof(sb) ? buf_size : sizeof(sb);
 	memcpy(dst, &sb, n);
@@ -549,20 +553,18 @@ static int32_t present_scale_fit(aster_surface_t *s, const uint8_t *src)
 	if (s->format == ASTER_PIXEL_RGB565) {
 		return aster_plat_display_scale_fit_present(src, s->w, s->h, s->pitch);
 	}
-	uint32_t bpp = (s->format == ASTER_PIXEL_BGR565) ? 2
-			 : (s->format == ASTER_PIXEL_RGB888 ? 3 : 4);
+	uint32_t bpp =
+	        (s->format == ASTER_PIXEL_BGR565) ? 2 : (s->format == ASTER_PIXEL_RGB888 ? 3 : 4);
 	size_t bytes = (size_t)s->w * s->h * 2u;
 	uint16_t *tmp = aster_psram_alloc(bytes);
 
 	if (!tmp) {
 		return ASTER_ENOMEM;
 	}
-	int err = aster_convert_to_rgb565(src, s->w * bpp, s->format, tmp, s->w * 2u,
-					  s->w, s->h);
+	int err = aster_convert_to_rgb565(src, s->w * bpp, s->format, tmp, s->w * 2u, s->w, s->h);
 
 	if (!err) {
-		err = aster_plat_display_scale_fit_present((const uint8_t *)tmp, s->w, s->h,
-							   s->w);
+		err = aster_plat_display_scale_fit_present((const uint8_t *)tmp, s->w, s->h, s->w);
 	}
 	aster_psram_free(tmp);
 	return err;
@@ -574,8 +576,9 @@ static int32_t n_surface_present(wasm_exec_env_t env, uint32_t h)
 	if (!ctx) {
 		return ASTER_EBADF;
 	}
- if(ctx->gfx_frame.state) return aster_frame_fail(&ctx->gfx_frame,ASTER_EBUSY);
- ctx->gfx_published_surface=0;
+	if (ctx->gfx_frame.state)
+		return aster_frame_fail(&ctx->gfx_frame, ASTER_EBUSY);
+	ctx->gfx_published_surface = 0;
 	int i = handle_index(h, ASTER_HTYPE_SURFACE, ASTER_SURFACE_MAX);
 	if (i < 0 || !ctx->surfaces[i].used) {
 		return ASTER_EBADF;
@@ -592,8 +595,8 @@ static int32_t n_surface_present(wasm_exec_env_t env, uint32_t h)
 		return aster_plat_display_canvas_present();
 	}
 	if (s->scale_fit) {
-		uint8_t *fit = (uint8_t *)wasm_runtime_addr_app_to_native(ctx->module_inst,
-									  s->app_offset);
+		uint8_t *fit =
+		        (uint8_t *)wasm_runtime_addr_app_to_native(ctx->module_inst, s->app_offset);
 
 		if (!fit) {
 			return ASTER_EBADF;
@@ -601,13 +604,13 @@ static int32_t n_surface_present(wasm_exec_env_t env, uint32_t h)
 		return present_scale_fit(s, fit);
 	}
 	aster_plat_display_scale_fit_disarm();
-	uint8_t *src = (uint8_t *)wasm_runtime_addr_app_to_native(ctx->module_inst,
-								  s->app_offset);
+	uint8_t *src = (uint8_t *)wasm_runtime_addr_app_to_native(ctx->module_inst, s->app_offset);
 	if (!src) {
 		return ASTER_EBADF;
 	}
-	uint32_t bpp = (s->format == ASTER_PIXEL_RGB565 || s->format == ASTER_PIXEL_BGR565) ? 2
-			 : (s->format == ASTER_PIXEL_RGB888 ? 3 : 4);
+	uint32_t bpp = (s->format == ASTER_PIXEL_RGB565 || s->format == ASTER_PIXEL_BGR565)
+	                       ? 2
+	                       : (s->format == ASTER_PIXEL_RGB888 ? 3 : 4);
 	if (s->format == ASTER_PIXEL_RGB565) {
 		/* Whole-screen RGB565, in the APP's coordinate space -- so this
 		 * is the app-present entry, not the panel one. When app space is
@@ -653,8 +656,8 @@ static int32_t n_surface_present(wasm_exec_env_t env, uint32_t h)
 	for (uint32_t y = 0; y < s->h; y += rows) {
 		uint32_t n = MIN(rows, s->h - y);
 
-		err = aster_convert_to_rgb565(src + (size_t)y * s->w * bpp, s->w * bpp,
-					    s->format, tmp, s->w * 2u, s->w, n);
+		err = aster_convert_to_rgb565(src + (size_t)y * s->w * bpp, s->w * bpp, s->format,
+		                              tmp, s->w * 2u, s->w, n);
 		if (err) {
 			break;
 		}
@@ -662,8 +665,7 @@ static int32_t n_surface_present(wasm_exec_env_t env, uint32_t h)
 		 * not the bytes/row that aster_convert_to_rgb565 takes above. And the
 		 * rect is in APP space, like every other surface rect: the platform
 		 * maps it onto the panel. */
-		err = aster_plat_display_write_app_at((const uint8_t *)tmp, 0, y,
-						    s->w, n, s->w);
+		err = aster_plat_display_write_app_at((const uint8_t *)tmp, 0, y, s->w, n, s->w);
 		if (err) {
 			break;
 		}
@@ -675,16 +677,16 @@ static int32_t n_surface_present(wasm_exec_env_t env, uint32_t h)
 /* ABI 1.4: region present. src is any RGB565 buffer in app linear memory
  * (LVGL PARTIAL draw buffer), pushed to the display at (x,y). Bounds-checked
  * against the surface so an app cannot scribble outside its own window. */
-static int32_t n_surface_flush(wasm_exec_env_t env, uint32_t h, uint32_t src_off,
-			       uint32_t x, uint32_t y, uint32_t w, uint32_t hh,
-			       uint32_t src_pitch)
+static int32_t n_surface_flush(wasm_exec_env_t env, uint32_t h, uint32_t src_off, uint32_t x,
+                               uint32_t y, uint32_t w, uint32_t hh, uint32_t src_pitch)
 {
 	aster_app_ctx_t *ctx = ctx_of(env);
 	if (!ctx) {
 		return ASTER_EBADF;
 	}
- if(ctx->gfx_frame.state) return aster_frame_fail(&ctx->gfx_frame,ASTER_EBUSY);
- ctx->gfx_published_surface=0;
+	if (ctx->gfx_frame.state)
+		return aster_frame_fail(&ctx->gfx_frame, ASTER_EBUSY);
+	ctx->gfx_published_surface = 0;
 	int i = handle_index(h, ASTER_HTYPE_SURFACE, ASTER_SURFACE_MAX);
 	if (i < 0 || !ctx->surfaces[i].used) {
 		return ASTER_EBADF;
@@ -734,28 +736,36 @@ static int32_t n_surface_flush(wasm_exec_env_t env, uint32_t h, uint32_t src_off
 void aster_native_frame_refresh(aster_app_ctx_t *ctx)
 {
 #if IS_ENABLED(CONFIG_ASTER_LVGL)
- if(!ctx||!ctx->module_inst||!ctx->gfx_published_surface) return;
- int i=handle_index(ctx->gfx_published_surface,ASTER_HTYPE_SURFACE,ASTER_SURFACE_MAX);
- if(i<0||!ctx->surfaces[i].used) return;
- aster_surface_t *s=&ctx->surfaces[i];
- if(s->canvas) return;
- const uint8_t *pixels=wasm_runtime_addr_app_to_native(ctx->module_inst,s->app_offset);
- aster_gfx_note_committed_frame(pixels,s->w,s->h,s->pitch,false);
+	if (!ctx || !ctx->module_inst || !ctx->gfx_published_surface)
+		return;
+	int i = handle_index(ctx->gfx_published_surface, ASTER_HTYPE_SURFACE, ASTER_SURFACE_MAX);
+	if (i < 0 || !ctx->surfaces[i].used)
+		return;
+	aster_surface_t *s = &ctx->surfaces[i];
+	if (s->canvas)
+		return;
+	const uint8_t *pixels = wasm_runtime_addr_app_to_native(ctx->module_inst, s->app_offset);
+	aster_gfx_note_committed_frame(pixels, s->w, s->h, s->pitch, false);
 #else
- (void)ctx;
+	(void)ctx;
 #endif
 }
 
 void aster_native_frame_abort(aster_app_ctx_t *ctx)
 {
- if(ctx) {aster_frame_abort(&ctx->gfx_frame);ctx->gfx_frame.published_surface=0;}
+	if (ctx) {
+		aster_frame_abort(&ctx->gfx_frame);
+		ctx->gfx_frame.published_surface = 0;
+	}
 }
+
 void aster_native_frame_release(aster_app_ctx_t *ctx)
 {
- if(!ctx) return;
- aster_native_frame_abort(ctx);
- ctx->gfx_published_surface=0;
- aster_frame_release_cache(&ctx->gfx_frame,aster_psram_free);
+	if (!ctx)
+		return;
+	aster_native_frame_abort(ctx);
+	ctx->gfx_published_surface = 0;
+	aster_frame_release_cache(&ctx->gfx_frame, aster_psram_free);
 }
 
 /* ============ gfx command engine (ABI 2.2) ============ */
@@ -780,145 +790,205 @@ static int32_t gfx_surface(wasm_exec_env_t env, uint32_t h, aster_surface_t **ou
 	return ASTER_OK;
 }
 
-static int32_t n_gfx_frame_control(wasm_exec_env_t env,uint32_t h,
- aster_surface_t *s,uint32_t off,uint32_t len)
+static int32_t n_gfx_frame_control(wasm_exec_env_t env, uint32_t h, aster_surface_t *s,
+                                   uint32_t off, uint32_t len)
 {
- aster_app_ctx_t *ctx=ctx_of(env);aster_frame_state_t *f=&ctx->gfx_frame;
- if(!off||(off&3u)) return ASTER_EINVAL;
- if(len==sizeof(aster_gfx_frame_clip_t)) {
-  const aster_gfx_frame_clip_t *clip=(const aster_gfx_frame_clip_t *)buf(env,off,len);
-  if(!clip||clip->size!=sizeof(*clip)||clip->version!=1||clip->action!=ASTER_GFX_FRAME_SET_CLIP) return ASTER_EINVAL;
-  return aster_frame_set_clip(f,h,clip,k_uptime_get());
- }
- if(len!=sizeof(aster_gfx_frame_control_t)) return ASTER_EINVAL;
- aster_gfx_frame_control_t *out=(aster_gfx_frame_control_t *)buf(env,off,len);
- if(!out) return ASTER_EINVAL;
- aster_gfx_frame_control_t c=*out;
- if(c.size!=sizeof(c)||c.version!=1||c.flags||c.error) return ASTER_EINVAL;
- if(c.action==ASTER_GFX_FRAME_QUERY) {
-  if(c.frame_id) return ASTER_EINVAL;
-  (void)aster_font_sd_repaint_pending();
-  out->flags=ASTER_GFX_FRAME_SUPPORTED|ASTER_GFX_FRAME_CLIP_SUPPORTED|ASTER_GFX_FRAME_FONT_EPOCH_SUPPORTED;
-  out->frame_id=aster_font_sd_generation();return 0;
- }
- if(c.action==ASTER_GFX_FRAME_BEGIN) {
-  if(c.frame_id) return ASTER_EINVAL;
-  if(ctx->paused||glass_is_frozen()) return ASTER_EBUSY;
-  const uint8_t *base=s->canvas ? NULL : wasm_runtime_addr_app_to_native(ctx->module_inst,s->app_offset);
-  int e=aster_frame_start(f,h,s->w,s->h,s->canvas,base,s->pitch,k_uptime_get(),aster_psram_alloc,aster_psram_free);
-  if(e) return e;
-  (void)aster_plat_display_flush_drain_checked();
-  out->frame_id=f->id;return 0;
- }
- if(f->state!=ASTER_FRAME_DRAWING||f->surface!=h||c.frame_id!=f->id) return ASTER_ESTATE;
- if(c.action==ASTER_GFX_FRAME_CANCEL) {aster_frame_abort(f);return 0;}
- if(c.action!=ASTER_GFX_FRAME_END) return ASTER_EINVAL;
- int e=aster_frame_check(f,k_uptime_get());
- if(!e && !f->initialized) e=ASTER_ESTATE;
- if(!e && (ctx->paused||glass_is_frozen())) e=ASTER_EBUSY;
- if(e) {out->error=e;aster_frame_abort(f);return e;}
- /* Guest memory may have grown after BEGIN. Resolve it again at END. */
- uint8_t *guest=s->canvas ? NULL : wasm_runtime_addr_app_to_native(ctx->module_inst,s->app_offset);
- if(!s->canvas&&!guest) {aster_frame_abort(f);return ASTER_EBADF;}
- f->state=ASTER_FRAME_QUEUED;
- aster_plat_display_flush_drain();
- f->state=ASTER_FRAME_IN_FLIGHT;
- uint8_t *committed=guest;
- if(s->canvas) {
-  uint8_t *back=aster_plat_display_canvas_back();
-  committed=back;
-  if(!back) e=ASTER_ENOTSUP;
-  else {
-   for(uint32_t i=0;i<f->w*f->h;i++) {back[i*2u]=f->pixels[i*2u+1];back[i*2u+1]=f->pixels[i*2u];}
-   e=aster_plat_display_canvas_present();
-  }
- } else if(s->scale_fit) e=present_scale_fit(s,f->pixels);
- else {
-  aster_plat_display_scale_fit_disarm();
-  /* A retained damage frame is usable only while nobody else has written
+	aster_app_ctx_t *ctx = ctx_of(env);
+	aster_frame_state_t *f = &ctx->gfx_frame;
+	if (!off || (off & 3u))
+		return ASTER_EINVAL;
+	if (len == sizeof(aster_gfx_frame_clip_t)) {
+		const aster_gfx_frame_clip_t *clip =
+		        (const aster_gfx_frame_clip_t *)buf(env, off, len);
+		if (!clip || clip->size != sizeof(*clip) || clip->version != 1 ||
+		    clip->action != ASTER_GFX_FRAME_SET_CLIP)
+			return ASTER_EINVAL;
+		return aster_frame_set_clip(f, h, clip, k_uptime_get());
+	}
+	if (len != sizeof(aster_gfx_frame_control_t))
+		return ASTER_EINVAL;
+	aster_gfx_frame_control_t *out = (aster_gfx_frame_control_t *)buf(env, off, len);
+	if (!out)
+		return ASTER_EINVAL;
+	aster_gfx_frame_control_t c = *out;
+	if (c.size != sizeof(c) || c.version != 1 || c.flags || c.error)
+		return ASTER_EINVAL;
+	if (c.action == ASTER_GFX_FRAME_QUERY) {
+		if (c.frame_id)
+			return ASTER_EINVAL;
+		(void)aster_font_sd_repaint_pending();
+		out->flags = ASTER_GFX_FRAME_SUPPORTED | ASTER_GFX_FRAME_CLIP_SUPPORTED |
+		             ASTER_GFX_FRAME_FONT_EPOCH_SUPPORTED;
+		out->frame_id = aster_font_sd_generation();
+		return 0;
+	}
+	if (c.action == ASTER_GFX_FRAME_BEGIN) {
+		if (c.frame_id)
+			return ASTER_EINVAL;
+		if (ctx->paused || glass_is_frozen())
+			return ASTER_EBUSY;
+		const uint8_t *base = s->canvas ? NULL
+		                                : wasm_runtime_addr_app_to_native(ctx->module_inst,
+		                                                                  s->app_offset);
+		int e = aster_frame_start(f, h, s->w, s->h, s->canvas, base, s->pitch,
+		                          k_uptime_get(), aster_psram_alloc, aster_psram_free);
+		if (e)
+			return e;
+		(void)aster_plat_display_flush_drain_checked();
+		out->frame_id = f->id;
+		return 0;
+	}
+	if (f->state != ASTER_FRAME_DRAWING || f->surface != h || c.frame_id != f->id)
+		return ASTER_ESTATE;
+	if (c.action == ASTER_GFX_FRAME_CANCEL) {
+		aster_frame_abort(f);
+		return 0;
+	}
+	if (c.action != ASTER_GFX_FRAME_END)
+		return ASTER_EINVAL;
+	int e = aster_frame_check(f, k_uptime_get());
+	if (!e && !f->initialized)
+		e = ASTER_ESTATE;
+	if (!e && (ctx->paused || glass_is_frozen()))
+		e = ASTER_EBUSY;
+	if (e) {
+		out->error = e;
+		aster_frame_abort(f);
+		return e;
+	}
+	/* Guest memory may have grown after BEGIN. Resolve it again at END. */
+	uint8_t *guest =
+	        s->canvas ? NULL : wasm_runtime_addr_app_to_native(ctx->module_inst, s->app_offset);
+	if (!s->canvas && !guest) {
+		aster_frame_abort(f);
+		return ASTER_EBADF;
+	}
+	f->state = ASTER_FRAME_QUEUED;
+	aster_plat_display_flush_drain();
+	f->state = ASTER_FRAME_IN_FLIGHT;
+	uint8_t *committed = guest;
+	if (s->canvas) {
+		uint8_t *back = aster_plat_display_canvas_back();
+		committed = back;
+		if (!back)
+			e = ASTER_ENOTSUP;
+		else {
+			for (uint32_t i = 0; i < f->w * f->h; i++) {
+				back[i * 2u] = f->pixels[i * 2u + 1];
+				back[i * 2u + 1] = f->pixels[i * 2u];
+			}
+			e = aster_plat_display_canvas_present();
+		}
+	} else if (s->scale_fit)
+		e = present_scale_fit(s, f->pixels);
+	else {
+		aster_plat_display_scale_fit_disarm();
+		/* A retained damage frame is usable only while nobody else has written
    * the panel. Overlay, orientation, legacy writes and I/O failure force a
    * full restoration. The first END always publishes the complete surface. */
-  bool retained=f->published_surface==h &&
-   f->published_generation==aster_plat_display_generation();
-  bool full=aster_dirty_is_full(&f->dirty,f->w,f->h);
-  if(!retained||full) e=aster_plat_display_app_present(f->pixels,f->w,f->h,f->w);
-  else e=aster_plat_display_write_app_regions(f->pixels,f->w,f->h,f->w,&f->dirty);
- }
- int completion=aster_plat_display_flush_drain_checked();
- if(!e) e=completion;
- if(!e && guest) aster_frame_commit_guest(f,guest,s->pitch);
- if(!e) {
-  ctx->gfx_published_surface=h;
-  f->published_surface=h;f->published_generation=aster_plat_display_generation();
-  aster_gfx_note_committed_frame(committed,s->w,s->h,s->pitch,s->canvas);
- }
- /* A failed END may have changed either the shadow or a physical prefix.
+		bool retained = f->published_surface == h &&
+		                f->published_generation == aster_plat_display_generation();
+		bool full = aster_dirty_is_full(&f->dirty, f->w, f->h);
+		if (!retained || full)
+			e = aster_plat_display_app_present(f->pixels, f->w, f->h, f->w);
+		else
+			e = aster_plat_display_write_app_regions(f->pixels, f->w, f->h, f->w,
+			                                         &f->dirty);
+	}
+	int completion = aster_plat_display_flush_drain_checked();
+	if (!e)
+		e = completion;
+	if (!e && guest)
+		aster_frame_commit_guest(f, guest, s->pitch);
+	if (!e) {
+		ctx->gfx_published_surface = h;
+		f->published_surface = h;
+		f->published_generation = aster_plat_display_generation();
+		aster_gfx_note_committed_frame(committed, s->w, s->h, s->pitch, s->canvas);
+	}
+	/* A failed END may have changed either the shadow or a physical prefix.
   * Restore from Guest in full next time, even if no wire was attempted. */
- if(e) f->published_surface=0;
- out->error=e;aster_frame_abort(f);return e;
+	if (e)
+		f->published_surface = 0;
+	out->error = e;
+	aster_frame_abort(f);
+	return e;
 }
 
-static int32_t n_gfx_exec(wasm_exec_env_t env, uint32_t h, uint32_t cmds_off,
-			  uint32_t n, uint32_t arena_off, uint32_t arena_len,
-			  uint32_t px, uint32_t py, uint32_t pw, uint32_t ph)
+static int32_t n_gfx_exec(wasm_exec_env_t env, uint32_t h, uint32_t cmds_off, uint32_t n,
+                          uint32_t arena_off, uint32_t arena_len, uint32_t px, uint32_t py,
+                          uint32_t pw, uint32_t ph)
 {
 	aster_app_ctx_t *ctx = ctx_of(env);
 	aster_surface_t *s;
 	int32_t e = gfx_surface(env, h, &s);
 
 	if (e != ASTER_OK) {
-		return ctx ? aster_frame_fail(&ctx->gfx_frame,e) : e;
+		return ctx ? aster_frame_fail(&ctx->gfx_frame, e) : e;
 	}
- if(n==ASTER_GFX_FRAME_CONTROL && cmds_off==0 && px==ASTER_GFX_FRAME_MAGIC && py==ASTER_GFX_FRAME_VERSION && pw==0 && ph==0)
-  return n_gfx_frame_control(env,h,s,arena_off,arena_len);
- aster_frame_state_t *frame=&ctx->gfx_frame;
- bool frame_batch=py==ASTER_GFX_FRAME_MAGIC && pw==0 && ph==0;
- if(frame_batch && !frame->state) return ASTER_ESTATE;
- if(frame_batch && n && (cmds_off&3u)) return aster_frame_fail(frame,ASTER_EINVAL);
- if(frame->state) {
-  if(!frame_batch||px!=frame->id) return aster_frame_fail(frame,ASTER_ESTATE);
+	if (n == ASTER_GFX_FRAME_CONTROL && cmds_off == 0 && px == ASTER_GFX_FRAME_MAGIC &&
+	    py == ASTER_GFX_FRAME_VERSION && pw == 0 && ph == 0)
+		return n_gfx_frame_control(env, h, s, arena_off, arena_len);
+	aster_frame_state_t *frame = &ctx->gfx_frame;
+	bool frame_batch = py == ASTER_GFX_FRAME_MAGIC && pw == 0 && ph == 0;
+	if (frame_batch && !frame->state)
+		return ASTER_ESTATE;
+	if (frame_batch && n && (cmds_off & 3u))
+		return aster_frame_fail(frame, ASTER_EINVAL);
+	if (frame->state) {
+		if (!frame_batch || px != frame->id)
+			return aster_frame_fail(frame, ASTER_ESTATE);
 
-  e=aster_frame_check(frame,k_uptime_get());if(e) return e;
-  if(frame->surface!=h) return aster_frame_fail(frame,ASTER_EBUSY);
- }
+		e = aster_frame_check(frame, k_uptime_get());
+		if (e)
+			return e;
+		if (frame->surface != h)
+			return aster_frame_fail(frame, ASTER_EBUSY);
+	}
 	/* Reject invalid explicit rectangles before touching Guest pixels. */
-	if ((pw != 0u) != (ph != 0u) || (pw && (px > s->w || pw > s->w-px || py > s->h || ph > s->h-py)))
-		return aster_frame_fail(&ctx->gfx_frame,ASTER_EINVAL);
+	if ((pw != 0u) != (ph != 0u) ||
+	    (pw && (px > s->w || pw > s->w - px || py > s->h || ph > s->h - py)))
+		return aster_frame_fail(&ctx->gfx_frame, ASTER_EINVAL);
 	if (n > 4096u || (uint64_t)n * sizeof(aster_gfx_cmd_t) > UINT32_MAX) {
-		return aster_frame_fail(&ctx->gfx_frame,ASTER_EINVAL);
+		return aster_frame_fail(&ctx->gfx_frame, ASTER_EINVAL);
 	}
 	const aster_gfx_cmd_t *cmds = NULL;
 
 	if (n) {
-		cmds = (const aster_gfx_cmd_t *)buf(env, cmds_off,
-						  n * sizeof(aster_gfx_cmd_t));
+		cmds = (const aster_gfx_cmd_t *)buf(env, cmds_off, n * sizeof(aster_gfx_cmd_t));
 		if (!cmds) {
-			return aster_frame_fail(&ctx->gfx_frame,ASTER_EINVAL);
+			return aster_frame_fail(&ctx->gfx_frame, ASTER_EINVAL);
 		}
 	}
 	const uint8_t *arena = NULL;
 
 	if (arena_len) {
 		if (arena_off == 0u) {
-			return aster_frame_fail(&ctx->gfx_frame,ASTER_EINVAL);
+			return aster_frame_fail(&ctx->gfx_frame, ASTER_EINVAL);
 		}
 		arena = buf(env, arena_off, arena_len);
 		if (!arena) {
-			return aster_frame_fail(&ctx->gfx_frame,ASTER_EINVAL);
+			return aster_frame_fail(&ctx->gfx_frame, ASTER_EINVAL);
 		}
 	}
- if(frame->state) {
-  e=aster_frame_batch(frame,h,cmds,n,arena_len,k_uptime_get());if(e) return e;
-  uint32_t dx=0,dy=0,dw=0,dh=0;
-  aster_gfx_set_clip(frame->clip_x,frame->clip_y,frame->clip_w,frame->clip_h);
-  int ran=aster_gfx_exec_unpublished_into(frame->pixels,frame->w,frame->h,frame->w,cmds,n,arena,arena_len,&dx,&dy,&dw,&dh);
-  aster_gfx_set_clip(0,0,0,0);
-  if(ran<0) return aster_frame_fail(frame,ran);
-  aster_dirty_set_t batch;aster_gfx_last_dirty(&batch);
-  aster_dirty_append(&frame->dirty,&batch,frame->w,frame->h);
-  return ran;
- }
- ctx->gfx_published_surface=0;
+	if (frame->state) {
+		e = aster_frame_batch(frame, h, cmds, n, arena_len, k_uptime_get());
+		if (e)
+			return e;
+		uint32_t dx = 0, dy = 0, dw = 0, dh = 0;
+		aster_gfx_set_clip(frame->clip_x, frame->clip_y, frame->clip_w, frame->clip_h);
+		int ran = aster_gfx_exec_unpublished_into(frame->pixels, frame->w, frame->h,
+		                                          frame->w, cmds, n, arena, arena_len, &dx,
+		                                          &dy, &dw, &dh);
+		aster_gfx_set_clip(0, 0, 0, 0);
+		if (ran < 0)
+			return aster_frame_fail(frame, ran);
+		aster_dirty_set_t batch;
+		aster_gfx_last_dirty(&batch);
+		aster_dirty_append(&frame->dirty, &batch, frame->w, frame->h);
+		return ran;
+	}
+	ctx->gfx_published_surface = 0;
 	/* Where the engine draws. An ordinary surface lives in app linear
 	 * memory and holds ABI-order words; a panel canvas lives in the
 	 * platform's front buffer, already in the byte order the glass wants,
@@ -932,8 +1002,7 @@ static int32_t n_gfx_exec(wasm_exec_env_t env, uint32_t h, uint32_t cmds_off,
 			return ASTER_ENOTSUP;
 		}
 	} else {
-		base = (uint8_t *)wasm_runtime_addr_app_to_native(ctx->module_inst,
-								  s->app_offset);
+		base = (uint8_t *)wasm_runtime_addr_app_to_native(ctx->module_inst, s->app_offset);
 		if (!base) {
 			return ASTER_EBADF;
 		}
@@ -958,8 +1027,8 @@ static int32_t n_gfx_exec(wasm_exec_env_t env, uint32_t h, uint32_t cmds_off,
 #if IS_ENABLED(CONFIG_ASTER_GFX_TIMING)
 	uint32_t t_raster0 = k_cycle_get_32();
 #endif
-	int32_t ran = aster_gfx_exec_into(base, s->w, s->h, s->pitch, cmds, n, arena,
-					arena_len, &dx, &dy, &dw, &dh, out_be);
+	int32_t ran = aster_gfx_exec_into(base, s->w, s->h, s->pitch, cmds, n, arena, arena_len,
+	                                  &dx, &dy, &dw, &dh, out_be);
 	aster_gfx_set_clip(0, 0, 0, 0);
 #if IS_ENABLED(CONFIG_ASTER_GFX_TIMING)
 	uint32_t t_flush0 = k_cycle_get_32();
@@ -969,13 +1038,14 @@ static int32_t n_gfx_exec(wasm_exec_env_t env, uint32_t h, uint32_t cmds_off,
 	if (ran < 0) {
 		return ASTER_EBADF;
 	}
-    aster_dirty_set_t regions;aster_gfx_last_dirty(&regions);
+	aster_dirty_set_t regions;
+	aster_gfx_last_dirty(&regions);
 	/* explicit present rect wins; else the accumulated dirty box */
 	if (pw && ph) {
 		/* same no-wrap form as n_surface_flush: px/pw are app u32s and
 		 * px + pw would wrap straight past the surface bounds */
 		if (px > s->w || pw > s->w - px || py > s->h || ph > s->h - py) {
-			return aster_frame_fail(&ctx->gfx_frame,ASTER_EINVAL);
+			return aster_frame_fail(&ctx->gfx_frame, ASTER_EINVAL);
 		}
 		dx = px;
 		dy = py;
@@ -1013,15 +1083,15 @@ static int32_t n_gfx_exec(wasm_exec_env_t env, uint32_t h, uint32_t cmds_off,
 				if (!warned) {
 					warned = true;
 					LOG_WRN("panel canvas surface needs a full-frame "
-						"redraw per present (got %ux%u at %u,%u); "
-						"falling back to a rect send",
-						(unsigned)dw, (unsigned)dh, (unsigned)dx,
-						(unsigned)dy);
+					        "redraw per present (got %ux%u at %u,%u); "
+					        "falling back to a rect send",
+					        (unsigned)dw, (unsigned)dh, (unsigned)dx,
+					        (unsigned)dy);
 				}
 				uint8_t *src = base + ((size_t)dy * s->pitch + dx) * 2u;
 
-				err = aster_plat_display_write_at_ex(src, dx, dy, dw, dh,
-								   s->pitch, true);
+				err = aster_plat_display_write_at_ex(src, dx, dy, dw, dh, s->pitch,
+				                                     true);
 				/* The rect send goes out through the shared async
 				 * slot, which the next frame's engine render would
 				 * race; serialise rather than tear. */
@@ -1030,7 +1100,7 @@ static int32_t n_gfx_exec(wasm_exec_env_t env, uint32_t h, uint32_t cmds_off,
 				err = aster_plat_display_canvas_present();
 			}
 		} else if (dx == 0 && dy == 0 && dw == s->w && dh == s->h &&
-                   ((pw&&ph)||aster_dirty_is_full(&regions,s->w,s->h))) {
+		           ((pw && ph) || aster_dirty_is_full(&regions, s->w, s->h))) {
 			/* Whole surface: the app-present entry, which gets the
 			 * double-buffered async flip (and, when the app's space is
 			 * not the panel's, the scale) for free. */
@@ -1041,10 +1111,13 @@ static int32_t n_gfx_exec(wasm_exec_env_t env, uint32_t h, uint32_t cmds_off,
 			 * agree and a scaled/offset rect when they do not. */
 			uint8_t *src = base + ((size_t)dy * s->pitch + dx) * 2u;
 
-			if(pw&&ph) err=aster_plat_display_write_app_at(src,dx,dy,dw,dh,s->pitch);
-            else {
-             err=aster_plat_display_write_app_regions(base,s->w,s->h,s->pitch,&regions);
-            }
+			if (pw && ph)
+				err = aster_plat_display_write_app_at(src, dx, dy, dw, dh,
+				                                      s->pitch);
+			else {
+				err = aster_plat_display_write_app_regions(base, s->w, s->h,
+				                                           s->pitch, &regions);
+			}
 		}
 #if IS_ENABLED(CONFIG_ASTER_GFX_TIMING)
 		acc_flush = k_cycle_get_32() - t_flush0;
@@ -1084,10 +1157,9 @@ static int32_t n_gfx_exec(wasm_exec_env_t env, uint32_t h, uint32_t cmds_off,
 			 * already at the budget's edge. That worker also
 			 * emits the per-op raster histogram so the
 			 * aggregate can be attributed to an op. */
-			aster_gfx_timing_report(ras, flu,
-				(uint32_t)k_cyc_to_us_floor32(s_ras_max),
-				(uint32_t)k_cyc_to_us_floor32(s_flu_max),
-				(uint32_t)(s_cmds / 64u), (uint32_t)(s_px / 64u));
+			aster_gfx_timing_report(ras, flu, (uint32_t)k_cyc_to_us_floor32(s_ras_max),
+			                        (uint32_t)k_cyc_to_us_floor32(s_flu_max),
+			                        (uint32_t)(s_cmds / 64u), (uint32_t)(s_px / 64u));
 			s_n = s_ras = s_flu = s_px = s_cmds = 0;
 			s_ras_max = s_flu_max = 0;
 		}
@@ -1096,8 +1168,7 @@ static int32_t n_gfx_exec(wasm_exec_env_t env, uint32_t h, uint32_t cmds_off,
 	return ran;
 }
 
-static int32_t n_gfx_text_w(wasm_exec_env_t env, uint32_t px, uint32_t off,
-			    uint32_t len)
+static int32_t n_gfx_text_w(wasm_exec_env_t env, uint32_t px, uint32_t off, uint32_t len)
 {
 	if (px < 1u || px > 64u || len == 0u) {
 		return ASTER_EINVAL;
@@ -1116,9 +1187,9 @@ static int32_t n_gfx_fonts_pending(wasm_exec_env_t env)
 	return aster_font_sd_repaint_pending() ? 1 : 0;
 }
 
-static int32_t n_gfx_bmp_load(wasm_exec_env_t env, uint32_t path_off,
-			       uint32_t path_len, uint32_t cap_w, uint32_t cap_h,
-			       uint32_t oh_off, uint32_t ow_off, uint32_t oht_off)
+static int32_t n_gfx_bmp_load(wasm_exec_env_t env, uint32_t path_off, uint32_t path_len,
+                              uint32_t cap_w, uint32_t cap_h, uint32_t oh_off, uint32_t ow_off,
+                              uint32_t oht_off)
 {
 	aster_app_ctx_t *ctx = ctx_of(env);
 
@@ -1164,20 +1235,28 @@ static int32_t n_gfx_bmp_free(wasm_exec_env_t env, uint32_t handle)
 
 #else /* !CONFIG_ASTER_LVGL: symbols stay registered, refuse at runtime */
 
-static int32_t n_gfx_exec(wasm_exec_env_t env, uint32_t h, uint32_t c, uint32_t n,
-			  uint32_t a, uint32_t al, uint32_t x, uint32_t y,
-			  uint32_t w, uint32_t hh)
+static int32_t n_gfx_exec(wasm_exec_env_t env, uint32_t h, uint32_t c, uint32_t n, uint32_t a,
+                          uint32_t al, uint32_t x, uint32_t y, uint32_t w, uint32_t hh)
 {
-	ARG_UNUSED(env); ARG_UNUSED(h); ARG_UNUSED(c); ARG_UNUSED(n);
-	ARG_UNUSED(a); ARG_UNUSED(al); ARG_UNUSED(x); ARG_UNUSED(y);
-	ARG_UNUSED(w); ARG_UNUSED(hh);
+	ARG_UNUSED(env);
+	ARG_UNUSED(h);
+	ARG_UNUSED(c);
+	ARG_UNUSED(n);
+	ARG_UNUSED(a);
+	ARG_UNUSED(al);
+	ARG_UNUSED(x);
+	ARG_UNUSED(y);
+	ARG_UNUSED(w);
+	ARG_UNUSED(hh);
 	return ASTER_ENOTSUP;
 }
 
-static int32_t n_gfx_text_w(wasm_exec_env_t env, uint32_t px, uint32_t off,
-			    uint32_t len)
+static int32_t n_gfx_text_w(wasm_exec_env_t env, uint32_t px, uint32_t off, uint32_t len)
 {
-	ARG_UNUSED(env); ARG_UNUSED(px); ARG_UNUSED(off); ARG_UNUSED(len);
+	ARG_UNUSED(env);
+	ARG_UNUSED(px);
+	ARG_UNUSED(off);
+	ARG_UNUSED(len);
 	return ASTER_ENOTSUP;
 }
 
@@ -1188,18 +1267,24 @@ static int32_t n_gfx_fonts_pending(wasm_exec_env_t env)
 	return 0;
 }
 
-static int32_t n_gfx_bmp_load(wasm_exec_env_t env, uint32_t a, uint32_t b,
-			       uint32_t c, uint32_t d, uint32_t e, uint32_t f,
-			       uint32_t g)
+static int32_t n_gfx_bmp_load(wasm_exec_env_t env, uint32_t a, uint32_t b, uint32_t c, uint32_t d,
+                              uint32_t e, uint32_t f, uint32_t g)
 {
-	ARG_UNUSED(env); ARG_UNUSED(a); ARG_UNUSED(b); ARG_UNUSED(c);
-	ARG_UNUSED(d); ARG_UNUSED(e); ARG_UNUSED(f); ARG_UNUSED(g);
+	ARG_UNUSED(env);
+	ARG_UNUSED(a);
+	ARG_UNUSED(b);
+	ARG_UNUSED(c);
+	ARG_UNUSED(d);
+	ARG_UNUSED(e);
+	ARG_UNUSED(f);
+	ARG_UNUSED(g);
 	return ASTER_ENOTSUP;
 }
 
 static int32_t n_gfx_bmp_free(wasm_exec_env_t env, uint32_t handle)
 {
-	ARG_UNUSED(env); ARG_UNUSED(handle);
+	ARG_UNUSED(env);
+	ARG_UNUSED(handle);
 	return ASTER_ENOTSUP;
 }
 #endif
@@ -1208,16 +1293,18 @@ static int32_t n_gfx_bmp_free(wasm_exec_env_t env, uint32_t handle)
 
 static int32_t n_input_get_info(wasm_exec_env_t env, uint32_t info_off, uint32_t info_size)
 {
-	uint8_t *dst = buf(env, info_off, info_size < sizeof(aster_input_info_t)
-				   ? info_size : sizeof(aster_input_info_t));
+	uint8_t *dst = buf(env, info_off,
+	                   info_size < sizeof(aster_input_info_t) ? info_size
+	                                                          : sizeof(aster_input_info_t));
 	if (!dst) {
 		return ASTER_EINVAL;
 	}
 	aster_input_info_t in = {
-		.size = sizeof(in), .version = 1,
-		.kinds = (aster_plat_input_touch_available() ? ASTER_INPUT_TOUCH : 0) |
-			 (aster_plat_input_keys_available() ? ASTER_INPUT_KEYS : 0),
-		.max_points = aster_plat_input_touch_max_points(),
+	        .size = sizeof(in),
+	        .version = 1,
+	        .kinds = (aster_plat_input_touch_available() ? ASTER_INPUT_TOUCH : 0) |
+	                 (aster_plat_input_keys_available() ? ASTER_INPUT_KEYS : 0),
+	        .max_points = aster_plat_input_touch_max_points(),
 	};
 	size_t n = info_size < sizeof(in) ? info_size : sizeof(in);
 	memcpy(dst, &in, n);
@@ -1230,10 +1317,13 @@ static int32_t n_input_touch(wasm_exec_env_t env, uint32_t pts_off, uint32_t max
 	if (!ctx) {
 		return ASTER_EBADF;
 	}
-	if (max == 0) return 0;
+	if (max == 0)
+		return 0;
 	uint32_t available = aster_plat_input_touch_max_points();
-	if (max > available) max = available;
-	if (max == 0) return 0;
+	if (max > available)
+		max = available;
+	if (max == 0)
+		return 0;
 	uint8_t *dst = buf(env, pts_off, (size_t)max * sizeof(aster_touch_point_t));
 	if (!dst) {
 		return ASTER_EINVAL;
@@ -1247,12 +1337,15 @@ static int32_t n_input_touch(wasm_exec_env_t env, uint32_t pts_off, uint32_t max
 	 * list, which is what an app polling for input can act on. */
 	uint32_t written = 0;
 	for (uint32_t src = 0; src < available && written < max; ++src) {
-		if (tmp[src * 4 + 2] == ASTER_INPUT_TERM) break;
+		if (tmp[src * 4 + 2] == ASTER_INPUT_TERM)
+			break;
 		aster_touch_point_t point = {
-			.x = tmp[src * 4], .y = tmp[src * 4 + 1],
-			.action = tmp[src * 4 + 2],
+		        .x = tmp[src * 4],
+		        .y = tmp[src * 4 + 1],
+		        .action = tmp[src * 4 + 2],
 		};
-		if (!aster_plat_display_app_touch(&point.x, &point.y)) continue;
+		if (!aster_plat_display_app_touch(&point.x, &point.y))
+			continue;
 		/* Guest offsets need not satisfy native struct alignment. */
 		memcpy(dst + (size_t)written * sizeof(point), &point, sizeof(point));
 		written++;
@@ -1288,11 +1381,12 @@ static int32_t n_input_keys_state(wasm_exec_env_t env, uint32_t codes_off, uint3
  * against shell diagnostics. Retry errors after the same TTL, never publish
  * a stale or partially filled sample on a failed fetch. */
 #define IMU_CACHE_MS 10
+
 static struct {
 	int64_t at_ms;
 	aster_imu_sample_t sample;
 	int32_t result;
-} imu_cache = { .at_ms = -1 };
+} imu_cache = {.at_ms = -1};
 
 static int32_t imu_cached(void)
 {
@@ -1302,12 +1396,13 @@ static int32_t imu_cached(void)
 		return imu_cache.result;
 	}
 	aster_imu_sample_t next = {
-		.size = sizeof(next), .version = 1,
-		.flags = ASTER_IMU_ACCEL_VALID | ASTER_IMU_GYRO_VALID,
-		.sequence = imu_cache.sample.sequence + 1u,
+	        .size = sizeof(next),
+	        .version = 1,
+	        .flags = ASTER_IMU_ACCEL_VALID | ASTER_IMU_GYRO_VALID,
+	        .sequence = imu_cache.sample.sequence + 1u,
 	};
-	int err = aster_plat_imu_read(&next.accel[0], &next.accel[1], &next.accel[2],
-				    &next.gyro[0], &next.gyro[1], &next.gyro[2]);
+	int err = aster_plat_imu_read(&next.accel[0], &next.accel[1], &next.accel[2], &next.gyro[0],
+	                              &next.gyro[1], &next.gyro[2]);
 
 	imu_cache.at_ms = k_uptime_get();
 	imu_cache.result = err == -ENODEV ? ASTER_ENODEV : err ? ASTER_EIO : ASTER_OK;
@@ -1335,9 +1430,10 @@ static int32_t n_imu_get_info(wasm_exec_env_t env, uint32_t off, uint32_t size)
 		return result;
 	}
 	aster_imu_info_t info = {
-		.size = sizeof(info), .version = 1,
-		.flags = ASTER_IMU_ACCEL_VALID | ASTER_IMU_GYRO_VALID,
-		.min_interval_ms = IMU_CACHE_MS,
+	        .size = sizeof(info),
+	        .version = 1,
+	        .flags = ASTER_IMU_ACCEL_VALID | ASTER_IMU_GYRO_VALID,
+	        .min_interval_ms = IMU_CACHE_MS,
 	};
 	memcpy(dst, &info, sizeof(info));
 	return ASTER_OK;
@@ -1367,7 +1463,8 @@ static int32_t n_imu_read(wasm_exec_env_t env, uint32_t off, uint32_t size, int 
 	if (size < 3 * sizeof(float)) {
 		return ASTER_EINVAL;
 	}
-	if (!aster_sysinfo_has_feature(gyro ? ASTER_FEATURE_GYROSCOPE : ASTER_FEATURE_ACCELEROMETER)) {
+	if (!aster_sysinfo_has_feature(gyro ? ASTER_FEATURE_GYROSCOPE
+	                                    : ASTER_FEATURE_ACCELEROMETER)) {
 		return ASTER_ENODEV;
 	}
 	float *dst = (float *)buf(env, off, 3 * sizeof(float));
@@ -1560,8 +1657,8 @@ static int32_t n_audio_get_info(wasm_exec_env_t env, uint32_t off, uint32_t info
 		return ASTER_EINVAL;
 	}
 	aster_audio_info_t info = {
-		.size = sizeof(aster_audio_info_t),
-		.version = 1,
+	        .size = sizeof(aster_audio_info_t),
+	        .version = 1,
 	};
 #if IS_ENABLED(CONFIG_ASTER_AUDIO)
 	uint32_t rate, ch, bits;
@@ -1698,15 +1795,21 @@ static int32_t n_audio_effect_load(wasm_exec_env_t env, uint32_t off, uint32_t l
 #endif
 }
 
-static int32_t n_audio_effect_load_memory(wasm_exec_env_t env,uint32_t off,uint32_t len)
+static int32_t n_audio_effect_load_memory(wasm_exec_env_t env, uint32_t off, uint32_t len)
 {
- int32_t e=audio_out_gate();if(e!=ASTER_OK)return e;
- if(!ctx_of(env)||len<12||len>69632)return ASTER_EINVAL;
- const void *data=buf(env,off,len);if(!data)return ASTER_EINVAL;
+	int32_t e = audio_out_gate();
+	if (e != ASTER_OK)
+		return e;
+	if (!ctx_of(env) || len < 12 || len > 69632)
+		return ASTER_EINVAL;
+	const void *data = buf(env, off, len);
+	if (!data)
+		return ASTER_EINVAL;
 #if IS_ENABLED(CONFIG_ASTER_AUDIO)
- int h=aster_plat_audio_effect_load_memory(data,len);return h>0?h:map_audio_err(h);
+	int h = aster_plat_audio_effect_load_memory(data, len);
+	return h > 0 ? h : map_audio_err(h);
 #else
- return ASTER_ENODEV;
+	return ASTER_ENODEV;
 #endif
 }
 
@@ -1725,47 +1828,64 @@ static int32_t n_audio_effect_play(wasm_exec_env_t env, uint32_t handle)
 }
 
 /* Copy versioned guest descriptors before entering the audio service. */
-static int32_t n_audio_effect_play_ex(wasm_exec_env_t env, uint32_t handle,
-                                     uint32_t off, uint32_t size)
+static int32_t n_audio_effect_play_ex(wasm_exec_env_t env, uint32_t handle, uint32_t off,
+                                      uint32_t size)
 {
- int32_t e=audio_out_gate();
- if(e!=ASTER_OK) return e;
- if(size!=sizeof(aster_audio_effect_play_desc_t)) return ASTER_EINVAL;
- const void *src=buf(env,off,size);
- if(!src) return ASTER_EINVAL;
- aster_audio_effect_play_desc_t d;memcpy(&d,src,sizeof(d));
- if(d.size!=size || d.version!=1) return ASTER_EINVAL;
+	int32_t e = audio_out_gate();
+	if (e != ASTER_OK)
+		return e;
+	if (size != sizeof(aster_audio_effect_play_desc_t))
+		return ASTER_EINVAL;
+	const void *src = buf(env, off, size);
+	if (!src)
+		return ASTER_EINVAL;
+	aster_audio_effect_play_desc_t d;
+	memcpy(&d, src, sizeof(d));
+	if (d.size != size || d.version != 1)
+		return ASTER_EINVAL;
 #if IS_ENABLED(CONFIG_ASTER_AUDIO)
- return map_audio_err(aster_plat_audio_effect_play_ex(handle,&d));
+	return map_audio_err(aster_plat_audio_effect_play_ex(handle, &d));
 #else
- ARG_UNUSED(handle);return ASTER_ENODEV;
+	ARG_UNUSED(handle);
+	return ASTER_ENODEV;
 #endif
 }
-static int32_t n_audio_effect_set_params(wasm_exec_env_t env, uint32_t handle,
-                                        uint32_t off, uint32_t size)
+
+static int32_t n_audio_effect_set_params(wasm_exec_env_t env, uint32_t handle, uint32_t off,
+                                         uint32_t size)
 {
- int32_t e=audio_out_gate();
- if(e!=ASTER_OK) return e;
- if(size!=sizeof(aster_audio_effect_params_t)) return ASTER_EINVAL;
- const void *src=buf(env,off,size);
- if(!src) return ASTER_EINVAL;
- aster_audio_effect_params_t p;memcpy(&p,src,sizeof(p));
- if(p.size!=size || p.version!=1) return ASTER_EINVAL;
+	int32_t e = audio_out_gate();
+	if (e != ASTER_OK)
+		return e;
+	if (size != sizeof(aster_audio_effect_params_t))
+		return ASTER_EINVAL;
+	const void *src = buf(env, off, size);
+	if (!src)
+		return ASTER_EINVAL;
+	aster_audio_effect_params_t p;
+	memcpy(&p, src, sizeof(p));
+	if (p.size != size || p.version != 1)
+		return ASTER_EINVAL;
 #if IS_ENABLED(CONFIG_ASTER_AUDIO)
- return map_audio_err(aster_plat_audio_effect_set_params(handle,&p));
+	return map_audio_err(aster_plat_audio_effect_set_params(handle, &p));
 #else
- ARG_UNUSED(handle);return ASTER_ENODEV;
+	ARG_UNUSED(handle);
+	return ASTER_ENODEV;
 #endif
 }
-static int32_t n_audio_effect_stop(wasm_exec_env_t env,uint32_t handle,uint32_t ms)
+
+static int32_t n_audio_effect_stop(wasm_exec_env_t env, uint32_t handle, uint32_t ms)
 {
- ARG_UNUSED(env);
- int32_t e=audio_out_gate();
- if(e!=ASTER_OK) return e;
+	ARG_UNUSED(env);
+	int32_t e = audio_out_gate();
+	if (e != ASTER_OK)
+		return e;
 #if IS_ENABLED(CONFIG_ASTER_AUDIO)
- return map_audio_err(aster_plat_audio_effect_stop(handle,ms));
+	return map_audio_err(aster_plat_audio_effect_stop(handle, ms));
 #else
- ARG_UNUSED(handle);ARG_UNUSED(ms);return ASTER_ENODEV;
+	ARG_UNUSED(handle);
+	ARG_UNUSED(ms);
+	return ASTER_ENODEV;
 #endif
 }
 
@@ -1840,8 +1960,8 @@ static int32_t n_audio_get_state(wasm_exec_env_t env, uint32_t off, uint32_t st_
 		return ASTER_EINVAL;
 	}
 	aster_audio_state_t st = {
-		.size = sizeof(aster_audio_state_t),
-		.version = 2,
+	        .size = sizeof(aster_audio_state_t),
+	        .version = 2,
 	};
 #if IS_ENABLED(CONFIG_ASTER_AUDIO)
 	(void)aster_plat_audio_get_state(&st.state, &st.bytes_total, &st.bytes_done, &st.volume);
@@ -1903,15 +2023,24 @@ static int32_t n_audio_get_lyrics(wasm_exec_env_t env, uint32_t off, uint32_t si
 #if IS_ENABLED(CONFIG_ASTER_WIFI)
 static int32_t map_wifi_err(int err)
 {
-	if (!err) return ASTER_OK;
-	if (err == -EINVAL) return ASTER_EINVAL;
-	if (err == -ENODEV) return ASTER_ENODEV;
-	if (err == -ENOTSUP) return ASTER_ENOTSUP;
-	if (err == -EBUSY) return ASTER_EBUSY;
-	if (err == -EAGAIN || err == -EINPROGRESS) return ASTER_EAGAIN;
-	if (err == -ENOMEM) return ASTER_ENOMEM;
-	if (err == -ENOENT) return ASTER_ENOENT;
-	if (err == -ETIMEDOUT) return ASTER_ETIMEDOUT;
+	if (!err)
+		return ASTER_OK;
+	if (err == -EINVAL)
+		return ASTER_EINVAL;
+	if (err == -ENODEV)
+		return ASTER_ENODEV;
+	if (err == -ENOTSUP)
+		return ASTER_ENOTSUP;
+	if (err == -EBUSY)
+		return ASTER_EBUSY;
+	if (err == -EAGAIN || err == -EINPROGRESS)
+		return ASTER_EAGAIN;
+	if (err == -ENOMEM)
+		return ASTER_ENOMEM;
+	if (err == -ENOENT)
+		return ASTER_ENOENT;
+	if (err == -ETIMEDOUT)
+		return ASTER_ETIMEDOUT;
 	return ASTER_EIO;
 }
 
@@ -1919,8 +2048,10 @@ static int32_t wifi_gate(wasm_exec_env_t env)
 {
 	aster_app_ctx_t *ctx = ctx_of(env);
 
-	if (!ctx) return ASTER_EBADF;
-	if (!aster_ctx_perm(ctx, ASTER_PERM_WIFI)) return ASTER_EPERM;
+	if (!ctx)
+		return ASTER_EBADF;
+	if (!aster_ctx_perm(ctx, ASTER_PERM_WIFI))
+		return ASTER_EPERM;
 	return aster_sysinfo_has_feature(ASTER_FEATURE_WIFI) ? ASTER_OK : ASTER_ENOTSUP;
 }
 #endif
@@ -1936,8 +2067,7 @@ static int32_t n_wifi_scan_start(wasm_exec_env_t env)
 #endif
 }
 
-static int32_t n_wifi_scan_results(wasm_exec_env_t env, uint32_t out_off,
-				   uint32_t capacity)
+static int32_t n_wifi_scan_results(wasm_exec_env_t env, uint32_t out_off, uint32_t capacity)
 {
 #if IS_ENABLED(CONFIG_ASTER_WIFI)
 	int32_t gate = wifi_gate(env);
@@ -1947,57 +2077,65 @@ static int32_t n_wifi_scan_results(wasm_exec_env_t env, uint32_t out_off,
 	uint64_t bytes;
 	uint8_t *dst;
 
-	if (gate) return gate;
-	if (capacity == 0 || capacity > ASTER_WIFI_AP_MAX) return ASTER_EINVAL;
+	if (gate)
+		return gate;
+	if (capacity == 0 || capacity > ASTER_WIFI_AP_MAX)
+		return ASTER_EINVAL;
 	bytes = (uint64_t)capacity * sizeof(aster_wifi_ap_info_t);
-	if (bytes > UINT32_MAX) return ASTER_EINVAL;
+	if (bytes > UINT32_MAX)
+		return ASTER_EINVAL;
 	dst = buf(env, out_off, (uint32_t)bytes);
-	if (!dst) return ASTER_EINVAL;
+	if (!dst)
+		return ASTER_EINVAL;
 	err = aster_plat_wifi_scan_results(rows, (int)capacity, &count);
-	if (err) return map_wifi_err(err);
+	if (err)
+		return map_wifi_err(err);
 	for (int i = 0; i < count; i++) {
 		aster_wifi_ap_info_t ap = {
-			.size = sizeof(ap),
-			.version = 1,
-			.rssi = rows[i].rssi,
-			.channel = rows[i].channel,
-			.security = aster_plat_wifi_security_class(rows[i].security),
+		        .size = sizeof(ap),
+		        .version = 1,
+		        .rssi = rows[i].rssi,
+		        .channel = rows[i].channel,
+		        .security = aster_plat_wifi_security_class(rows[i].security),
 		};
 		memcpy(ap.ssid, rows[i].ssid, sizeof(ap.ssid));
 		memcpy(dst + (size_t)i * sizeof(ap), &ap, sizeof(ap));
 	}
 	return count;
 #else
-	ARG_UNUSED(env); ARG_UNUSED(out_off); ARG_UNUSED(capacity);
+	ARG_UNUSED(env);
+	ARG_UNUSED(out_off);
+	ARG_UNUSED(capacity);
 	return ASTER_ENOTSUP;
 #endif
 }
 
-static int32_t n_wifi_connect(wasm_exec_env_t env, uint32_t ssid_off,
-			      uint32_t ssid_len, uint32_t password_off,
-			      uint32_t password_len)
+static int32_t n_wifi_connect(wasm_exec_env_t env, uint32_t ssid_off, uint32_t ssid_len,
+                              uint32_t password_off, uint32_t password_len)
 {
 #if IS_ENABLED(CONFIG_ASTER_WIFI)
 	int32_t gate = wifi_gate(env);
 	char ssid[ASTER_WIFI_SSID_MAX + 1];
 	char password[65] = {0};
 
-	if (gate) return gate;
+	if (gate)
+		return gate;
 	if (ssid_len == 0 || ssid_len > ASTER_WIFI_SSID_MAX || password_len > 64 ||
-	    app_str(env, ssid_off, ssid_len, ssid, sizeof(ssid)) < 0 ||
-	    strlen(ssid) != ssid_len) {
+	    app_str(env, ssid_off, ssid_len, ssid, sizeof(ssid)) < 0 || strlen(ssid) != ssid_len) {
 		return ASTER_EINVAL;
 	}
 	if (password_len &&
-	    (app_str(env, password_off, password_len, password,
-		     sizeof(password)) < 0 || strlen(password) != password_len)) {
+	    (app_str(env, password_off, password_len, password, sizeof(password)) < 0 ||
+	     strlen(password) != password_len)) {
 		return ASTER_EINVAL;
 	}
-	return map_wifi_err(aster_plat_wifi_connect_start(ssid,
-							 password_len ? password : NULL));
+	return map_wifi_err(aster_plat_wifi_connect_start(ssid, password_len ? password : NULL));
 #else
-	ARG_UNUSED(env); ARG_UNUSED(ssid_off); ARG_UNUSED(ssid_len);
-	ARG_UNUSED(password_off); ARG_UNUSED(password_len);
+	ARG_UNUSED(env);
+	ARG_UNUSED(ssid_off);
+	ARG_UNUSED(ssid_len);
+	ARG_UNUSED(password_off);
+	ARG_UNUSED(password_len);
 	return ASTER_ENOTSUP;
 #endif
 }
@@ -2035,12 +2173,11 @@ static int32_t n_wifi_forget(wasm_exec_env_t env)
 #endif
 }
 
-static int32_t n_wifi_status(wasm_exec_env_t env, uint32_t out_off,
-			     uint32_t out_size)
+static int32_t n_wifi_status(wasm_exec_env_t env, uint32_t out_off, uint32_t out_size)
 {
 #if IS_ENABLED(CONFIG_ASTER_WIFI)
 	const uint32_t min_size = offsetof(aster_wifi_info_t, last_result) +
-				  sizeof(((aster_wifi_info_t *)0)->last_result);
+	                          sizeof(((aster_wifi_info_t *)0)->last_result);
 	aster_wifi_status_t platform = {0};
 	aster_wifi_info_t status = {0};
 	uint32_t operation = ASTER_PLAT_WIFI_OP_NONE;
@@ -2051,13 +2188,17 @@ static int32_t n_wifi_status(wasm_exec_env_t env, uint32_t out_off,
 	uint32_t copy_size;
 	int err;
 
-	if (gate) return gate;
-	if (out_size < min_size) return ASTER_EINVAL;
+	if (gate)
+		return gate;
+	if (out_size < min_size)
+		return ASTER_EINVAL;
 	copy_size = MIN(out_size, (uint32_t)sizeof(status));
 	dst = buf(env, out_off, copy_size);
-	if (!dst) return ASTER_EINVAL;
+	if (!dst)
+		return ASTER_EINVAL;
 	err = aster_plat_wifi_status(&platform);
-	if (err) return map_wifi_err(err);
+	if (err)
+		return map_wifi_err(err);
 	aster_plat_wifi_operation(&operation, &last_operation, &last_result);
 	status.size = sizeof(status);
 	status.version = 1;
@@ -2072,27 +2213,33 @@ static int32_t n_wifi_status(wasm_exec_env_t env, uint32_t out_off,
 	memcpy(dst, &status, copy_size);
 	return ASTER_OK;
 #else
-	ARG_UNUSED(env); ARG_UNUSED(out_off); ARG_UNUSED(out_size);
+	ARG_UNUSED(env);
+	ARG_UNUSED(out_off);
+	ARG_UNUSED(out_size);
 	return ASTER_ENOTSUP;
 #endif
 }
 
-static int32_t n_wifi_get_saved_ssid(wasm_exec_env_t env, uint32_t out_off,
-				     uint32_t capacity)
+static int32_t n_wifi_get_saved_ssid(wasm_exec_env_t env, uint32_t out_off, uint32_t capacity)
 {
 #if IS_ENABLED(CONFIG_ASTER_WIFI)
 	int32_t gate = wifi_gate(env);
 	uint8_t *dst;
 	int err;
 
-	if (gate) return gate;
-	if (capacity < ASTER_WIFI_SSID_MAX + 1) return ASTER_EINVAL;
+	if (gate)
+		return gate;
+	if (capacity < ASTER_WIFI_SSID_MAX + 1)
+		return ASTER_EINVAL;
 	dst = buf(env, out_off, ASTER_WIFI_SSID_MAX + 1);
-	if (!dst) return ASTER_EINVAL;
+	if (!dst)
+		return ASTER_EINVAL;
 	err = aster_plat_wifi_last_ssid((char *)dst, ASTER_WIFI_SSID_MAX + 1);
 	return map_wifi_err(err);
 #else
-	ARG_UNUSED(env); ARG_UNUSED(out_off); ARG_UNUSED(capacity);
+	ARG_UNUSED(env);
+	ARG_UNUSED(out_off);
+	ARG_UNUSED(capacity);
 	return ASTER_ENOTSUP;
 #endif
 }
@@ -2109,8 +2256,8 @@ static int fs_slot(aster_app_ctx_t *ctx)
 	return -1;
 }
 
-static int32_t n_fs_open(wasm_exec_env_t env, uint32_t path_off, uint32_t path_len,
-			 uint32_t flags, uint32_t out_off)
+static int32_t n_fs_open(wasm_exec_env_t env, uint32_t path_off, uint32_t path_len, uint32_t flags,
+                         uint32_t out_off)
 {
 	aster_app_ctx_t *ctx = ctx_of(env);
 	uint32_t *out = (uint32_t *)buf(env, out_off, 4);
@@ -2319,12 +2466,12 @@ static int32_t n_fs_unlink(wasm_exec_env_t env, uint32_t path_off, uint32_t path
 	return err == -ENOENT ? ASTER_ENOENT : (err ? ASTER_EIO : ASTER_OK);
 }
 
-static int32_t n_fs_stat(wasm_exec_env_t env, uint32_t path_off, uint32_t path_len,
-			 uint32_t st_off, uint32_t st_size)
+static int32_t n_fs_stat(wasm_exec_env_t env, uint32_t path_off, uint32_t path_len, uint32_t st_off,
+                         uint32_t st_size)
 {
 	aster_app_ctx_t *ctx = ctx_of(env);
-	uint8_t *dst = buf(env, st_off, st_size < sizeof(aster_stat_t) ? st_size
-					       : sizeof(aster_stat_t));
+	uint8_t *dst =
+	        buf(env, st_off, st_size < sizeof(aster_stat_t) ? st_size : sizeof(aster_stat_t));
 	if (!ctx || !dst) {
 		return ASTER_EINVAL;
 	}
@@ -2344,9 +2491,10 @@ static int32_t n_fs_stat(wasm_exec_env_t env, uint32_t path_off, uint32_t path_l
 		return ASTER_ENOENT;
 	}
 	aster_stat_t st = {
-		.size = sizeof(st), .version = 1,
-		.filesize = (uint64_t)ent.size,
-		.mode = ent.type == FS_DIR_ENTRY_DIR ? ASTER_STAT_DIR : 0,
+	        .size = sizeof(st),
+	        .version = 1,
+	        .filesize = (uint64_t)ent.size,
+	        .mode = ent.type == FS_DIR_ENTRY_DIR ? ASTER_STAT_DIR : 0,
 	};
 	size_t n = st_size < sizeof(st) ? st_size : sizeof(st);
 	memcpy(dst, &st, n);
@@ -2366,7 +2514,7 @@ static int32_t n_fs_stat(wasm_exec_env_t env, uint32_t path_off, uint32_t path_l
  * handle for that index fed NULL to fs_close()/fs_seek().
  */
 static struct {
-	aster_app_ctx_t   *owner; /* NULL = free */
+	aster_app_ctx_t *owner; /* NULL = free */
 	struct fs_dir_t *d;
 } dir_slots[ASTER_FILE_MAX];
 
@@ -2408,7 +2556,7 @@ static struct fs_dir_t *dir_slot_get(aster_app_ctx_t *ctx, uint32_t h)
 }
 
 static int32_t n_fs_opendir(wasm_exec_env_t env, uint32_t path_off, uint32_t path_len,
-			    uint32_t out_off)
+                            uint32_t out_off)
 {
 	aster_app_ctx_t *ctx = ctx_of(env);
 	uint32_t *out = (uint32_t *)buf(env, out_off, 4);
@@ -2445,7 +2593,7 @@ static int32_t n_fs_opendir(wasm_exec_env_t env, uint32_t path_off, uint32_t pat
 }
 
 static int32_t n_fs_dir_next(wasm_exec_env_t env, uint32_t h, uint32_t name_off, uint32_t name_max,
-			     uint32_t is_dir_off)
+                             uint32_t is_dir_off)
 {
 	aster_app_ctx_t *ctx = ctx_of(env);
 	struct fs_dir_t *d = dir_slot_get(ctx, h);
@@ -2505,7 +2653,7 @@ static int32_t n_fs_closedir(wasm_exec_env_t env, uint32_t h)
 #if IS_ENABLED(CONFIG_ASTER_IMGDEC)
 
 static int32_t n_img_probe(wasm_exec_env_t env, uint32_t path_off, uint32_t path_len,
-			   uint32_t out_off, uint32_t out_size)
+                           uint32_t out_off, uint32_t out_size)
 {
 	aster_app_ctx_t *ctx = ctx_of(env);
 	if (!ctx) {
@@ -2514,16 +2662,19 @@ static int32_t n_img_probe(wasm_exec_env_t env, uint32_t path_off, uint32_t path
 	if (!aster_ctx_perm(ctx, ASTER_PERM_FS)) {
 		return ASTER_EPERM;
 	}
+
 	/* ABI wire struct (matches abi/include/aster/img.h::aster_img_info_t). The
 	 * firmware-internal aster_imgdec_info_t has a different layout, so copy
 	 * field-by-field across the boundary. */
 	typedef struct {
 		uint32_t size, version, fmt, src_w, src_h, file_size, out_w, out_h;
 		uint32_t flags, reserved;
-		char     why[48];
+		char why[48];
 	} img_info_wire_t;
-	img_info_wire_t *dst = (img_info_wire_t *)buf(env, out_off,
-		out_size < sizeof(img_info_wire_t) ? out_size : sizeof(img_info_wire_t));
+
+	img_info_wire_t *dst = (img_info_wire_t *)buf(
+	        env, out_off,
+	        out_size < sizeof(img_info_wire_t) ? out_size : sizeof(img_info_wire_t));
 	if (!dst) {
 		return ASTER_EINVAL;
 	}
@@ -2561,7 +2712,7 @@ static int32_t n_img_probe(wasm_exec_env_t env, uint32_t path_off, uint32_t path
 }
 
 static int32_t n_img_render(wasm_exec_env_t env, uint32_t path_off, uint32_t path_len,
-			    uint32_t args_off, uint32_t args_size)
+                            uint32_t args_off, uint32_t args_size)
 {
 	aster_app_ctx_t *ctx = ctx_of(env);
 	if (!ctx) {
@@ -2570,9 +2721,10 @@ static int32_t n_img_render(wasm_exec_env_t env, uint32_t path_off, uint32_t pat
 	if (!aster_ctx_perm(ctx, ASTER_PERM_FS)) {
 		return ASTER_EPERM;
 	}
-	aster_img_render_args_t *a = (aster_img_render_args_t *)buf(env, args_off,
-		args_size < sizeof(aster_img_render_args_t) ? args_size
-						     : sizeof(aster_img_render_args_t));
+	aster_img_render_args_t *a = (aster_img_render_args_t *)buf(
+	        env, args_off,
+	        args_size < sizeof(aster_img_render_args_t) ? args_size
+	                                                    : sizeof(aster_img_render_args_t));
 	if (!a || a->size < sizeof(*a)) {
 		return ASTER_EINVAL;
 	}
@@ -2605,7 +2757,7 @@ static int32_t n_img_render(wasm_exec_env_t env, uint32_t path_off, uint32_t pat
 	}
 	uint32_t ow = 0, oh = 0;
 	aster_error_t rc = aster_imgdec_render(real, dst, a->cap_w, a->cap_h, &ow, &oh,
-					(a->flags & ASTER_IMG_F_NEAREST) != 0);
+	                                       (a->flags & ASTER_IMG_F_NEAREST) != 0);
 	a->out_w = ow;
 	a->out_h = oh;
 	return rc;
@@ -2614,18 +2766,24 @@ static int32_t n_img_render(wasm_exec_env_t env, uint32_t path_off, uint32_t pat
 #else /* !CONFIG_ASTER_IMGDEC: symbols stay registered, refuse at runtime */
 
 static int32_t n_img_probe(wasm_exec_env_t env, uint32_t path_off, uint32_t path_len,
-			   uint32_t out_off, uint32_t out_size)
+                           uint32_t out_off, uint32_t out_size)
 {
-	ARG_UNUSED(env); ARG_UNUSED(path_off); ARG_UNUSED(path_len);
-	ARG_UNUSED(out_off); ARG_UNUSED(out_size);
+	ARG_UNUSED(env);
+	ARG_UNUSED(path_off);
+	ARG_UNUSED(path_len);
+	ARG_UNUSED(out_off);
+	ARG_UNUSED(out_size);
 	return ASTER_ENOTSUP;
 }
 
 static int32_t n_img_render(wasm_exec_env_t env, uint32_t path_off, uint32_t path_len,
-			    uint32_t args_off, uint32_t args_size)
+                            uint32_t args_off, uint32_t args_size)
 {
-	ARG_UNUSED(env); ARG_UNUSED(path_off); ARG_UNUSED(path_len);
-	ARG_UNUSED(args_off); ARG_UNUSED(args_size);
+	ARG_UNUSED(env);
+	ARG_UNUSED(path_off);
+	ARG_UNUSED(path_len);
+	ARG_UNUSED(args_off);
+	ARG_UNUSED(args_size);
 	return ASTER_ENOTSUP;
 }
 
@@ -2633,8 +2791,8 @@ static int32_t n_img_render(wasm_exec_env_t env, uint32_t path_off, uint32_t pat
 
 /* ============ kv ============ */
 
-static int32_t n_kv_set(wasm_exec_env_t env, uint32_t key_off, uint32_t key_len,
-			uint32_t val_off, uint32_t val_len)
+static int32_t n_kv_set(wasm_exec_env_t env, uint32_t key_off, uint32_t key_len, uint32_t val_off,
+                        uint32_t val_len)
 {
 	aster_app_ctx_t *ctx = ctx_of(env);
 	if (!ctx) {
@@ -2651,8 +2809,8 @@ static int32_t n_kv_set(wasm_exec_env_t env, uint32_t key_off, uint32_t key_len,
 	return aster_kv_set(ctx->id, key, val, val_len) ? ASTER_EIO : ASTER_OK;
 }
 
-static int32_t n_kv_get(wasm_exec_env_t env, uint32_t key_off, uint32_t key_len,
-			uint32_t dst_off, uint32_t dst_max)
+static int32_t n_kv_get(wasm_exec_env_t env, uint32_t key_off, uint32_t key_len, uint32_t dst_off,
+                        uint32_t dst_max)
 {
 	aster_app_ctx_t *ctx = ctx_of(env);
 	if (!ctx) {
@@ -2688,29 +2846,47 @@ static int32_t n_kv_delete(wasm_exec_env_t env, uint32_t key_off, uint32_t key_l
 }
 
 /* ============ appmgr (ABI 1.2, permission "appmgr") ============ */
-static int32_t n_system_get_info(wasm_exec_env_t env,uint32_t off,uint32_t size)
+static int32_t n_system_get_info(wasm_exec_env_t env, uint32_t off, uint32_t size)
 {
-    if(size<sizeof(aster_system_info_t))return ASTER_EINVAL;
-    void *out=buf(env,off,sizeof(aster_system_info_t));if(!out)return ASTER_EINVAL;
-    uint32_t header[2];memcpy(header,out,sizeof(header));
-    if(header[0]<sizeof(aster_system_info_t) || header[1]!=1)return ASTER_EINVAL;
-    aster_system_info_t info;aster_sysinfo_get(&info);memcpy(out,&info,sizeof(info));return 0;
+	if (size < sizeof(aster_system_info_t))
+		return ASTER_EINVAL;
+	void *out = buf(env, off, sizeof(aster_system_info_t));
+	if (!out)
+		return ASTER_EINVAL;
+	uint32_t header[2];
+	memcpy(header, out, sizeof(header));
+	if (header[0] < sizeof(aster_system_info_t) || header[1] != 1)
+		return ASTER_EINVAL;
+	aster_system_info_t info;
+	aster_sysinfo_get(&info);
+	memcpy(out, &info, sizeof(info));
+	return 0;
 }
-static int32_t n_appmgr_install(wasm_exec_env_t env,uint32_t p,uint32_t pn,uint32_t a,uint32_t an)
+
+static int32_t n_appmgr_install(wasm_exec_env_t env, uint32_t p, uint32_t pn, uint32_t a,
+                                uint32_t an)
 {
-    aster_app_ctx_t *ctx=ctx_of(env);
-    if(!ctx)return ASTER_EBADF;
-    if(!aster_ctx_perm(ctx,ASTER_PERM_APPMGR) || !aster_ctx_perm(ctx,ASTER_PERM_FS) ||
-       !aster_ctx_perm(ctx,ASTER_PERM_KV))return ASTER_EPERM;
-    char package[160],assets[160],real_package[256],real_assets[256];
-    if(app_str(env,p,pn,package,sizeof(package))<0 || app_str(env,a,an,assets,sizeof(assets))<0)
-        return ASTER_EINVAL;
-    if(strncmp(package,"/data/",6) || strncmp(assets,"/data/",6) ||
-       sandbox_map(ctx,package,real_package,sizeof(real_package)) ||
-       sandbox_map(ctx,assets,real_assets,sizeof(real_assets)))return ASTER_EPERM;
-    int r=aster_app_mgr_queue_install(ctx->id,real_package,real_assets);
-    if(!r){ctx->exit_clean=true;ctx->exit_code=0;ctx->quit=true;}
-    return r;
+	aster_app_ctx_t *ctx = ctx_of(env);
+	if (!ctx)
+		return ASTER_EBADF;
+	if (!aster_ctx_perm(ctx, ASTER_PERM_APPMGR) || !aster_ctx_perm(ctx, ASTER_PERM_FS) ||
+	    !aster_ctx_perm(ctx, ASTER_PERM_KV))
+		return ASTER_EPERM;
+	char package[160], assets[160], real_package[256], real_assets[256];
+	if (app_str(env, p, pn, package, sizeof(package)) < 0 ||
+	    app_str(env, a, an, assets, sizeof(assets)) < 0)
+		return ASTER_EINVAL;
+	if (strncmp(package, "/data/", 6) || strncmp(assets, "/data/", 6) ||
+	    sandbox_map(ctx, package, real_package, sizeof(real_package)) ||
+	    sandbox_map(ctx, assets, real_assets, sizeof(real_assets)))
+		return ASTER_EPERM;
+	int r = aster_app_mgr_queue_install(ctx->id, real_package, real_assets);
+	if (!r) {
+		ctx->exit_clean = true;
+		ctx->exit_code = 0;
+		ctx->quit = true;
+	}
+	return r;
 }
 
 static int32_t n_appmgr_count(wasm_exec_env_t env)
@@ -2723,7 +2899,7 @@ static int32_t n_appmgr_count(wasm_exec_env_t env)
 }
 
 static int32_t n_appmgr_list(wasm_exec_env_t env, uint32_t index, uint32_t info_off,
-			     uint32_t info_size)
+                             uint32_t info_size)
 {
 	aster_app_ctx_t *ctx = ctx_of(env);
 	if (!aster_ctx_perm(ctx, ASTER_PERM_APPMGR)) {
@@ -2733,12 +2909,13 @@ static int32_t n_appmgr_list(wasm_exec_env_t env, uint32_t index, uint32_t info_
 	if (!r) {
 		return ASTER_EINVAL;
 	}
-	uint8_t *dst = buf(env, info_off, info_size < sizeof(aster_app_info_t)
-				   ? info_size : sizeof(aster_app_info_t));
+	uint8_t *dst =
+	        buf(env, info_off,
+	            info_size < sizeof(aster_app_info_t) ? info_size : sizeof(aster_app_info_t));
 	if (!dst) {
 		return ASTER_EINVAL;
 	}
-	aster_app_info_t ai = { 0 };
+	aster_app_info_t ai = {0};
 	ai.size = sizeof(ai);
 	ai.version = 2;
 	/* snprintf, not strncpy: the record strings are the same width as the
@@ -2819,8 +2996,7 @@ void aster_native_release_files(aster_app_ctx_t *ctx)
 /* memcpy for clang-emitted struct-copy calls (LVGL and any large-C app).
  * Offsets are app-linear-memory addresses, validated via buf(). Returns dest
  * like the C ABI (wasm import type (i32,i32,i32)->i32). */
-static uint32_t n_memcpy(wasm_exec_env_t env, uint32_t dest, uint32_t src,
-			 uint32_t n)
+static uint32_t n_memcpy(wasm_exec_env_t env, uint32_t dest, uint32_t src, uint32_t n)
 {
 	if (n == 0) {
 		return dest;
@@ -2839,99 +3015,99 @@ static uint32_t n_memcpy(wasm_exec_env_t env, uint32_t dest, uint32_t src,
 /* symbol table (sorted by name: WAMR uses it as-is with linear search) */
 #include "aster_player_native.inc"
 static NativeSymbol syms[] = {
- { "aster_player_bt_list", (void *)n_player_bt_list, "(ii)i", NULL },
- { "aster_player_get_info", (void *)n_player_get_info, "(ii)i", NULL },
- { "aster_player_control", (void *)n_player_control, "(ii)i", NULL },
-	{ "memcpy", (void *)n_memcpy, "(iii)i", NULL },
-	{ "aster_app_exit", (void *)n_app_exit, "(i)", NULL },
-	{ "aster_app_set_framerate", (void *)n_set_framerate, "(i)i", NULL },
-	{ "aster_appmgr_count", (void *)n_appmgr_count, "()i", NULL },
-	{ "aster_appmgr_list", (void *)n_appmgr_list, "(iii)i", NULL },
-	{ "aster_appmgr_start", (void *)n_appmgr_start, "(ii)i", NULL },
-    { "aster_appmgr_install", (void *)n_appmgr_install, "(iiii)i", NULL },
-    { "aster_system_get_info", (void *)n_system_get_info, "(ii)i", NULL },
-	{ "aster_appmgr_uninstall", (void *)n_appmgr_uninstall, "(ii)i", NULL },
-	{ "aster_audio_get_info", (void *)n_audio_get_info, "(ii)i", NULL },
-	{ "aster_audio_get_lyrics", (void *)n_audio_get_lyrics, "(ii)i", NULL },
-	{ "aster_audio_get_state", (void *)n_audio_get_state, "(ii)i", NULL },
-	{ "aster_audio_get_volume", (void *)n_audio_get_volume, "()i", NULL },
-	{ "aster_audio_effect_load", (void *)n_audio_effect_load, "(ii)i", NULL },
-	{ "aster_audio_effect_load_memory", (void *)n_audio_effect_load_memory, "(ii)i", NULL },
-	{ "aster_audio_effect_play", (void *)n_audio_effect_play, "(i)i", NULL },
-	{ "aster_audio_effect_play_ex", (void *)n_audio_effect_play_ex, "(iii)i", NULL },
-	{ "aster_audio_effect_set_params", (void *)n_audio_effect_set_params, "(iii)i", NULL },
-	{ "aster_audio_effect_stop", (void *)n_audio_effect_stop, "(ii)i", NULL },
-	{ "aster_audio_effect_unload", (void *)n_audio_effect_unload, "(i)i", NULL },
-	{ "aster_audio_pause", (void *)n_audio_pause, "()i", NULL },
-	{ "aster_audio_record", (void *)n_audio_record, "(ii)i", NULL },
-	{ "aster_audio_resume", (void *)n_audio_resume, "()i", NULL },
-	{ "aster_audio_seek", (void *)n_audio_seek, "(i)i", NULL },
-	{ "aster_audio_set_volume", (void *)n_audio_set_volume, "(i)i", NULL },
-	{ "aster_audio_start_file", (void *)n_audio_start_file, "(ii)i", NULL },
-	{ "aster_audio_stream_open", (void *)n_audio_stream_open, "(i)i", NULL },
-	{ "aster_audio_stream_write", (void *)n_audio_stream_write, "(iii)i", NULL },
-	{ "aster_audio_stream_finish", (void *)n_audio_stream_finish, "(i)i", NULL },
-	{ "aster_audio_stream_status", (void *)n_audio_stream_status, "(iii)i", NULL },
-	{ "aster_audio_stream_close", (void *)n_audio_stream_close, "(i)i", NULL },
-	{ "aster_audio_stop", (void *)n_audio_stop, "()i", NULL },
-	{ "aster_display_count", (void *)n_display_count, "()i", NULL },
-	{ "aster_display_get_info", (void *)n_display_get_info, "(iii)i", NULL },
-	{ "aster_fs_closedir", (void *)n_fs_closedir, "(i)i", NULL },
-	{ "aster_fs_close", (void *)n_fs_close, "(i)i", NULL },
-	{ "aster_fs_dir_next", (void *)n_fs_dir_next, "(iiii)i", NULL },
-	{ "aster_fs_mkdir", (void *)n_fs_mkdir, "(ii)i", NULL },
-	{ "aster_fs_open", (void *)n_fs_open, "(iiii)i", NULL },
-	{ "aster_fs_opendir", (void *)n_fs_opendir, "(iii)i", NULL },
-	{ "aster_fs_read", (void *)n_fs_read, "(iii)i", NULL },
-	{ "aster_fs_seek", (void *)n_fs_seek, "(iii)i", NULL },
-	{ "aster_fs_stat", (void *)n_fs_stat, "(iiii)i", NULL },
-	{ "aster_fs_unlink", (void *)n_fs_unlink, "(ii)i", NULL },
-	{ "aster_fs_write", (void *)n_fs_write, "(iii)i", NULL },
-	{ "aster_img_probe", (void *)n_img_probe, "(iiii)i", NULL },
-	{ "aster_img_render", (void *)n_img_render, "(iiii)i", NULL },
-	{ "aster_input_get_info", (void *)n_input_get_info, "(ii)i", NULL },
-	{ "aster_input_keys_state", (void *)n_input_keys_state, "(ii)i", NULL },
-	{ "aster_imu_get_info", (void *)n_imu_get_info, "(ii)i", NULL },
-	{ "aster_imu_read", (void *)n_imu_sample_read, "(ii)i", NULL },
-	{ "aster_accel_read", (void *)n_accel_read, "(ii)i", NULL },
-	{ "aster_gyro_read", (void *)n_gyro_read, "(ii)i", NULL },
-	{ "aster_cam_info", (void *)n_cam_info, "(ii)i", NULL },
-	{ "aster_cam_read", (void *)n_cam_read, "(ii)i", NULL },
-	{ "aster_input_touch", (void *)n_input_touch, "(ii)i", NULL },
-	{ "aster_kv_delete", (void *)n_kv_delete, "(ii)i", NULL },
-	{ "aster_kv_get", (void *)n_kv_get, "(iiii)i", NULL },
-	{ "aster_kv_set", (void *)n_kv_set, "(iiii)i", NULL },
-	{ "aster_log", (void *)n_log, "(iii)", NULL },
-	{ "aster_surface_acquire", (void *)n_surface_acquire, "(iii)i", NULL },
-	{ "aster_surface_create", (void *)n_surface_create, "(iii)i", NULL },
-	{ "aster_surface_destroy", (void *)n_surface_destroy, "(i)i", NULL },
-	{ "aster_surface_flush", (void *)n_surface_flush, "(iiiiiii)i", NULL },
-	{ "aster_surface_present", (void *)n_surface_present, "(i)i", NULL },
-	{ "aster_gfx_exec", (void *)n_gfx_exec, "(iiiiiiiii)i", NULL },
-	{ "aster_gfx_text_w", (void *)n_gfx_text_w, "(iii)i", NULL },
-	{ "aster_gfx_fonts_pending", (void *)n_gfx_fonts_pending, "()i", NULL },
-	{ "aster_gfx_bmp_load", (void *)n_gfx_bmp_load, "(iiiiiii)i", NULL },
-	{ "aster_gfx_bmp_free", (void *)n_gfx_bmp_free, "(i)i", NULL },
-	{ "aster_system_get_abi_version", (void *)n_system_get_abi, "()i", NULL },
-	{ "aster_system_has_feature", (void *)n_system_has_feature, "(i)i", NULL },
-	{ "aster_time_get", (void *)n_time_get, "(ii)i", NULL },
-	{ "aster_time_now_ms", (void *)n_time_now_ms, "()i", NULL },
-	{ "aster_timer_create", (void *)n_timer_create, "(iiii)i", NULL },
-	{ "aster_timer_destroy", (void *)n_timer_destroy, "(i)i", NULL },
-	{ "aster_wifi_connect", (void *)n_wifi_connect, "(iiii)i", NULL },
-	{ "aster_wifi_disconnect", (void *)n_wifi_disconnect, "()i", NULL },
-	{ "aster_wifi_forget", (void *)n_wifi_forget, "()i", NULL },
-	{ "aster_wifi_get_saved_ssid", (void *)n_wifi_get_saved_ssid, "(ii)i", NULL },
-	{ "aster_wifi_reconnect", (void *)n_wifi_reconnect, "()i", NULL },
-	{ "aster_wifi_scan_results", (void *)n_wifi_scan_results, "(ii)i", NULL },
-	{ "aster_net_info", (void *)n_net_info, "(ii)i", NULL },
-	{ "aster_net_open", (void *)n_net_open, "(ii)i", NULL },
-	{ "aster_net_io", (void *)n_net_io, "(iiii)i", NULL },
-	{ "aster_net_status", (void *)n_net_status, "(iii)i", NULL },
-	{ "aster_net_cancel", (void *)n_net_cancel, "(i)i", NULL },
-	{ "aster_net_close", (void *)n_net_close, "(i)i", NULL },
-	{ "aster_wifi_scan_start", (void *)n_wifi_scan_start, "()i", NULL },
-	{ "aster_wifi_status", (void *)n_wifi_status, "(ii)i", NULL },
+        {"aster_player_bt_list", (void *)n_player_bt_list, "(ii)i", NULL},
+        {"aster_player_get_info", (void *)n_player_get_info, "(ii)i", NULL},
+        {"aster_player_control", (void *)n_player_control, "(ii)i", NULL},
+        {"memcpy", (void *)n_memcpy, "(iii)i", NULL},
+        {"aster_app_exit", (void *)n_app_exit, "(i)", NULL},
+        {"aster_app_set_framerate", (void *)n_set_framerate, "(i)i", NULL},
+        {"aster_appmgr_count", (void *)n_appmgr_count, "()i", NULL},
+        {"aster_appmgr_list", (void *)n_appmgr_list, "(iii)i", NULL},
+        {"aster_appmgr_start", (void *)n_appmgr_start, "(ii)i", NULL},
+        {"aster_appmgr_install", (void *)n_appmgr_install, "(iiii)i", NULL},
+        {"aster_system_get_info", (void *)n_system_get_info, "(ii)i", NULL},
+        {"aster_appmgr_uninstall", (void *)n_appmgr_uninstall, "(ii)i", NULL},
+        {"aster_audio_get_info", (void *)n_audio_get_info, "(ii)i", NULL},
+        {"aster_audio_get_lyrics", (void *)n_audio_get_lyrics, "(ii)i", NULL},
+        {"aster_audio_get_state", (void *)n_audio_get_state, "(ii)i", NULL},
+        {"aster_audio_get_volume", (void *)n_audio_get_volume, "()i", NULL},
+        {"aster_audio_effect_load", (void *)n_audio_effect_load, "(ii)i", NULL},
+        {"aster_audio_effect_load_memory", (void *)n_audio_effect_load_memory, "(ii)i", NULL},
+        {"aster_audio_effect_play", (void *)n_audio_effect_play, "(i)i", NULL},
+        {"aster_audio_effect_play_ex", (void *)n_audio_effect_play_ex, "(iii)i", NULL},
+        {"aster_audio_effect_set_params", (void *)n_audio_effect_set_params, "(iii)i", NULL},
+        {"aster_audio_effect_stop", (void *)n_audio_effect_stop, "(ii)i", NULL},
+        {"aster_audio_effect_unload", (void *)n_audio_effect_unload, "(i)i", NULL},
+        {"aster_audio_pause", (void *)n_audio_pause, "()i", NULL},
+        {"aster_audio_record", (void *)n_audio_record, "(ii)i", NULL},
+        {"aster_audio_resume", (void *)n_audio_resume, "()i", NULL},
+        {"aster_audio_seek", (void *)n_audio_seek, "(i)i", NULL},
+        {"aster_audio_set_volume", (void *)n_audio_set_volume, "(i)i", NULL},
+        {"aster_audio_start_file", (void *)n_audio_start_file, "(ii)i", NULL},
+        {"aster_audio_stream_open", (void *)n_audio_stream_open, "(i)i", NULL},
+        {"aster_audio_stream_write", (void *)n_audio_stream_write, "(iii)i", NULL},
+        {"aster_audio_stream_finish", (void *)n_audio_stream_finish, "(i)i", NULL},
+        {"aster_audio_stream_status", (void *)n_audio_stream_status, "(iii)i", NULL},
+        {"aster_audio_stream_close", (void *)n_audio_stream_close, "(i)i", NULL},
+        {"aster_audio_stop", (void *)n_audio_stop, "()i", NULL},
+        {"aster_display_count", (void *)n_display_count, "()i", NULL},
+        {"aster_display_get_info", (void *)n_display_get_info, "(iii)i", NULL},
+        {"aster_fs_closedir", (void *)n_fs_closedir, "(i)i", NULL},
+        {"aster_fs_close", (void *)n_fs_close, "(i)i", NULL},
+        {"aster_fs_dir_next", (void *)n_fs_dir_next, "(iiii)i", NULL},
+        {"aster_fs_mkdir", (void *)n_fs_mkdir, "(ii)i", NULL},
+        {"aster_fs_open", (void *)n_fs_open, "(iiii)i", NULL},
+        {"aster_fs_opendir", (void *)n_fs_opendir, "(iii)i", NULL},
+        {"aster_fs_read", (void *)n_fs_read, "(iii)i", NULL},
+        {"aster_fs_seek", (void *)n_fs_seek, "(iii)i", NULL},
+        {"aster_fs_stat", (void *)n_fs_stat, "(iiii)i", NULL},
+        {"aster_fs_unlink", (void *)n_fs_unlink, "(ii)i", NULL},
+        {"aster_fs_write", (void *)n_fs_write, "(iii)i", NULL},
+        {"aster_img_probe", (void *)n_img_probe, "(iiii)i", NULL},
+        {"aster_img_render", (void *)n_img_render, "(iiii)i", NULL},
+        {"aster_input_get_info", (void *)n_input_get_info, "(ii)i", NULL},
+        {"aster_input_keys_state", (void *)n_input_keys_state, "(ii)i", NULL},
+        {"aster_imu_get_info", (void *)n_imu_get_info, "(ii)i", NULL},
+        {"aster_imu_read", (void *)n_imu_sample_read, "(ii)i", NULL},
+        {"aster_accel_read", (void *)n_accel_read, "(ii)i", NULL},
+        {"aster_gyro_read", (void *)n_gyro_read, "(ii)i", NULL},
+        {"aster_cam_info", (void *)n_cam_info, "(ii)i", NULL},
+        {"aster_cam_read", (void *)n_cam_read, "(ii)i", NULL},
+        {"aster_input_touch", (void *)n_input_touch, "(ii)i", NULL},
+        {"aster_kv_delete", (void *)n_kv_delete, "(ii)i", NULL},
+        {"aster_kv_get", (void *)n_kv_get, "(iiii)i", NULL},
+        {"aster_kv_set", (void *)n_kv_set, "(iiii)i", NULL},
+        {"aster_log", (void *)n_log, "(iii)", NULL},
+        {"aster_surface_acquire", (void *)n_surface_acquire, "(iii)i", NULL},
+        {"aster_surface_create", (void *)n_surface_create, "(iii)i", NULL},
+        {"aster_surface_destroy", (void *)n_surface_destroy, "(i)i", NULL},
+        {"aster_surface_flush", (void *)n_surface_flush, "(iiiiiii)i", NULL},
+        {"aster_surface_present", (void *)n_surface_present, "(i)i", NULL},
+        {"aster_gfx_exec", (void *)n_gfx_exec, "(iiiiiiiii)i", NULL},
+        {"aster_gfx_text_w", (void *)n_gfx_text_w, "(iii)i", NULL},
+        {"aster_gfx_fonts_pending", (void *)n_gfx_fonts_pending, "()i", NULL},
+        {"aster_gfx_bmp_load", (void *)n_gfx_bmp_load, "(iiiiiii)i", NULL},
+        {"aster_gfx_bmp_free", (void *)n_gfx_bmp_free, "(i)i", NULL},
+        {"aster_system_get_abi_version", (void *)n_system_get_abi, "()i", NULL},
+        {"aster_system_has_feature", (void *)n_system_has_feature, "(i)i", NULL},
+        {"aster_time_get", (void *)n_time_get, "(ii)i", NULL},
+        {"aster_time_now_ms", (void *)n_time_now_ms, "()i", NULL},
+        {"aster_timer_create", (void *)n_timer_create, "(iiii)i", NULL},
+        {"aster_timer_destroy", (void *)n_timer_destroy, "(i)i", NULL},
+        {"aster_wifi_connect", (void *)n_wifi_connect, "(iiii)i", NULL},
+        {"aster_wifi_disconnect", (void *)n_wifi_disconnect, "()i", NULL},
+        {"aster_wifi_forget", (void *)n_wifi_forget, "()i", NULL},
+        {"aster_wifi_get_saved_ssid", (void *)n_wifi_get_saved_ssid, "(ii)i", NULL},
+        {"aster_wifi_reconnect", (void *)n_wifi_reconnect, "()i", NULL},
+        {"aster_wifi_scan_results", (void *)n_wifi_scan_results, "(ii)i", NULL},
+        {"aster_net_info", (void *)n_net_info, "(ii)i", NULL},
+        {"aster_net_open", (void *)n_net_open, "(ii)i", NULL},
+        {"aster_net_io", (void *)n_net_io, "(iiii)i", NULL},
+        {"aster_net_status", (void *)n_net_status, "(iii)i", NULL},
+        {"aster_net_cancel", (void *)n_net_cancel, "(i)i", NULL},
+        {"aster_net_close", (void *)n_net_close, "(i)i", NULL},
+        {"aster_wifi_scan_start", (void *)n_wifi_scan_start, "()i", NULL},
+        {"aster_wifi_status", (void *)n_wifi_status, "(ii)i", NULL},
 };
 
 NativeSymbol *aster_native_symbols(void)

@@ -37,11 +37,15 @@ static int s_tpressed;
  * through the LVGL timer boundary too; latest-state-only loses short taps.
  * Same-state motion is coalesced. All producers/reads run on the UI worker. */
 #define POINTER_QUEUE_SIZE 16u
-struct pointer_sample { int32_t x, y; int pressed; };
+
+struct pointer_sample {
+	int32_t x, y;
+	int pressed;
+};
 static struct pointer_sample s_pointer_queue[POINTER_QUEUE_SIZE];
 static unsigned s_pointer_head, s_pointer_count;
 static int s_ready;
-static bool s_band_warned;	/* a rejected band is already in the log */
+static bool s_band_warned; /* a rejected band is already in the log */
 
 /* profiler (CONFIG_ASTER_LVGL_PROFILER) */
 static uint32_t s_flush_px;
@@ -71,8 +75,8 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 	 * still refresh that screen while timers and screenshot polling run.
 	 * Only the open control panel owns LVGL pixels over a running app. */
 	if (aster_app_current() && !aster_qpanel_is_open()) {
-		LOG_DBG("skip LVGL background over app: %d,%d..%d,%d",
-			area->x1, area->y1, area->x2, area->y2);
+		LOG_DBG("skip LVGL background over app: %d,%d..%d,%d", area->x1, area->y1, area->x2,
+		        area->y2);
 		lv_display_flush_ready(disp);
 		return;
 	}
@@ -99,14 +103,14 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 	}
 	/* SWAPPED draw buffers already hold panel byte order: at rot 0 the
 	 * platform ships px_map straight to the SPI driver (no gather). */
-	uint32_t submit_start=k_cycle_get_32();
+	uint32_t submit_start = k_cycle_get_32();
 	int err;
 #if IS_ENABLED(CONFIG_ASTER_LAUNCHER_FLUX)
- err=aster_device_display_write_persistent_ui(px_map,w,h,pitch);
- if(err==ASTER_EINVAL)
+	err = aster_device_display_write_persistent_ui(px_map, w, h, pitch);
+	if (err == ASTER_EINVAL)
 #endif
- err = aster_device_display_write_at_ex(px_map, x, y, w, h, pitch, true);
-	s_submit_us+=k_cyc_to_us_floor64((uint32_t)(k_cycle_get_32()-submit_start));
+		err = aster_device_display_write_at_ex(px_map, x, y, w, h, pitch, true);
+	s_submit_us += k_cyc_to_us_floor64((uint32_t)(k_cycle_get_32() - submit_start));
 
 	if (err != ASTER_OK) {
 		/* The platform checks the rect against the LOGICAL screen, so a
@@ -119,8 +123,8 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 		if (!s_band_warned) {
 			s_band_warned = true;
 			LOG_WRN("band %ux%u+%u+%u rejected (%d): LVGL is drawing "
-				"for a %ux%u screen the platform no longer has",
-				w, h, x, y, err, s_w, s_h);
+			        "for a %ux%u screen the platform no longer has",
+			        w, h, x, y, err, s_w, s_h);
 		}
 	} else {
 		s_band_warned = false;
@@ -131,9 +135,9 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 	/* Keep LVGL's frame in flight until flush_wait_cb has drained DMA.
      * Signalling ready at submission bypasses DIRECT's completion fence;
      * buffer/cache ownership must remain with the transfer until it ends. */
-    if (!IS_ENABLED(CONFIG_ASTER_DISP_ASYNC)) {
-        lv_display_flush_ready(disp);
-    }
+	if (!IS_ENABLED(CONFIG_ASTER_DISP_ASYNC)) {
+		lv_display_flush_ready(disp);
+	}
 }
 
 #if IS_ENABLED(CONFIG_ASTER_DISP_ASYNC)
@@ -172,7 +176,7 @@ static void pointer_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
 
 int aster_ui_lvgl_init(void)
 {
-	aster_display_info_t di = { .size = sizeof(di), .version = 1 };
+	aster_display_info_t di = {.size = sizeof(di), .version = 1};
 
 	if (s_ready) {
 		return ASTER_OK;
@@ -213,16 +217,17 @@ int aster_ui_lvgl_init(void)
 
 	s_band_bytes = flux_frame ? s_w * s_h * 2u : band_w * rows * 2u;
 #if IS_ENABLED(CONFIG_ASTER_PANEL_AXS15231B)
- /* GDMA external bursts and all chained descriptors require 64 B alignment. */
- s_band[0]=shared_multi_heap_aligned_alloc(SMH_REG_ATTR_EXTERNAL,64,s_band_bytes);
- if (!flux_frame) {
-	s_band[1]=shared_multi_heap_aligned_alloc(SMH_REG_ATTR_EXTERNAL,64,s_band_bytes);
- }
+	/* GDMA external bursts and all chained descriptors require 64 B alignment. */
+	s_band[0] = shared_multi_heap_aligned_alloc(SMH_REG_ATTR_EXTERNAL, 64, s_band_bytes);
+	if (!flux_frame) {
+		s_band[1] =
+		        shared_multi_heap_aligned_alloc(SMH_REG_ATTR_EXTERNAL, 64, s_band_bytes);
+	}
 #else
- s_band[0] = aster_psram_alloc(s_band_bytes);
- if (!flux_frame) {
-	s_band[1] = aster_psram_alloc(s_band_bytes);
- }
+	s_band[0] = aster_psram_alloc(s_band_bytes);
+	if (!flux_frame) {
+		s_band[1] = aster_psram_alloc(s_band_bytes);
+	}
 #endif
 	if (!s_band[0] || (!flux_frame && !s_band[1])) {
 		aster_psram_free(s_band[0]);
@@ -233,11 +238,11 @@ int aster_ui_lvgl_init(void)
 
 	s_disp = lv_display_create((int32_t)s_w, (int32_t)s_h);
 	lv_display_set_color_format(s_disp, LV_COLOR_FORMAT_RGB565_SWAPPED);
-	lv_display_set_buffers(s_disp, s_band[0],
-			       IS_ENABLED(CONFIG_ASTER_LAUNCHER_FLUX) ? NULL : s_band[1],
-			       s_band_bytes,
-			       IS_ENABLED(CONFIG_ASTER_LAUNCHER_FLUX) ?
-			       LV_DISPLAY_RENDER_MODE_DIRECT : LV_DISPLAY_RENDER_MODE_PARTIAL);
+	lv_display_set_buffers(
+	        s_disp, s_band[0], IS_ENABLED(CONFIG_ASTER_LAUNCHER_FLUX) ? NULL : s_band[1],
+	        s_band_bytes,
+	        IS_ENABLED(CONFIG_ASTER_LAUNCHER_FLUX) ? LV_DISPLAY_RENDER_MODE_DIRECT
+	                                               : LV_DISPLAY_RENDER_MODE_PARTIAL);
 	lv_display_set_flush_cb(s_disp, flush_cb);
 #if IS_ENABLED(CONFIG_ASTER_DISP_ASYNC)
 	lv_display_set_flush_wait_cb(s_disp, flush_wait_cb);
@@ -254,7 +259,7 @@ int aster_ui_lvgl_init(void)
 
 void aster_ui_lvgl_resync_window(void)
 {
-	aster_display_info_t di = { .size = sizeof(di), .version = 1 };
+	aster_display_info_t di = {.size = sizeof(di), .version = 1};
 	uint32_t ow, oh;
 
 	if (!s_ready) {
@@ -296,11 +301,11 @@ void aster_ui_lvgl_resync_window(void)
 	 * every row after the first would come off the wire sheared. The
 	 * capacity is unchanged (see the long-side allocation in init), so this
 	 * rebuilds the headers in place; nothing is allocated here. */
-	lv_display_set_buffers(s_disp, s_band[0],
-			       IS_ENABLED(CONFIG_ASTER_LAUNCHER_FLUX) ? NULL : s_band[1],
-			       s_band_bytes,
-			       IS_ENABLED(CONFIG_ASTER_LAUNCHER_FLUX) ?
-			       LV_DISPLAY_RENDER_MODE_DIRECT : LV_DISPLAY_RENDER_MODE_PARTIAL);
+	lv_display_set_buffers(
+	        s_disp, s_band[0], IS_ENABLED(CONFIG_ASTER_LAUNCHER_FLUX) ? NULL : s_band[1],
+	        s_band_bytes,
+	        IS_ENABLED(CONFIG_ASTER_LAUNCHER_FLUX) ? LV_DISPLAY_RENDER_MODE_DIRECT
+	                                               : LV_DISPLAY_RENDER_MODE_PARTIAL);
 
 	/* Repaint the lot, before the pump hands LVGL back to its caller. The
 	 * panel has lost nothing -- the controller is scanning the same frame
@@ -324,7 +329,7 @@ void aster_ui_lvgl_resync_window(void)
 
 void aster_ui_lvgl_pointer(uint32_t x, uint32_t y, int pressed)
 {
-	struct pointer_sample p = { (int32_t)x, (int32_t)y, pressed ? 1 : 0 };
+	struct pointer_sample p = {(int32_t)x, (int32_t)y, pressed ? 1 : 0};
 	if (s_pointer_count) {
 		unsigned tail = (s_pointer_head + s_pointer_count - 1u) % POINTER_QUEUE_SIZE;
 		if (s_pointer_queue[tail].pressed == p.pressed) {
@@ -345,12 +350,14 @@ void aster_ui_lvgl_pointer(uint32_t x, uint32_t y, int pressed)
 
 void aster_ui_lvgl_request_frame(void)
 {
-	if (s_ready && s_disp) lv_timer_ready(lv_display_get_refr_timer(s_disp));
+	if (s_ready && s_disp)
+		lv_timer_ready(lv_display_get_refr_timer(s_disp));
 }
 
 void aster_ui_lvgl_pump(void)
 {
-    if (!aster_device_display_count()) return;
+	if (!aster_device_display_count())
+		return;
 	if (!s_ready) {
 		return;
 	}
@@ -379,25 +386,25 @@ void aster_ui_lvgl_pump(void)
 			aster_font_sd_stats_t fs;
 
 			aster_font_sd_stats(&fs);
-			LOG_INF("ui prof: flush=%u dirty_px=%u bytes=%u band=%u",
-				s_flush_n, s_flush_px, s_flush_bytes,
-				CONFIG_ASTER_LVGL_BAND_ROWS);
+			LOG_INF("ui prof: flush=%u dirty_px=%u bytes=%u band=%u", s_flush_n,
+			        s_flush_px, s_flush_bytes, CONFIG_ASTER_LVGL_BAND_ROWS);
 			if (s_frame_n) {
 				LOG_INF("ui frame: n=%u avg=%u us max=%u us wait=%u us/frame",
-					s_frame_n, (unsigned)(s_frame_us / s_frame_n),
-					s_frame_max_us, (unsigned)(s_wait_us / s_frame_n));
-				LOG_INF("ui submit: avg=%u us",(unsigned)(s_submit_us/s_frame_n));
+				        s_frame_n, (unsigned)(s_frame_us / s_frame_n),
+				        s_frame_max_us, (unsigned)(s_wait_us / s_frame_n));
+				LOG_INF("ui submit: avg=%u us",
+				        (unsigned)(s_submit_us / s_frame_n));
 #if IS_ENABLED(CONFIG_ASTER_LAUNCHER_FLUX)
-				LOG_INF("ui ribbon: avg=%u us",aster_flux_draw_time_reset()/s_frame_n);
+				LOG_INF("ui ribbon: avg=%u us",
+				        aster_flux_draw_time_reset() / s_frame_n);
 #endif
 			}
 			s_frame_us = s_wait_us = s_submit_us = 0;
 			s_frame_n = s_frame_max_us = 0;
 			LOG_INF("font prof: reads=%u B=%u warm=%u/%u miss=%u fill=%u evict=%u over=%u",
-				fs.reads, (unsigned)(fs.read_bytes / 1024u),
-				fs.warm_bursts, fs.warm_glyphs,
-				fs.misses, fs.miss_filled, fs.evictions,
-				fs.oversize);
+			        fs.reads, (unsigned)(fs.read_bytes / 1024u), fs.warm_bursts,
+			        fs.warm_glyphs, fs.misses, fs.miss_filled, fs.evictions,
+			        fs.oversize);
 			s_flush_n = s_flush_px = s_flush_bytes = 0;
 			s_prof_ms = now;
 		}

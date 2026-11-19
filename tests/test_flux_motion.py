@@ -1,4 +1,5 @@
 """Run actual FLUX gesture code with a clock and exercise circular flicks."""
+import re
 import unittest
 from test_waveshare import ROOT, run_c
 
@@ -28,8 +29,9 @@ class Motion(unittest.TestCase):
         source=(ROOT/'systems/zephyr/ui/launcher/flux.c').read_text()
         cadence=source[source.index('#define FLUX_FRAME_MS'):source.index('\n',source.index('#define FLUX_FRAME_MS'))]
         cyclic=source[source.index('static int nearest'):source.index('static entry_t *current')]
-        start=source.index(' if(animating && now-last_draw')
-        advance=source[start:source.index(' if(!launching) sound_launch_started',start)]
+        start = re.search(r'if\s*\(animating\s*&&\s*now\s*-\s*last_draw', source).start()
+        end = re.compile(r'if\s*\(!launching\)\s*sound_launch_started').search(source, start)
+        advance = source[start:end.start()]
         run_c(r'''
 #include <assert.h>
 ''' +HEADER+cadence+r'''
@@ -98,7 +100,7 @@ int main(void) {
 
     def test_actual_touch_release_stop_slow_drag_and_motion_off(self):
         source=(ROOT/'systems/zephyr/ui/launcher/flux.c').read_text()
-        start=source.index('static struct {\n bool down, handle, moved')
+        start = re.search(r'static struct\s*\{\s*bool down,\s*handle,\s*moved', source).start()
         drag=source[start:source.index('static void show_page',start)]
         cyclic=source[source.index('static int nearest'):source.index('static entry_t *current')]
         start=source.index('static void settle(int target)\n{')

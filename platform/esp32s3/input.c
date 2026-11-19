@@ -17,14 +17,16 @@ static bool touch_ready;
 
 /* --- key state ----------------------------------------------------------- */
 #define KEY_EDGE_QUEUE 16
+
 struct key_edge {
 	uint16_t code;
-	bool     pressed;
+	bool pressed;
 };
+
 static struct {
 	struct key_edge q[KEY_EDGE_QUEUE];
-	int head;      /* next write slot */
-	int count;     /* queued edges */
+	int head;  /* next write slot */
+	int count; /* queued edges */
 	uint16_t held[ASTER_PLAT_MAX_KEYS];
 	int held_n;
 	bool available; /* saw at least one non-touch EV_KEY */
@@ -36,8 +38,7 @@ static void key_push_locked(uint16_t code, bool pressed)
 {
 	/* coalesce duplicate consecutive edges of the same code */
 	if (ks.count > 0) {
-		struct key_edge *last =
-			&ks.q[(ks.head - 1 + KEY_EDGE_QUEUE) % KEY_EDGE_QUEUE];
+		struct key_edge *last = &ks.q[(ks.head - 1 + KEY_EDGE_QUEUE) % KEY_EDGE_QUEUE];
 		if (last->code == code && last->pressed == pressed) {
 			return;
 		}
@@ -99,8 +100,7 @@ bool aster_plat_input_touch_available(void)
 	/* Follows the menuconfig/capability choice (which also selects the
 	 * driver). A DT-only test would keep advertising touch when the build
 	 * explicitly turned the hardware off. */
-	return IS_ENABLED(CONFIG_ASTER_HAS_TOUCH) && touch_ready &&
-	       aster_plat_display_count() > 0;
+	return IS_ENABLED(CONFIG_ASTER_HAS_TOUCH) && touch_ready && aster_plat_display_count() > 0;
 }
 
 uint32_t aster_plat_input_touch_max_points(void)
@@ -121,9 +121,11 @@ bool aster_plat_input_keys_available(void)
 
 int aster_plat_input_poll(aster_touch_evt_t *evt, int max)
 {
-	if (!evt || max <= 0 || !aster_plat_input_touch_available()) return 0;
+	if (!evt || max <= 0 || !aster_plat_input_touch_available())
+		return 0;
 	struct aster_touch_event raw[ASTER_TOUCH_EVENT_QUEUE];
-	if (max > ASTER_TOUCH_EVENT_QUEUE) max = ASTER_TOUCH_EVENT_QUEUE;
+	if (max > ASTER_TOUCH_EVENT_QUEUE)
+		max = ASTER_TOUCH_EVENT_QUEUE;
 	k_mutex_lock(&input_lock, K_FOREVER);
 	int n = aster_touch_state_poll(&touch, raw, max);
 	k_mutex_unlock(&input_lock);
@@ -144,7 +146,8 @@ int aster_plat_input_poll(aster_touch_evt_t *evt, int max)
 
 void aster_plat_input_state(uint32_t *points, uint32_t max)
 {
-	if (!points || max == 0) return;
+	if (!points || max == 0)
+		return;
 	k_mutex_lock(&input_lock, K_FOREVER);
 	if (aster_plat_input_touch_available()) {
 		aster_touch_state_snapshot(&touch, points, max);
@@ -153,8 +156,8 @@ void aster_plat_input_state(uint32_t *points, uint32_t max)
 	}
 	k_mutex_unlock(&input_lock);
 	/* Snapshot entries are packed as 4-u32 x/y/action/slot records. */
-	for (uint32_t i = 0; i < max && i < ASTER_PLAT_MAX_TOUCH &&
-	     points[i * 4u + 2u] != ASTER_INPUT_TERM; i++) {
+	for (uint32_t i = 0;
+	     i < max && i < ASTER_PLAT_MAX_TOUCH && points[i * 4u + 2u] != ASTER_INPUT_TERM; i++) {
 		aster_plat_display_touch_map(&points[i * 4u], &points[i * 4u + 1u]);
 	}
 }
@@ -167,7 +170,8 @@ int aster_plat_input_keys_poll(aster_key_evt_t *evt, int max)
 	k_mutex_lock(&input_lock, K_FOREVER);
 	while (ks.count > 0 && n < max) {
 		evt[n].code = ks.q[(ks.head - ks.count + KEY_EDGE_QUEUE) % KEY_EDGE_QUEUE].code;
-		evt[n].pressed = ks.q[(ks.head - ks.count + KEY_EDGE_QUEUE) % KEY_EDGE_QUEUE].pressed;
+		evt[n].pressed =
+		        ks.q[(ks.head - ks.count + KEY_EDGE_QUEUE) % KEY_EDGE_QUEUE].pressed;
 		ks.count--;
 		n++;
 	}
@@ -207,8 +211,7 @@ void aster_plat_input_touch_inject(uint32_t x, uint32_t y, uint32_t action)
 	aster_plat_input_touch_inject_slot(0, x, y, action);
 }
 
-void aster_plat_input_touch_inject_slot(uint32_t slot, uint32_t x, uint32_t y,
-					uint32_t action)
+void aster_plat_input_touch_inject_slot(uint32_t slot, uint32_t x, uint32_t y, uint32_t action)
 {
 	aster_plat_display_touch_unmap(&x, &y);
 	k_mutex_lock(&input_lock, K_FOREVER);
@@ -218,7 +221,8 @@ void aster_plat_input_touch_inject_slot(uint32_t slot, uint32_t x, uint32_t y,
 
 void aster_plat_input_touch_report_frame(const struct aster_touch_frame *frame)
 {
-	if (!frame) return;
+	if (!frame)
+		return;
 	k_mutex_lock(&input_lock, K_FOREVER);
 	(void)aster_touch_state_report_frame(&touch, frame);
 	k_mutex_unlock(&input_lock);
@@ -226,16 +230,21 @@ void aster_plat_input_touch_report_frame(const struct aster_touch_frame *frame)
 
 void aster_plat_input_touch_debug(aster_touch_debug_t *out)
 {
-	if (!out) return;
+	if (!out)
+		return;
 	k_mutex_lock(&input_lock, K_FOREVER);
-	*out = (aster_touch_debug_t) {
-		.recovery=touch.ignore_until_clear, .errors=touch.io_errors,
-		.pending=touch.event_count,
+	*out = (aster_touch_debug_t){
+	        .recovery = touch.ignore_until_clear,
+	        .errors = touch.io_errors,
+	        .pending = touch.event_count,
 	};
-	for (uint32_t i=0; i<ASTER_TOUCH_SLOT_COUNT; i++) {
-		if (!touch.slots[i].down) continue;
-		if (touch.slots[i].id <= ASTER_TOUCH_HW_ID_MAX) out->hardware_mask |= 1u<<i;
-		else out->synthetic_mask |= 1u<<i;
+	for (uint32_t i = 0; i < ASTER_TOUCH_SLOT_COUNT; i++) {
+		if (!touch.slots[i].down)
+			continue;
+		if (touch.slots[i].id <= ASTER_TOUCH_HW_ID_MAX)
+			out->hardware_mask |= 1u << i;
+		else
+			out->synthetic_mask |= 1u << i;
 	}
 	k_mutex_unlock(&input_lock);
 }
@@ -251,6 +260,7 @@ void aster_plat_input_touch_set_ready(bool ready)
 {
 	k_mutex_lock(&input_lock, K_FOREVER);
 	touch_ready = ready;
-	if (!ready) aster_touch_state_clear(&touch);
+	if (!ready)
+		aster_touch_state_clear(&touch);
 	k_mutex_unlock(&input_lock);
 }

@@ -1,4 +1,5 @@
 """Exercise FLUX cyclic selection and rendering using the actual C helpers."""
+import re
 import unittest
 from test_waveshare import ROOT, run_c
 
@@ -91,7 +92,8 @@ int main(void) {
 
     def test_fused_draw_clips_blends_and_falls_back(self):
         source=(ROOT/'systems/zephyr/ui/flux_draw.c').read_text()
-        implementation=source[source.index('static struct {const void *source;'):]
+        declaration = re.search(r'static struct\s*\{\s*const void\s*\*source;', source)
+        implementation = source[declaration.start():]
         math_source=(ROOT/'third_party/lvgl/src/misc/lv_math.c').read_text()
         table=math_source[math_source.index('static const uint16_t sin0_90_table'):math_source.index('/**********************\n *      MACROS')]
         trig=math_source[math_source.index('int32_t LV_ATTRIBUTE_FAST_MEM lv_trigo_sin'):math_source.index('/**\n * cubic-bezier')]

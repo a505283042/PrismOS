@@ -7,24 +7,52 @@ from pathlib import Path
 from io import BytesIO
 import cairosvg
 from PIL import Image
-ROOT=Path(__file__).resolve().parents[1]/'systems/zephyr/ui/launcher'
-NAMES=['settings-2','chevron-left','chevron-right','clock','folder-open','terminal','bluetooth','moon','wifi','move','battery-full','box','arrow','aster']
+
+ROOT = Path(__file__).resolve().parents[1] / 'systems/zephyr/ui/launcher'
+NAMES = [
+    'settings-2',
+    'chevron-left',
+    'chevron-right',
+    'clock',
+    'folder-open',
+    'terminal',
+    'bluetooth',
+    'moon',
+    'wifi',
+    'move',
+    'battery-full',
+    'box',
+    'arrow',
+    'aster',
+]
+
 
 def main():
-    result=['/* Lucide icons from FLUX Rev.04. ISC license: see flux-assets/LICENSE. */']
-    sizes=[11,12,13,14,15,17,18,19,21,24,40]
+    result = ['/* Lucide icons from FLUX Rev.04. ISC license: see flux-assets/LICENSE. */']
+    sizes = [11, 12, 13, 14, 15, 17, 18, 19, 21, 24, 40]
     for size in sizes:
-        for i,name in enumerate(NAMES):
-            svg=(ROOT/'flux-assets/icons'/f'{name}.svg').read_bytes()
-            bitmap=Image.open(BytesIO(cairosvg.svg2png(bytestring=svg,output_width=size,output_height=size))).convert('RGBA').getchannel('A').tobytes()
+        for i, name in enumerate(NAMES):
+            svg = (ROOT / 'flux-assets/icons' / f'{name}.svg').read_bytes()
+            bitmap = (
+                Image.open(
+                    BytesIO(cairosvg.svg2png(bytestring=svg, output_width=size, output_height=size))
+                )
+                .convert('RGBA')
+                .getchannel('A')
+                .tobytes()
+            )
             result.append(f'static const uint8_t flux_icon_{size}_{i}[] = {{')
-            result.extend(','.join(map(str,bitmap[p:p+size]))+',' for p in range(0,len(bitmap),size))
+            result.extend(
+                ','.join(map(str, bitmap[p : p + size])) + ',' for p in range(0, len(bitmap), size)
+            )
             result.append('};')
-    result.append('static const uint8_t flux_icon_sizes[] = {'+','.join(map(str,sizes))+'};')
+    result.append('static const uint8_t flux_icon_sizes[] = {' + ','.join(map(str, sizes)) + '};')
     result.append('static const uint8_t *const flux_icon_data[][14] = {')
     for size in sizes:
-        result.append('{'+','.join(f'flux_icon_{size}_{i}' for i in range(len(NAMES)))+'},')
+        result.append('{' + ','.join(f'flux_icon_{size}_{i}' for i in range(len(NAMES))) + '},')
     result.append('};')
-    (ROOT/'flux_icons.inc').write_text('\n'.join(result)+'\n')
+    (ROOT / 'flux_icons.inc').write_text('\n'.join(result) + '\n')
 
-if __name__=='__main__': main()
+
+if __name__ == '__main__':
+    main()

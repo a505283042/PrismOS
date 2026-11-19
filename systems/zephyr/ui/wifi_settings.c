@@ -91,6 +91,7 @@ static void style(lv_obj_t *o, int x, int y, int width, int height, uint32_t col
 	lv_obj_set_style_text_color(o, lv_color_hex(FG), 0);
 	lv_obj_clear_flag(o, LV_OBJ_FLAG_SCROLLABLE);
 }
+
 static lv_obj_t *text(lv_obj_t *parent, const char *s, int x, int y, int width, uint32_t color)
 {
 	lv_obj_t *o = lv_label_create(parent);
@@ -101,13 +102,15 @@ static lv_obj_t *text(lv_obj_t *parent, const char *s, int x, int y, int width, 
 	lv_label_set_text(o, s);
 	return o;
 }
+
 static void set_text(lv_obj_t *o, const char *s)
 {
 	if (o && strcmp(lv_label_get_text(o), s))
 		lv_label_set_text(o, s);
 }
+
 static lv_obj_t *button(lv_obj_t *parent, const char *s, int x, int y, int width, int height,
-			lv_event_cb_t cb, void *data)
+                        lv_event_cb_t cb, void *data)
 {
 	lv_obj_t *o = lv_button_create(parent);
 	style(o, x, y, width, height, PANEL);
@@ -119,6 +122,7 @@ static lv_obj_t *button(lv_obj_t *parent, const char *s, int x, int y, int width
 	lv_obj_add_event_cb(o, cb, LV_EVENT_CLICKED, data);
 	return o;
 }
+
 static void notify(const char *s)
 {
 	if (hint) {
@@ -137,6 +141,7 @@ static void notify(const char *s)
 	lv_obj_move_foreground(toast);
 	toast_until = aster_os_uptime32() + 4000;
 }
+
 static void failed(int err)
 {
 	if (keyboard)
@@ -159,6 +164,7 @@ static void failed(int err)
 		break;
 	}
 }
+
 static void close_cb(lv_event_t *e)
 {
 	(void)e;
@@ -167,27 +173,32 @@ static void close_cb(lv_event_t *e)
 	else if (root)
 		lv_obj_delete(root);
 }
+
 static void wifi_cb(lv_event_t *e)
 {
 	(void)e;
 	show(WIFI_LIST, NULL);
 }
+
 static void hotspot_cb(lv_event_t *e)
 {
 	(void)e;
 	show(HOTSPOT, NULL);
 }
+
 static void manual_cb(lv_event_t *e)
 {
 	(void)e;
 	require_password = false;
 	show(WIFI_JOIN, "");
 }
+
 static void details_cb(lv_event_t *e)
 {
 	(void)e;
 	show(WIFI_DETAILS, NULL);
 }
+
 static void scan_cb(lv_event_t *e)
 {
 	(void)e;
@@ -199,12 +210,13 @@ static void scan_cb(lv_event_t *e)
 		set_text(scan_label, "扫描中");
 	}
 }
+
 static void action_cb(lv_event_t *e)
 {
 	uint32_t op = (uint32_t)(uintptr_t)lv_event_get_user_data(e);
 	int err = op == ASTER_PLAT_WIFI_OP_FORGET      ? aster_device_wifi_forget_start()
-		  : op == ASTER_PLAT_WIFI_OP_RECONNECT ? aster_device_wifi_reconnect_start()
-						       : aster_device_wifi_disconnect_start();
+	          : op == ASTER_PLAT_WIFI_OP_RECONNECT ? aster_device_wifi_reconnect_start()
+	                                               : aster_device_wifi_disconnect_start();
 	if (err)
 		failed(err);
 	else {
@@ -212,16 +224,19 @@ static void action_cb(lv_event_t *e)
 		show(WIFI_LIST, NULL);
 	}
 }
+
 static void forget_cb(lv_event_t *e)
 {
 	(void)e;
 	show(WIFI_FORGET_CONFIRM, NULL);
 }
+
 static void cancel_forget_cb(lv_event_t *e)
 {
 	(void)e;
 	show(WIFI_DETAILS, NULL);
 }
+
 static void select_cb(lv_event_t *e)
 {
 	int i = (int)(intptr_t)lv_event_get_user_data(e);
@@ -234,12 +249,14 @@ static void select_cb(lv_event_t *e)
 	require_password = security != ASTER_PLAT_WIFI_SECURITY_OPEN;
 	show(WIFI_JOIN, aps[i].ssid);
 }
+
 static void line(lv_obj_t *parent, int x, int y, int width)
 {
 	lv_obj_t *o = lv_obj_create(parent);
 	style(o, x, y, width, 1, RULE);
 	lv_obj_clear_flag(o, LV_OBJ_FLAG_CLICKABLE);
 }
+
 static void signal(lv_obj_t *parent, int x, int y, int8_t rssi)
 {
 	int bars = rssi >= -55 ? 3 : rssi >= -72 ? 2 : 1;
@@ -250,6 +267,7 @@ static void signal(lv_obj_t *parent, int x, int y, int8_t rssi)
 		lv_obj_clear_flag(o, LV_OBJ_FLAG_CLICKABLE);
 	}
 }
+
 static void lock_icon(lv_obj_t *parent, int x, int y)
 {
 	lv_obj_t *o = lv_obj_create(parent);
@@ -263,6 +281,7 @@ static void lock_icon(lv_obj_t *parent, int x, int y)
 	lv_obj_set_style_radius(o, 2, 0);
 	lv_obj_clear_flag(o, LV_OBJ_FLAG_CLICKABLE);
 }
+
 static void list_rows(void)
 {
 	if (!networks)
@@ -272,13 +291,14 @@ static void list_rows(void)
 	aster_device_wifi_status(&st);
 	for (int i = 0; i < ap_count; i++) {
 		lv_obj_t *row =
-		    button(networks, "", 0, i * 36, w - 8, 36, select_cb, (void *)(intptr_t)i);
+		        button(networks, "", 0, i * 36, w - 8, 36, select_cb, (void *)(intptr_t)i);
 		lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
 		lv_obj_set_style_radius(row, 0, 0);
-		lv_obj_t *name =
-		    text(row, aps[i].ssid, 8, 8, w - 64,
-			 st.state == ASTER_PLAT_WIFI_STATE_COMPLETED && !strcmp(st.ssid, aps[i].ssid) ? ACCENT
-											   : FG);
+		lv_obj_t *name = text(row, aps[i].ssid, 8, 8, w - 64,
+		                      st.state == ASTER_PLAT_WIFI_STATE_COMPLETED &&
+		                                      !strcmp(st.ssid, aps[i].ssid)
+		                              ? ACCENT
+		                              : FG);
 		lv_obj_set_height(name, 21);
 		lv_label_set_long_mode(name, LV_LABEL_LONG_MODE_DOTS);
 		if (aster_device_wifi_security_class(aps[i].security) !=
@@ -290,6 +310,7 @@ static void list_rows(void)
 	if (!ap_count)
 		text(networks, "未发现网络，点击扫描重试", 8, 14, w - 24, MUTED);
 }
+
 static void field_focus(lv_obj_t *o)
 {
 	input = o;
@@ -299,13 +320,19 @@ static void field_focus(lv_obj_t *o)
 	lv_obj_clear_state(input == ssid_field ? password_field : ssid_field, LV_STATE_FOCUSED);
 	lv_obj_clear_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
 }
-static void field_cb(lv_event_t *e) { field_focus(lv_event_get_target_obj(e)); }
+
+static void field_cb(lv_event_t *e)
+{
+	field_focus(lv_event_get_target_obj(e));
+}
+
 static void reveal_cb(lv_event_t *e)
 {
 	bool hidden = lv_textarea_get_password_mode(password_field);
 	lv_textarea_set_password_mode(password_field, !hidden);
 	set_text(lv_obj_get_child(lv_event_get_target_obj(e), 0), hidden ? "隐藏" : "显示");
 }
+
 static void key_cb(lv_event_t *e)
 {
 	(void)e;
@@ -332,34 +359,37 @@ static void key_cb(lv_event_t *e)
 		return;
 	}
 	lv_buttonmatrix_set_map(keyboard, symbols   ? punctuation
-					  : numeric ? digits
-					  : caps    ? capitals
-						    : letters);
+	                                  : numeric ? digits
+	                                  : caps    ? capitals
+	                                            : letters);
 }
+
 static void submit_cb(lv_event_t *e)
 {
 	(void)e;
 	const char *ssid = lv_textarea_get_text(ssid_field),
-		   *psk = lv_textarea_get_text(password_field);
+	           *psk = lv_textarea_get_text(password_field);
 	if (page == WIFI_JOIN && require_password && !psk[0]) {
 		failed(-EINVAL);
 		return;
 	}
 	int err = page == HOTSPOT_EDIT ? aster_device_wifi_hotspot_start(ssid, psk)
-				       : aster_device_wifi_connect_start(ssid, psk);
+	                               : aster_device_wifi_connect_start(ssid, psk);
 	if (err) {
 		failed(err);
 		return;
 	}
-	pending =
-	    page == HOTSPOT_EDIT ? ASTER_PLAT_WIFI_OP_HOTSPOT_START : ASTER_PLAT_WIFI_OP_CONNECT;
+	pending = page == HOTSPOT_EDIT ? ASTER_PLAT_WIFI_OP_HOTSPOT_START
+	                               : ASTER_PLAT_WIFI_OP_CONNECT;
 	show(page == HOTSPOT_EDIT ? HOTSPOT : WIFI_LIST, NULL);
 }
+
 static void hotspot_edit_cb(lv_event_t *e)
 {
 	(void)e;
 	show(HOTSPOT_EDIT, ap_state.ssid);
 }
+
 static void hotspot_toggle_cb(lv_event_t *e)
 {
 	lv_obj_t *sw = lv_event_get_target_obj(e);
@@ -368,8 +398,8 @@ static void hotspot_toggle_cb(lv_event_t *e)
 		show(HOTSPOT_EDIT, ap_state.ssid);
 		return;
 	}
-	int err =
-	    enable ? aster_device_wifi_hotspot_start(NULL, NULL) : aster_device_wifi_hotspot_stop();
+	int err = enable ? aster_device_wifi_hotspot_start(NULL, NULL)
+	                 : aster_device_wifi_hotspot_stop();
 	if (err) {
 		failed(err);
 		if (enable)
@@ -378,8 +408,9 @@ static void hotspot_toggle_cb(lv_event_t *e)
 			lv_obj_add_state(sw, LV_STATE_CHECKED);
 	} else
 		pending =
-		    enable ? ASTER_PLAT_WIFI_OP_HOTSPOT_START : ASTER_PLAT_WIFI_OP_HOTSPOT_STOP;
+		        enable ? ASTER_PLAT_WIFI_OP_HOTSPOT_START : ASTER_PLAT_WIFI_OP_HOTSPOT_STOP;
 }
+
 static lv_obj_t *field(int y, const char *value, int max)
 {
 	lv_obj_t *o = lv_textarea_create(root);
@@ -394,12 +425,14 @@ static lv_obj_t *field(int y, const char *value, int max)
 	lv_obj_add_event_cb(o, field_cb, LV_EVENT_CLICKED, NULL);
 	return o;
 }
+
 static void header(const char *title, lv_event_cb_t cb)
 {
 	lv_obj_t *l = text(root, title, 12, 8, w - 66, FG);
 	lv_obj_set_style_text_font(l, aster_ui_font(20), 0);
 	button(root, page == WIFI_LIST ? "关闭" : "返回", w - 54, 6, 46, 28, cb, NULL);
 }
+
 static void reset_view(void)
 {
 	connection_name = connection_info = networks = scan_label = NULL;
@@ -408,6 +441,7 @@ static void reset_view(void)
 	if (root)
 		lv_obj_clean(root);
 }
+
 static void show(enum page next, const char *ssid)
 {
 	char selected[33] = {0};
@@ -444,13 +478,13 @@ static void show(enum page next, const char *ssid)
 		password_field = field(140, "", page == HOTSPOT_EDIT ? 63 : 64);
 		lv_textarea_set_password_mode(password_field, true);
 		hint = text(root,
-			    page == HOTSPOT_EDIT ? (ap_state.configured ? "留空可保留原密码"
-									: "请设置至少8位连接密码")
-			    : require_password	 ? "请输入热点的连接密码"
-						 : "开放网络的密码可留空",
-			    12, 184, w - 24, MUTED);
+		            page == HOTSPOT_EDIT ? (ap_state.configured ? "留空可保留原密码"
+		                                                        : "请设置至少8位连接密码")
+		            : require_password   ? "请输入热点的连接密码"
+		                                 : "开放网络的密码可留空",
+		            12, 184, w - 24, MUTED);
 		lv_obj_t *submit = button(root, page == WIFI_JOIN ? "连接" : "保存并开启", 12,
-					  h - 48, w - 24, 36, submit_cb, NULL);
+		                          h - 48, w - 24, 36, submit_cb, NULL);
 		lv_obj_set_style_bg_color(submit, lv_color_hex(ACCENT), 0);
 		lv_obj_set_style_text_color(lv_obj_get_child(submit, 0), lv_color_hex(BG), 0);
 		keyboard = lv_buttonmatrix_create(root);
@@ -478,11 +512,11 @@ static void show(enum page next, const char *ssid)
 		lv_obj_set_pos(hotspot_switch, w - 78, 16);
 		lv_obj_set_size(hotspot_switch, 42, 24);
 		lv_obj_set_style_bg_color(hotspot_switch, lv_color_hex(ACCENT),
-					  LV_PART_INDICATOR | LV_STATE_CHECKED);
+		                          LV_PART_INDICATOR | LV_STATE_CHECKED);
 		if (ap_state.enabled)
 			lv_obj_add_state(hotspot_switch, LV_STATE_CHECKED);
 		lv_obj_add_event_cb(hotspot_switch, hotspot_toggle_cb, LV_EVENT_VALUE_CHANGED,
-				    NULL);
+		                    NULL);
 		lv_obj_t *name = button(root, "", 8, 116, w - 16, 54, hotspot_edit_cb, NULL);
 		text(name, "热点名称", 10, 3, w - 36, MUTED);
 		hotspot_name = text(name, ap_state.ssid, 10, 28, w - 36, FG);
@@ -498,7 +532,7 @@ static void show(enum page next, const char *ssid)
 		text(root, "将删除保存的连接密码。\n再次连接时需要重新输入。", 12, 116, w - 24,
 		     MUTED);
 		lv_obj_t *confirm = button(root, "确认忘记", 12, h - 92, w - 24, 36, action_cb,
-					   (void *)(uintptr_t)ASTER_PLAT_WIFI_OP_FORGET);
+		                           (void *)(uintptr_t)ASTER_PLAT_WIFI_OP_FORGET);
 		lv_obj_set_style_text_color(lv_obj_get_child(confirm, 0), lv_color_hex(RED), 0);
 		button(root, "取消", 12, h - 48, w - 24, 36, cancel_forget_cb, NULL);
 	} else {
@@ -509,16 +543,17 @@ static void show(enum page next, const char *ssid)
 		aster_device_wifi_last_ssid(saved, sizeof(saved));
 		connection_name = text(root, st.ssid[0] ? st.ssid : saved, 12, 52, w - 24, FG);
 		connection_info = text(root, "", 12, 110, w - 24, MUTED);
-		button(root, st.state == ASTER_PLAT_WIFI_STATE_COMPLETED ? "断开连接" : "重新连接", 12, h - 92,
-		       w - 24, 36, action_cb,
+		button(root, st.state == ASTER_PLAT_WIFI_STATE_COMPLETED ? "断开连接" : "重新连接",
+		       12, h - 92, w - 24, 36, action_cb,
 		       (void *)(uintptr_t)(st.state == ASTER_PLAT_WIFI_STATE_COMPLETED
-					       ? ASTER_PLAT_WIFI_OP_DISCONNECT
-					       : ASTER_PLAT_WIFI_OP_RECONNECT));
+		                                   ? ASTER_PLAT_WIFI_OP_DISCONNECT
+		                                   : ASTER_PLAT_WIFI_OP_RECONNECT));
 		lv_obj_t *b = button(root, "忘记此网络", 12, h - 48, w - 24, 36, forget_cb, NULL);
 		lv_obj_set_style_text_color(lv_obj_get_child(b, 0), lv_color_hex(RED), 0);
 	}
 	aster_wifi_settings_tick();
 }
+
 static void deleted(lv_event_t *e)
 {
 	(void)e;
@@ -529,18 +564,24 @@ static void deleted(lv_event_t *e)
 	(void)aster_mdns_svc_release(ASTER_MDNS_OWNER_UI);
 #endif
 }
-bool aster_wifi_settings_is_open(void) { return root != NULL; }
+
+bool aster_wifi_settings_is_open(void)
+{
+	return root != NULL;
+}
+
 void aster_wifi_settings_warm(void)
 {
 	const char *charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-			      "!@#$%^&*()-_+=[]{}\\|;:'\",.<>/?~` ·…"
-			      "Wi-"
-			      "Fi个人热点关闭返回附近网络添加扫描未连接正在获取地址连接密码名称显示"
-			      "隐藏开放留空保存并开启允许设备已断开重新忘记此详情自动分配局域网完成"
-			      "删除空格选择失败请检查信号至少设置八位将再次时需要输入确认取消";
+	                      "!@#$%^&*()-_+=[]{}\\|;:'\",.<>/?~` ·…"
+	                      "Wi-"
+	                      "Fi个人热点关闭返回附近网络添加扫描未连接正在获取地址连接密码名称显示"
+	                      "隐藏开放留空保存并开启允许设备已断开重新忘记此详情自动分配局域网完成"
+	                      "删除空格选择失败请检查信号至少设置八位将再次时需要输入确认取消";
 	aster_ui_font_warm(16, charset);
 	aster_ui_font_warm(20, "Wi-Fi连接网络网络详情个人热点设置个人热点忘记网络");
 }
+
 void aster_wifi_settings_open(lv_obj_t *parent, void (*close_owner)(void))
 {
 	if (root)
@@ -565,6 +606,7 @@ void aster_wifi_settings_open(lv_obj_t *parent, void (*close_owner)(void))
 	(void)aster_mdns_svc_acquire(ASTER_MDNS_OWNER_UI);
 #endif
 }
+
 void aster_wifi_settings_tick(void)
 {
 	if (!root)
@@ -597,9 +639,9 @@ void aster_wifi_settings_tick(void)
 			lv_obj_clear_state(hotspot_switch, LV_STATE_CHECKED);
 		set_text(hotspot_name, ap_state.ssid);
 		set_text(hotspot_info, op == ASTER_PLAT_WIFI_OP_HOTSPOT_START  ? "正在开启…"
-				       : op == ASTER_PLAT_WIFI_OP_HOTSPOT_STOP ? "正在关闭…"
-				       : ap_state.enabled		       ? "热点已开启"
-									       : "热点已关闭");
+		                       : op == ASTER_PLAT_WIFI_OP_HOTSPOT_STOP ? "正在关闭…"
+		                       : ap_state.enabled                      ? "热点已开启"
+		                                                               : "热点已关闭");
 		return;
 	}
 	if (page != WIFI_LIST && page != WIFI_DETAILS)
@@ -608,19 +650,19 @@ void aster_wifi_settings_tick(void)
 	aster_device_wifi_status(&st);
 	char saved[33] = {0}, info[160];
 	aster_device_wifi_last_ssid(saved, sizeof(saved));
-	set_text(connection_name, st.state == ASTER_PLAT_WIFI_STATE_COMPLETED   ? st.ssid
-				  : op == ASTER_PLAT_WIFI_OP_CONNECT ? "正在连接…"
-								     : "未连接");
+	set_text(connection_name, st.state == ASTER_PLAT_WIFI_STATE_COMPLETED ? st.ssid
+	                          : op == ASTER_PLAT_WIFI_OP_CONNECT          ? "正在连接…"
+	                                                                      : "未连接");
 	if (page == WIFI_DETAILS) {
 		set_text(connection_name, st.ssid[0] ? st.ssid : saved);
 		snprintf(info, sizeof(info), "%s\n\nIP  %s\n\n安全  %s\n\n信号  %d dBm",
-			 aster_ui_wifi_word(st.state), st.ip[0] ? st.ip : "未分配",
-			 st.sec_txt ? st.sec_txt : "—", (int)st.rssi);
+		         aster_ui_wifi_word(st.state), st.ip[0] ? st.ip : "未分配",
+		         st.sec_txt ? st.sec_txt : "—", (int)st.rssi);
 	} else
 		snprintf(info, sizeof(info), "%s",
-			 (st.state == ASTER_PLAT_WIFI_STATE_COMPLETED && st.ip[0]) ? st.ip
-			 : st.state == ASTER_PLAT_WIFI_STATE_COMPLETED		? "正在获取 IP…"
-			 : saved[0]					? saved
-									: "选择网络进行连接");
+		         (st.state == ASTER_PLAT_WIFI_STATE_COMPLETED && st.ip[0]) ? st.ip
+		         : st.state == ASTER_PLAT_WIFI_STATE_COMPLETED ? "正在获取 IP…"
+		         : saved[0]                                    ? saved
+		                    : "选择网络进行连接");
 	set_text(connection_info, info);
 }

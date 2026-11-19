@@ -27,7 +27,7 @@
 LOG_MODULE_REGISTER(aster_pkg, LOG_LEVEL_INF);
 
 struct pkg_header {
-	uint8_t  magic[4];
+	uint8_t magic[4];
 	uint16_t fmt_ver;
 	uint16_t hdr_size;
 	uint32_t flags;
@@ -42,20 +42,25 @@ struct pkg_header {
 
 static void package_diagnostic(bool error, const char *message)
 {
-    if (error) { LOG_ERR("%s", message); }
-    else { LOG_WRN("%s", message); }
+	if (error) {
+		LOG_ERR("%s", message);
+	} else {
+		LOG_WRN("%s", message);
+	}
 }
-int aster_pkg_parse(const uint8_t *img, size_t size, aster_manifest_t *m,
-                  const uint8_t **wasm, size_t *wasm_len,
-                  const uint8_t **aot, size_t *aot_len, uint32_t *aot_target)
+
+int aster_pkg_parse(const uint8_t *img, size_t size, aster_manifest_t *m, const uint8_t **wasm,
+                    size_t *wasm_len, const uint8_t **aot, size_t *aot_len, uint32_t *aot_target)
 {
-    const aster_pkg_policy_t policy = {
-        .target_id = CONFIG_ASTER_TARGET_ID, .abi_version = ASTER_ABI_VERSION,
-        .alloc = k_malloc, .release = k_free,
-        .has_feature = aster_sysinfo_feature_by_name,
-        .diagnostic = package_diagnostic,
-    };
-    return aster_pkg_decode(&policy,img,size,m,wasm,wasm_len,aot,aot_len,aot_target);
+	const aster_pkg_policy_t policy = {
+	        .target_id = CONFIG_ASTER_TARGET_ID,
+	        .abi_version = ASTER_ABI_VERSION,
+	        .alloc = k_malloc,
+	        .release = k_free,
+	        .has_feature = aster_sysinfo_feature_by_name,
+	        .diagnostic = package_diagnostic,
+	};
+	return aster_pkg_decode(&policy, img, size, m, wasm, wasm_len, aot, aot_len, aot_target);
 }
 
 /* Load a whole file into memory */
@@ -106,18 +111,23 @@ static int load_file(const char *path, uint8_t **buf, size_t *len)
 static int json_string_field(char *out, size_t n, const char *key, const char *value)
 {
 	int w = snprintf(out, n, ",\"%s\":\"", key);
-	if (w < 0 || (size_t)w >= n) return -1;
+	if (w < 0 || (size_t)w >= n)
+		return -1;
 	size_t used = (size_t)w;
 	for (const unsigned char *p = (const unsigned char *)value; *p; p++) {
-		if (*p < 0x20) return -1; /* descriptions are single-line text */
+		if (*p < 0x20)
+			return -1; /* descriptions are single-line text */
 		if (*p == '"' || *p == '\\') {
-			if (used + 1 >= n) return -1;
+			if (used + 1 >= n)
+				return -1;
 			out[used++] = '\\';
 		}
-		if (used + 1 >= n) return -1;
+		if (used + 1 >= n)
+			return -1;
 		out[used++] = (char)*p;
 	}
-	if (used + 2 > n) return -1;
+	if (used + 2 > n)
+		return -1;
 	out[used++] = '"';
 	out[used] = 0;
 	return (int)used;
@@ -160,12 +170,15 @@ static int json_arr(char *out, size_t n, const char *key, const char arr[][24], 
 #ifdef CONFIG_ASTER_PKG_FAULT_INJECTION
 static struct {
 	char id[64], stage[20], operation[20], active[64];
-	bool armed; unsigned action;
+	bool armed;
+	unsigned action;
 } pkg_fault;
+
 int aster_pkg_fault_arm(const char *id, const char *stage, const char *operation, unsigned action)
 {
 	if (strncmp(id, "test.p0.", 8) || strlen(id) >= sizeof(pkg_fault.id) ||
-	    strlen(stage) >= sizeof(pkg_fault.stage) || strlen(operation) >= sizeof(pkg_fault.operation)) {
+	    strlen(stage) >= sizeof(pkg_fault.stage) ||
+	    strlen(operation) >= sizeof(pkg_fault.operation)) {
 		return ASTER_EINVAL;
 	}
 	aster_app_mgr_files_lock();
@@ -177,16 +190,27 @@ int aster_pkg_fault_arm(const char *id, const char *stage, const char *operation
 	aster_app_mgr_files_unlock();
 	return ASTER_OK;
 }
-void aster_pkg_fault_clear(void) { pkg_fault.armed = false; }
+
+void aster_pkg_fault_clear(void)
+{
+	pkg_fault.armed = false;
+}
+
 static bool install_fault(const char *stage, const char *operation)
 {
 	if (!pkg_fault.armed || strcmp(pkg_fault.active, pkg_fault.id) ||
-	    strcmp(stage, pkg_fault.stage) || strcmp(operation, pkg_fault.operation)) { return false; }
+	    strcmp(stage, pkg_fault.stage) || strcmp(operation, pkg_fault.operation)) {
+		return false;
+	}
 	pkg_fault.armed = false;
-	LOG_ERR("install: diagnostic fault stage=%s operation=%s reset=%d", stage, operation, pkg_fault.action);
+	LOG_ERR("install: diagnostic fault stage=%s operation=%s reset=%d", stage, operation,
+	        pkg_fault.action);
 	if (pkg_fault.action == 2) {
-		LOG_ERR("POWER_CUT_READY id=%s stage=%s operation=%s", pkg_fault.active, stage, operation);
-		for (;;) { k_msleep(1000); }
+		LOG_ERR("POWER_CUT_READY id=%s stage=%s operation=%s", pkg_fault.active, stage,
+		        operation);
+		for (;;) {
+			k_msleep(1000);
+		}
 	}
 	if (pkg_fault.action == 1) {
 #if defined(CONFIG_SOC_SERIES_ESP32S3)
@@ -202,24 +226,27 @@ static bool install_fault(const char *stage, const char *operation)
 #else
 static bool install_fault(const char *stage, const char *operation)
 {
-	(void)stage; (void)operation; return false;
+	(void)stage;
+	(void)operation;
+	return false;
 }
 #endif
 
-static int install_verify(const char *path, const void *data, size_t len,
-                          const char *stage)
+static int install_verify(const char *path, const void *data, size_t len, const char *stage)
 {
 	struct fs_dirent st;
 	int err = fs_stat(path, &st);
 	if (err || st.type != FS_DIR_ENTRY_FILE || st.size != len) {
-		LOG_ERR("install: stage=%s operation=verify-size path=%s result=%d", stage, path, err);
+		LOG_ERR("install: stage=%s operation=verify-size path=%s result=%d", stage, path,
+		        err);
 		return ASTER_EIO;
 	}
 	struct fs_file_t f;
 	fs_file_t_init(&f);
 	err = fs_open(&f, path, FS_O_READ);
 	if (err) {
-		LOG_ERR("install: stage=%s operation=verify-open path=%s result=%d", stage, path, err);
+		LOG_ERR("install: stage=%s operation=verify-open path=%s result=%d", stage, path,
+		        err);
 		return ASTER_EIO;
 	}
 	uint8_t chunk[512];
@@ -229,11 +256,14 @@ static int install_verify(const char *path, const void *data, size_t len,
 		size_t n = len - done < sizeof(chunk) ? len - done : sizeof(chunk);
 		int read = aster_fs_read_safe(&f, chunk, n);
 		if (read < 0 || (size_t)read != n) {
-			LOG_ERR("install: stage=%s operation=verify-read path=%s result=%d", stage, path, read);
+			LOG_ERR("install: stage=%s operation=verify-read path=%s result=%d", stage,
+			        path, read);
 			err = ASTER_EIO;
 			break;
 		}
-		if (install_fault(stage, "verify")) { chunk[0] ^= 1u; }
+		if (install_fault(stage, "verify")) {
+			chunk[0] ^= 1u;
+		}
 		if (memcmp(chunk, expected + done, n)) {
 			LOG_ERR("install: stage=%s operation=verify-content path=%s", stage, path);
 			err = ASTER_ECORRUPT;
@@ -243,53 +273,86 @@ static int install_verify(const char *path, const void *data, size_t len,
 	}
 	int close = fs_close(&f);
 	if (close) {
-		LOG_ERR("install: stage=%s operation=verify-close path=%s result=%d", stage, path, close);
+		LOG_ERR("install: stage=%s operation=verify-close path=%s result=%d", stage, path,
+		        close);
 		err = ASTER_EIO;
 	}
 	return err;
 }
 
-struct install_progress {aster_install_progress_fn notify;void *context;uint64_t done,total;};
-static void report_install(struct install_progress *p,aster_install_phase phase,const char *name)
-{if(p&&p->notify)p->notify(p->context,phase,p->done,p->total,name?name:"");}
+struct install_progress {
+	aster_install_progress_fn notify;
+	void *context;
+	uint64_t done, total;
+};
+
+static void report_install(struct install_progress *p, aster_install_phase phase, const char *name)
+{
+	if (p && p->notify)
+		p->notify(p->context, phase, p->done, p->total, name ? name : "");
+}
+
 /* Keep recursive directory state out of the UI worker's bounded stack.
  * Parent paths remain live until the child returns; PSRAM holds each frame. */
-struct bundle_walk {struct fs_dir_t dir;struct fs_dirent ent;char a[256],b[256];};
-static int install_write_tracked(const char *path, const void *data, size_t len,
-                         const char *stage,struct install_progress *progress)
+struct bundle_walk {
+	struct fs_dir_t dir;
+	struct fs_dirent ent;
+	char a[256], b[256];
+};
+
+static int install_write_tracked(const char *path, const void *data, size_t len, const char *stage,
+                                 struct install_progress *progress)
 {
 	struct fs_file_t f;
 	fs_file_t_init(&f);
-	int err = install_fault(stage, "open") ? -EIO : fs_open(&f, path, FS_O_WRITE | FS_O_CREATE | FS_O_TRUNC);
+	int err = install_fault(stage, "open")
+	                  ? -EIO
+	                  : fs_open(&f, path, FS_O_WRITE | FS_O_CREATE | FS_O_TRUNC);
 	if (err) {
 		LOG_ERR("install: stage=%s operation=open path=%s result=%d", stage, path, err);
 		return ASTER_EIO;
 	}
 	size_t requested = install_fault(stage, "write") && len ? len - 1u : len;
 	int written = 0;
-    if(!progress)written=aster_fs_write_safe(&f,data,requested);
-    else while((size_t)written<requested) {
-        size_t chunk=requested-(size_t)written;if(chunk>4096)chunk=4096;
-        int count=aster_fs_write_safe(&f,(const uint8_t *)data+written,chunk);
-        if(count<=0||(size_t)count>chunk){if(count<0)written=count;break;}
-        written+=count;progress->done+=(unsigned)count;report_install(progress,ASTER_INSTALL_COPY,path);
-        if((size_t)count!=chunk)break;
-    }
+	if (!progress)
+		written = aster_fs_write_safe(&f, data, requested);
+	else
+		while ((size_t)written < requested) {
+			size_t chunk = requested - (size_t)written;
+			if (chunk > 4096)
+				chunk = 4096;
+			int count = aster_fs_write_safe(&f, (const uint8_t *)data + written, chunk);
+			if (count <= 0 || (size_t)count > chunk) {
+				if (count < 0)
+					written = count;
+				break;
+			}
+			written += count;
+			progress->done += (unsigned)count;
+			report_install(progress, ASTER_INSTALL_COPY, path);
+			if ((size_t)count != chunk)
+				break;
+		}
 	if (written < 0 || (size_t)written != len) {
-		LOG_ERR("install: stage=%s operation=write path=%s result=%d expected=%u",
-			stage, path, written, (unsigned)len);
+		LOG_ERR("install: stage=%s operation=write path=%s result=%d expected=%u", stage,
+		        path, written, (unsigned)len);
 		err = ASTER_EIO;
 	} else {
-		report_install(progress,ASTER_INSTALL_SYNC,path);
+		report_install(progress, ASTER_INSTALL_SYNC, path);
 		int sync = fs_sync(&f);
-		if (install_fault(stage, "sync")) { sync = -EIO; }
+		if (install_fault(stage, "sync")) {
+			sync = -EIO;
+		}
 		if (sync) {
-			LOG_ERR("install: stage=%s operation=sync path=%s result=%d", stage, path, sync);
+			LOG_ERR("install: stage=%s operation=sync path=%s result=%d", stage, path,
+			        sync);
 			err = ASTER_EIO;
 		}
 	}
 	int close = fs_close(&f);
-	if (install_fault(stage, "close")) { close = -EIO; }
+	if (install_fault(stage, "close")) {
+		close = -EIO;
+	}
 	if (close) {
 		LOG_ERR("install: stage=%s operation=close path=%s result=%d", stage, path, close);
 		err = ASTER_EIO;
@@ -297,8 +360,10 @@ static int install_write_tracked(const char *path, const void *data, size_t len,
 	return err ? err : install_verify(path, data, len, stage);
 }
 
-static int install_write(const char *path,const void *data,size_t len,const char *stage)
-{return install_write_tracked(path,data,len,stage,NULL);}
+static int install_write(const char *path, const void *data, size_t len, const char *stage)
+{
+	return install_write_tracked(path, data, len, stage, NULL);
+}
 
 static int rmrf(const char *path)
 {
@@ -363,7 +428,8 @@ static bool asset_relpath_ok(const char *p)
 	return true;
 }
 
-static int extract_mjr1(const uint8_t *blob, size_t len, const char *appdir,struct install_progress *progress)
+static int extract_mjr1(const uint8_t *blob, size_t len, const char *appdir,
+                        struct install_progress *progress)
 {
 	char root[192];
 	uint16_t n;
@@ -421,7 +487,7 @@ static int extract_mjr1(const uint8_t *blob, size_t len, const char *appdir,stru
 				}
 			}
 		}
-		err = install_write_tracked(dest, blob + fo, fl, "assets",progress);
+		err = install_write_tracked(dest, blob + fo, fl, "assets", progress);
 		if (err) {
 			return err;
 		}
@@ -430,93 +496,175 @@ static int extract_mjr1(const uint8_t *blob, size_t len, const char *appdir,stru
 	return ASTER_OK;
 }
 
-static int bundle_measure(const char *path,unsigned depth,uint64_t *bytes,unsigned *files)
+static int bundle_measure(const char *path, unsigned depth, uint64_t *bytes, unsigned *files)
 {
- if(depth>16)return ASTER_EINVAL;
- struct bundle_walk *walk=aster_psram_alloc(sizeof(*walk));if(!walk)return ASTER_ENOMEM;
- fs_dir_t_init(&walk->dir);if(fs_opendir(&walk->dir,path)){aster_psram_free(walk);return ASTER_EIO;}
- int result=0,read;
- while((read=fs_readdir(&walk->dir,&walk->ent))==0&&walk->ent.name[0]){
-  struct fs_dirent *ent=&walk->ent;
-  if(!strcmp(ent->name,".")||!strcmp(ent->name,"..")||strpbrk(ent->name,"/\\:")){result=ASTER_EINVAL;break;}
-  if(snprintf(walk->a,sizeof(walk->a),"%s/%s",path,ent->name)>=(int)sizeof(walk->a)){result=ASTER_EINVAL;break;}
-  if(ent->type==FS_DIR_ENTRY_DIR)result=bundle_measure(walk->a,depth+1,bytes,files);
-  else {(*files)++;*bytes+=ent->size;if(*files>4096||*bytes>UINT64_C(1073741824))result=ASTER_EMSGSIZE;}
-  if(result)break;
- }
- if(read<0)result=ASTER_EIO;
- if(fs_closedir(&walk->dir))result=ASTER_EIO;
- aster_psram_free(walk);return result;
+	if (depth > 16)
+		return ASTER_EINVAL;
+	struct bundle_walk *walk = aster_psram_alloc(sizeof(*walk));
+	if (!walk)
+		return ASTER_ENOMEM;
+	fs_dir_t_init(&walk->dir);
+	if (fs_opendir(&walk->dir, path)) {
+		aster_psram_free(walk);
+		return ASTER_EIO;
+	}
+	int result = 0, read;
+	while ((read = fs_readdir(&walk->dir, &walk->ent)) == 0 && walk->ent.name[0]) {
+		struct fs_dirent *ent = &walk->ent;
+		if (!strcmp(ent->name, ".") || !strcmp(ent->name, "..") ||
+		    strpbrk(ent->name, "/\\:")) {
+			result = ASTER_EINVAL;
+			break;
+		}
+		if (snprintf(walk->a, sizeof(walk->a), "%s/%s", path, ent->name) >=
+		    (int)sizeof(walk->a)) {
+			result = ASTER_EINVAL;
+			break;
+		}
+		if (ent->type == FS_DIR_ENTRY_DIR)
+			result = bundle_measure(walk->a, depth + 1, bytes, files);
+		else {
+			(*files)++;
+			*bytes += ent->size;
+			if (*files > 4096 || *bytes > UINT64_C(1073741824))
+				result = ASTER_EMSGSIZE;
+		}
+		if (result)
+			break;
+	}
+	if (read < 0)
+		result = ASTER_EIO;
+	if (fs_closedir(&walk->dir))
+		result = ASTER_EIO;
+	aster_psram_free(walk);
+	return result;
 }
-static int copy_bundle_file(const char *src,const char *dst,uint32_t size,struct install_progress *progress)
+
+static int copy_bundle_file(const char *src, const char *dst, uint32_t size,
+                            struct install_progress *progress)
 {
-    struct fs_dirent st;
-    if(fs_stat(dst,&st)!=-ENOENT)return ASTER_EEXIST;
-    struct fs_file_t input,output;fs_file_t_init(&input);fs_file_t_init(&output);
-    if(fs_open(&input,src,FS_O_READ))return ASTER_EIO;
-    if(fs_open(&output,dst,FS_O_CREATE|FS_O_WRITE|FS_O_TRUNC)){fs_close(&input);return ASTER_EIO;}
-    /* DMA-safe internal storage, allocated only while copying one file.
+	struct fs_dirent st;
+	if (fs_stat(dst, &st) != -ENOENT)
+		return ASTER_EEXIST;
+	struct fs_file_t input, output;
+	fs_file_t_init(&input);
+	fs_file_t_init(&output);
+	if (fs_open(&input, src, FS_O_READ))
+		return ASTER_EIO;
+	if (fs_open(&output, dst, FS_O_CREATE | FS_O_WRITE | FS_O_TRUNC)) {
+		fs_close(&input);
+		return ASTER_EIO;
+	}
+	/* DMA-safe internal storage, allocated only while copying one file.
      * Keeping it off-stack leaves headroom for cooperative LVGL rendering. */
-    uint8_t *bytes=aster_dram_alloc(2048);
-    if(!bytes){fs_close(&input);fs_close(&output);return ASTER_ENOMEM;}
-    int result=0;
-    while(size) {
-        unsigned n=size>2048?2048:size;
-        int got=fs_read(&input,bytes,n);
-        if(got<=0 || (unsigned)got>n){result=ASTER_EIO;break;}
-        unsigned done=0;
-        while(done<(unsigned)got) {
-            int written=fs_write(&output,bytes+done,(unsigned)got-done);
-            if(written<=0 || (unsigned)written>(unsigned)got-done){result=ASTER_EIO;break;}
-            done+=(unsigned)written;
-        }
-        if(result)break;
-        size-=(unsigned)got;
-        if(progress)progress->done+=(unsigned)got;
-        report_install(progress,ASTER_INSTALL_COPY,src);
-    }
-    if(!result && fs_read(&input,bytes,1)!=0)result=ASTER_EIO;
-    report_install(progress,ASTER_INSTALL_SYNC,src);
-    if(!result && fs_sync(&output))result=ASTER_EIO;
-    if(fs_close(&input))result=ASTER_EIO;
-    if(fs_close(&output))result=ASTER_EIO;
-    aster_dram_free(bytes);
-    return result;
+	uint8_t *bytes = aster_dram_alloc(2048);
+	if (!bytes) {
+		fs_close(&input);
+		fs_close(&output);
+		return ASTER_ENOMEM;
+	}
+	int result = 0;
+	while (size) {
+		unsigned n = size > 2048 ? 2048 : size;
+		int got = fs_read(&input, bytes, n);
+		if (got <= 0 || (unsigned)got > n) {
+			result = ASTER_EIO;
+			break;
+		}
+		unsigned done = 0;
+		while (done < (unsigned)got) {
+			int written = fs_write(&output, bytes + done, (unsigned)got - done);
+			if (written <= 0 || (unsigned)written > (unsigned)got - done) {
+				result = ASTER_EIO;
+				break;
+			}
+			done += (unsigned)written;
+		}
+		if (result)
+			break;
+		size -= (unsigned)got;
+		if (progress)
+			progress->done += (unsigned)got;
+		report_install(progress, ASTER_INSTALL_COPY, src);
+	}
+	if (!result && fs_read(&input, bytes, 1) != 0)
+		result = ASTER_EIO;
+	report_install(progress, ASTER_INSTALL_SYNC, src);
+	if (!result && fs_sync(&output))
+		result = ASTER_EIO;
+	if (fs_close(&input))
+		result = ASTER_EIO;
+	if (fs_close(&output))
+		result = ASTER_EIO;
+	aster_dram_free(bytes);
+	return result;
 }
-static int copy_bundle_tree(const char *src,const char *dst,unsigned depth,unsigned *count,uint64_t *bytes,struct install_progress *progress)
+
+static int copy_bundle_tree(const char *src, const char *dst, unsigned depth, unsigned *count,
+                            uint64_t *bytes, struct install_progress *progress)
 {
-    if(depth>16)return ASTER_EINVAL;
-    if(aster_storage_mkdir_p(dst))return ASTER_EIO;
-    struct bundle_walk *walk=aster_psram_alloc(sizeof(*walk));if(!walk)return ASTER_ENOMEM;
-    fs_dir_t_init(&walk->dir);
-    if(fs_opendir(&walk->dir,src)){aster_psram_free(walk);return ASTER_EIO;}
-    int result=0,read;
-    while((read=fs_readdir(&walk->dir,&walk->ent))==0 && walk->ent.name[0]) {
-        struct fs_dirent *ent=&walk->ent;
-        if(!strcmp(ent->name,".") || !strcmp(ent->name,"..") ||
-           strchr(ent->name,'/') || strchr(ent->name,'\\') || strchr(ent->name,':')) {result=ASTER_EINVAL;break;}
-        if(snprintf(walk->a,sizeof(walk->a),"%s/%s",src,ent->name)>=(int)sizeof(walk->a) ||
-           snprintf(walk->b,sizeof(walk->b),"%s/%s",dst,ent->name)>=(int)sizeof(walk->b)){result=ASTER_EINVAL;break;}
-        if(ent->type==FS_DIR_ENTRY_DIR)result=copy_bundle_tree(walk->a,walk->b,depth+1,count,bytes,progress);
-        else {
-            (*count)++;*bytes+=ent->size;
-            if(*count>4096 || *bytes>UINT64_C(1073741824)){result=ASTER_EMSGSIZE;break;}
-            result=copy_bundle_file(walk->a,walk->b,ent->size,progress);
-        }
-        if(result)break;
-    }
-    if(read<0)result=ASTER_EIO;
-    if(fs_closedir(&walk->dir))result=ASTER_EIO;
-    aster_psram_free(walk);return result;
+	if (depth > 16)
+		return ASTER_EINVAL;
+	if (aster_storage_mkdir_p(dst))
+		return ASTER_EIO;
+	struct bundle_walk *walk = aster_psram_alloc(sizeof(*walk));
+	if (!walk)
+		return ASTER_ENOMEM;
+	fs_dir_t_init(&walk->dir);
+	if (fs_opendir(&walk->dir, src)) {
+		aster_psram_free(walk);
+		return ASTER_EIO;
+	}
+	int result = 0, read;
+	while ((read = fs_readdir(&walk->dir, &walk->ent)) == 0 && walk->ent.name[0]) {
+		struct fs_dirent *ent = &walk->ent;
+		if (!strcmp(ent->name, ".") || !strcmp(ent->name, "..") || strchr(ent->name, '/') ||
+		    strchr(ent->name, '\\') || strchr(ent->name, ':')) {
+			result = ASTER_EINVAL;
+			break;
+		}
+		if (snprintf(walk->a, sizeof(walk->a), "%s/%s", src, ent->name) >=
+		            (int)sizeof(walk->a) ||
+		    snprintf(walk->b, sizeof(walk->b), "%s/%s", dst, ent->name) >=
+		            (int)sizeof(walk->b)) {
+			result = ASTER_EINVAL;
+			break;
+		}
+		if (ent->type == FS_DIR_ENTRY_DIR)
+			result = copy_bundle_tree(walk->a, walk->b, depth + 1, count, bytes,
+			                          progress);
+		else {
+			(*count)++;
+			*bytes += ent->size;
+			if (*count > 4096 || *bytes > UINT64_C(1073741824)) {
+				result = ASTER_EMSGSIZE;
+				break;
+			}
+			result = copy_bundle_file(walk->a, walk->b, ent->size, progress);
+		}
+		if (result)
+			break;
+	}
+	if (read < 0)
+		result = ASTER_EIO;
+	if (fs_closedir(&walk->dir))
+		result = ASTER_EIO;
+	aster_psram_free(walk);
+	return result;
 }
 
 static bool install_id_valid(const char *id)
 {
-	if (!id[0] || strstr(id, "..")) { return false; }
+	if (!id[0] || strstr(id, "..")) {
+		return false;
+	}
 	for (size_t i = 0; id[i]; i++) {
 		unsigned char c = (unsigned char)id[i];
-		bool alnum = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
-		if (!alnum && (i == 0 || (c != '.' && c != '_' && c != '-'))) { return false; }
+		bool alnum =
+		        (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
+		if (!alnum && (i == 0 || (c != '.' && c != '_' && c != '-'))) {
+			return false;
+		}
 	}
 	return true;
 }
@@ -528,16 +676,20 @@ static void pkg_trace(const char *stage)
 	size_t unused = 0;
 	(void)k_thread_stack_space_get(t, &unused);
 	LOG_INF("pkg trace: %s thread=%p stack=%p/%u unused=%u", stage, t,
-		(void *)t->stack_info.start, (unsigned)t->stack_info.size, (unsigned)unused);
+	        (void *)t->stack_info.start, (unsigned)t->stack_info.size, (unsigned)unused);
 }
 #else
-static void pkg_trace(const char *stage) { (void)stage; }
+static void pkg_trace(const char *stage)
+{
+	(void)stage;
+}
 #endif
 
-static int pkg_install_locked(const char *src_path,const char *resources,const char *caller,struct install_progress *progress)
+static int pkg_install_locked(const char *src_path, const char *resources, const char *caller,
+                              struct install_progress *progress)
 {
 	uint8_t *img = NULL;
-	report_install(progress,ASTER_INSTALL_CHECK,src_path);
+	report_install(progress, ASTER_INSTALL_CHECK, src_path);
 	size_t size = 0;
 	pkg_trace("load-source");
 	int err = load_file(src_path, &img, &size);
@@ -548,8 +700,11 @@ static int pkg_install_locked(const char *src_path,const char *resources,const c
 	}
 
 	aster_manifest_t m;
-	const uint8_t *wasm; size_t wlen;
-	const uint8_t *aot; size_t alen; uint32_t atarget;
+	const uint8_t *wasm;
+	size_t wlen;
+	const uint8_t *aot;
+	size_t alen;
+	uint32_t atarget;
 	pkg_trace("parse-source");
 	err = aster_pkg_parse(img, size, &m, &wasm, &wlen, &aot, &alen, &atarget);
 	pkg_trace("parsed-source");
@@ -564,7 +719,10 @@ static int pkg_install_locked(const char *src_path,const char *resources,const c
 		aster_psram_free(img);
 		return ASTER_ECORRUPT;
 	}
-    if(caller && !strcmp(caller,m.id)){aster_psram_free(img);return ASTER_EPERM;}
+	if (caller && !strcmp(caller, m.id)) {
+		aster_psram_free(img);
+		return ASTER_EPERM;
+	}
 
 	/* A package carries exactly ONE AOT image, built for one target
 	 * (pack_mja.py writes that id at header offset 36). Whether it matches
@@ -573,8 +731,8 @@ static int pkg_install_locked(const char *src_path,const char *resources,const c
 	bool aot_ok = alen && atarget == CONFIG_ASTER_AOT_TARGET_ID;
 	if (!aot_ok) {
 #if !defined(ASTER_SYSTEM_ESP_IDF) || defined(ASTER_REQUIRE_AOT)
-		LOG_ERR("install: %s requires AOT target %u (package target=%u, bytes=%u)",
-			m.id, (unsigned)CONFIG_ASTER_AOT_TARGET_ID, atarget, (unsigned)alen);
+		LOG_ERR("install: %s requires AOT target %u (package target=%u, bytes=%u)", m.id,
+		        (unsigned)CONFIG_ASTER_AOT_TARGET_ID, atarget, (unsigned)alen);
 		aster_psram_free(img);
 		return alen ? ASTER_EABI : ASTER_ENOTSUP;
 #endif
@@ -596,7 +754,8 @@ static int pkg_install_locked(const char *src_path,const char *resources,const c
 	/* No APP may retain a borrowed registry record across a version switch.
 	 * The launch reservation and this check share files_lock. */
 	if (aster_app_mgr_is_live(NULL)) {
-		LOG_ERR("install: stage=prepare operation=busy app=%s; return to launcher first", m.id);
+		LOG_ERR("install: stage=prepare operation=busy app=%s; return to launcher first",
+		        m.id);
 		aster_psram_free(img);
 		return ASTER_EBUSY;
 	}
@@ -619,13 +778,18 @@ static int pkg_install_locked(const char *src_path,const char *resources,const c
 	snprintf(inactive_record, sizeof(inactive_record), "%s/.active%u", base, slot);
 	err = fs_unlink(inactive_record);
 	if (err && err != -ENOENT) {
-		LOG_ERR("install: stage=prepare operation=invalidate path=%s result=%d", inactive_record, err);
+		LOG_ERR("install: stage=prepare operation=invalidate path=%s result=%d",
+		        inactive_record, err);
 		aster_psram_free(img);
 		return ASTER_EIO;
 	}
 	err = aster_versions_dir(appdir, sizeof(appdir), base, (int)slot);
-	if (!err) { err = rmrf(appdir); }
-	if (!err) { err = aster_storage_mkdir_p(appdir); }
+	if (!err) {
+		err = rmrf(appdir);
+	}
+	if (!err) {
+		err = aster_storage_mkdir_p(appdir);
+	}
 	if (err) {
 		LOG_ERR("install: stage=prepare operation=staging path=%s result=%d", base, err);
 		aster_psram_free(img);
@@ -641,26 +805,33 @@ static int pkg_install_locked(const char *src_path,const char *resources,const c
 		return err;
 	}
 
-    if(progress&&!resources){
-        progress->done=0;progress->total=size+wlen+(aot_ok?alen:0);
-        if(m.icon_len&&aster_pkg_in_bounds(m.icon_off,m.icon_len,size,m.hdr_size)&&aster_icon_parse(img+m.icon_off,m.icon_len,NULL)==ASTER_OK)progress->total+=m.icon_len;
-        if(m.assets_len>=16&&aster_pkg_in_bounds(m.assets_off,m.assets_len,size,m.hdr_size)){
-            const uint8_t *blob=img+m.assets_off;unsigned count=aster_le16(blob+6);
-            if(!memcmp(blob,"ASTR",4)&&count<=64&&16u+count*12u<=m.assets_len)
-                for(unsigned i=0;i<count;i++)progress->total+=aster_le32(blob+16+i*12+8);
-        }
-        report_install(progress,ASTER_INSTALL_COPY,src_path);
-    }
+	if (progress && !resources) {
+		progress->done = 0;
+		progress->total = size + wlen + (aot_ok ? alen : 0);
+		if (m.icon_len && aster_pkg_in_bounds(m.icon_off, m.icon_len, size, m.hdr_size) &&
+		    aster_icon_parse(img + m.icon_off, m.icon_len, NULL) == ASTER_OK)
+			progress->total += m.icon_len;
+		if (m.assets_len >= 16 &&
+		    aster_pkg_in_bounds(m.assets_off, m.assets_len, size, m.hdr_size)) {
+			const uint8_t *blob = img + m.assets_off;
+			unsigned count = aster_le16(blob + 6);
+			if (!memcmp(blob, "ASTR", 4) && count <= 64 &&
+			    16u + count * 12u <= m.assets_len)
+				for (unsigned i = 0; i < count; i++)
+					progress->total += aster_le32(blob + 16 + i * 12 + 8);
+		}
+		report_install(progress, ASTER_INSTALL_COPY, src_path);
+	}
 	/* Loaded package bytes may be in PSRAM; install_write always bounces. */
 	char dst[192];
 	snprintf(dst, sizeof(dst), "%s/package.ast", appdir);
-	err = install_write_tracked(dst,img,size,"package",resources?NULL:progress);
+	err = install_write_tracked(dst, img, size, "package", resources ? NULL : progress);
 	if (err) {
 		aster_psram_free(img);
 		return err;
 	}
 	snprintf(dst, sizeof(dst), "%s/app.wasm", appdir);
-	err = install_write_tracked(dst,wasm,wlen,"wasm",resources?NULL:progress);
+	err = install_write_tracked(dst, wasm, wlen, "wasm", resources ? NULL : progress);
 	if (err) {
 		aster_psram_free(img);
 		return err;
@@ -669,7 +840,7 @@ static int pkg_install_locked(const char *src_path,const char *resources,const c
 	/* extract app.aot when the package's CPU matches the platform */
 	if (aot_ok) {
 		snprintf(dst, sizeof(dst), "%s/app.aot", appdir);
-		err = install_write_tracked(dst,aot,alen,"aot",resources?NULL:progress);
+		err = install_write_tracked(dst, aot, alen, "aot", resources ? NULL : progress);
 		if (err) {
 			aster_psram_free(img);
 			return err;
@@ -681,7 +852,8 @@ static int pkg_install_locked(const char *src_path,const char *resources,const c
 	if (m.icon_len && aster_pkg_in_bounds(m.icon_off, m.icon_len, size, m.hdr_size) &&
 	    aster_icon_parse(img + m.icon_off, m.icon_len, NULL) == ASTER_OK) {
 		snprintf(dst, sizeof(dst), "%s/icon.bin", appdir);
-		err = install_write_tracked(dst,img+m.icon_off,m.icon_len,"icon",resources?NULL:progress);
+		err = install_write_tracked(dst, img + m.icon_off, m.icon_len, "icon",
+		                            resources ? NULL : progress);
 		if (err) {
 			aster_psram_free(img);
 			return err;
@@ -697,32 +869,47 @@ static int pkg_install_locked(const char *src_path,const char *resources,const c
 		snprintf(assets_dir, sizeof(assets_dir), "%s/assets", appdir);
 		err = rmrf(assets_dir);
 		if (err) {
-			LOG_ERR("install: stage=assets operation=cleanup path=%s result=%d", assets_dir, err);
+			LOG_ERR("install: stage=assets operation=cleanup path=%s result=%d",
+			        assets_dir, err);
 			aster_psram_free(img);
 			return ASTER_EIO;
 		}
 	}
 	if (m.assets_len && aster_pkg_in_bounds(m.assets_off, m.assets_len, size, m.hdr_size)) {
-		err = extract_mjr1(img + m.assets_off, m.assets_len, appdir,resources?NULL:progress);
+		err = extract_mjr1(img + m.assets_off, m.assets_len, appdir,
+		                   resources ? NULL : progress);
 		if (err) {
-			LOG_ERR("install: stage=assets operation=extract path=%s result=%d", appdir, err);
+			LOG_ERR("install: stage=assets operation=extract path=%s result=%d", appdir,
+			        err);
 			aster_psram_free(img);
 			return err;
 		}
 	}
 
-    if(resources) {
-        char assets[192];unsigned count=0;uint64_t bytes=0;
-        if(snprintf(assets,sizeof(assets),"%s/assets",appdir)>=(int)sizeof(assets))err=ASTER_EINVAL;
-        else {
-            unsigned measured=0;uint64_t total=0;
-            err=bundle_measure(resources,0,&total,&measured);
-            if(progress){progress->total=total;progress->done=0;}
-            report_install(progress,ASTER_INSTALL_COPY,resources);
-            if(!err)err=copy_bundle_tree(resources,assets,0,&count,&bytes,progress);
-        }
-        if(err){aster_psram_free(img);return err;}
-    }
+	if (resources) {
+		char assets[192];
+		unsigned count = 0;
+		uint64_t bytes = 0;
+		if (snprintf(assets, sizeof(assets), "%s/assets", appdir) >= (int)sizeof(assets))
+			err = ASTER_EINVAL;
+		else {
+			unsigned measured = 0;
+			uint64_t total = 0;
+			err = bundle_measure(resources, 0, &total, &measured);
+			if (progress) {
+				progress->total = total;
+				progress->done = 0;
+			}
+			report_install(progress, ASTER_INSTALL_COPY, resources);
+			if (!err)
+				err = copy_bundle_tree(resources, assets, 0, &count, &bytes,
+				                       progress);
+		}
+		if (err) {
+			aster_psram_free(img);
+			return err;
+		}
+	}
 	/* Normalize the manifest.
 	 *
 	 * The whole line is composed AND validated before the file is created.
@@ -755,40 +942,43 @@ static int pkg_install_locked(const char *src_path,const char *resources,const c
 		return ASTER_ENOMEM;
 	}
 	int w = snprintf(line, ASTER_MANIFEST_MAX,
-		"{\"format\":1,\"id\":\"%s\",\"name\":\"%s\",\"version\":\"%s\","
-		"\"abi_min\":\"%s\",\"abi_target\":\"%s\",\"entry\":\"app.wasm\","
-		"\"mem_initial\":%u,\"mem_max\":%u,\"mem_stack\":%u,\"mem_heap\":%u,"
-		"\"aot\":%u,\"installed\":1",
-		m.id, m.name, m.version, m.abi_min, m.abi_target,
-		(unsigned)m.mem_initial, (unsigned)m.mem_max, (unsigned)(m.mem_stack ? m.mem_stack : 65536),
-		(unsigned)(m.mem_heap ? m.mem_heap : 262144), aot_ok ? 1u : 0u);
+	                 "{\"format\":1,\"id\":\"%s\",\"name\":\"%s\",\"version\":\"%s\","
+	                 "\"abi_min\":\"%s\",\"abi_target\":\"%s\",\"entry\":\"app.wasm\","
+	                 "\"mem_initial\":%u,\"mem_max\":%u,\"mem_stack\":%u,\"mem_heap\":%u,"
+	                 "\"aot\":%u,\"installed\":1",
+	                 m.id, m.name, m.version, m.abi_min, m.abi_target, (unsigned)m.mem_initial,
+	                 (unsigned)m.mem_max, (unsigned)(m.mem_stack ? m.mem_stack : 65536),
+	                 (unsigned)(m.mem_heap ? m.mem_heap : 262144), aot_ok ? 1u : 0u);
 	int r = (w > 0 && w < (int)ASTER_MANIFEST_MAX) ? 0 : -1;
 
 	if (r >= 0 && m.description[0]) {
-		r = json_string_field(line + w, ASTER_MANIFEST_MAX - w, "description", m.description);
-		if (r >= 0) { w += r; r = 0; }
+		r = json_string_field(line + w, ASTER_MANIFEST_MAX - w, "description",
+		                      m.description);
+		if (r >= 0) {
+			w += r;
+			r = 0;
+		}
 	}
 
 	if (r >= 0) {
-		r = json_arr(line + w, ASTER_MANIFEST_MAX - w, "requires",
-			     m.requires, m.requires_n);
+		r = json_arr(line + w, ASTER_MANIFEST_MAX - w, "requires", m.requires,
+		             m.requires_n);
 	}
 	if (r >= 0) {
 		w += r;
-		r = json_arr(line + w, ASTER_MANIFEST_MAX - w, "optional",
-			     m.optional, m.optional_n);
+		r = json_arr(line + w, ASTER_MANIFEST_MAX - w, "optional", m.optional,
+		             m.optional_n);
 	}
 	if (r >= 0) {
 		w += r;
-		r = json_arr(line + w, ASTER_MANIFEST_MAX - w, "permissions",
-			     m.permissions, m.permissions_n);
+		r = json_arr(line + w, ASTER_MANIFEST_MAX - w, "permissions", m.permissions,
+		             m.permissions_n);
 	}
 	if (r >= 0) {
 		w += r;
 	}
 	if (r >= 0 && m.category[0]) {
-		r = snprintf(line + w, ASTER_MANIFEST_MAX - w, ",\"category\":\"%s\"",
-			     m.category);
+		r = snprintf(line + w, ASTER_MANIFEST_MAX - w, ",\"category\":\"%s\"", m.category);
 		if (r < 0 || r >= (int)ASTER_MANIFEST_MAX - w) {
 			r = -1;
 		} else {
@@ -802,7 +992,7 @@ static int pkg_install_locked(const char *src_path,const char *resources,const c
 	 * package would have meant by leaving the key out. */
 	if (r >= 0 && aster_pkg_orientation_name(m.orientation) != NULL) {
 		r = snprintf(line + w, ASTER_MANIFEST_MAX - w, ",\"orientation\":\"%s\"",
-			     aster_pkg_orientation_name(m.orientation));
+		             aster_pkg_orientation_name(m.orientation));
 		if (r < 0 || r >= (int)ASTER_MANIFEST_MAX - w) {
 			r = -1;
 		} else {
@@ -819,10 +1009,10 @@ static int pkg_install_locked(const char *src_path,const char *resources,const c
 
 	if (r < 0) {
 		LOG_ERR("install %s: manifest needs more than %zu B "
-			"(requires=%u optional=%u permissions=%u); refusing rather "
-			"than writing a manifest the scanner would reject",
-			m.id, (size_t)ASTER_MANIFEST_MAX, m.requires_n, m.optional_n,
-			m.permissions_n);
+		        "(requires=%u optional=%u permissions=%u); refusing rather "
+		        "than writing a manifest the scanner would reject",
+		        m.id, (size_t)ASTER_MANIFEST_MAX, m.requires_n, m.optional_n,
+		        m.permissions_n);
 		aster_psram_free(line);
 		aster_psram_free(img);
 		return ASTER_ECORRUPT;
@@ -846,12 +1036,13 @@ static int pkg_install_locked(const char *src_path,const char *resources,const c
 	}
 	err = fs_unlink(marker);
 	if (err) {
-		LOG_ERR("install: stage=commit operation=remove-marker path=%s result=%d", marker, err);
+		LOG_ERR("install: stage=commit operation=remove-marker path=%s result=%d", marker,
+		        err);
 		aster_psram_free(img);
 		return ASTER_EIO;
 	}
 
-	report_install(progress,ASTER_INSTALL_COMMIT,m.id);
+	report_install(progress, ASTER_INSTALL_COMMIT, m.id);
 	uint32_t manifest_crc;
 	err = aster_versions_manifest_crc(appdir, &manifest_crc);
 	if (err) {
@@ -871,14 +1062,14 @@ static int pkg_install_locked(const char *src_path,const char *resources,const c
 
 	aster_psram_free(img);
 	LOG_INF("installed %s (%s v%s, %u KB wasm)", m.id, m.name, m.version,
-		(unsigned)(wlen / 1024));
+	        (unsigned)(wlen / 1024));
 	return ASTER_OK;
 }
 
 int aster_pkg_install_file(const char *src_path)
 {
 	aster_app_mgr_files_lock();
-	int err = pkg_install_locked(src_path,NULL,NULL,NULL);
+	int err = pkg_install_locked(src_path, NULL, NULL, NULL);
 #ifdef CONFIG_ASTER_PKG_FAULT_INJECTION
 	pkg_fault.active[0] = 0;
 #endif
@@ -886,14 +1077,17 @@ int aster_pkg_install_file(const char *src_path)
 	return err;
 }
 
-int aster_pkg_install_bundle_file(const char *src,const char *resources,const char *caller)
+int aster_pkg_install_bundle_file(const char *src, const char *resources, const char *caller)
 {
-    return aster_pkg_install_bundle_progress(src,resources,caller,NULL,NULL);
+	return aster_pkg_install_bundle_progress(src, resources, caller, NULL, NULL);
 }
-int aster_pkg_install_bundle_progress(const char *src,const char *resources,const char *caller,aster_install_progress_fn notify,void *context)
+
+int aster_pkg_install_bundle_progress(const char *src, const char *resources, const char *caller,
+                                      aster_install_progress_fn notify, void *context)
 {
-    struct install_progress progress={.notify=notify,.context=context};
-    aster_app_mgr_files_lock();
-    int result=pkg_install_locked(src,resources,caller,&progress);
-    aster_app_mgr_files_unlock();return result;
+	struct install_progress progress = {.notify = notify, .context = context};
+	aster_app_mgr_files_lock();
+	int result = pkg_install_locked(src, resources, caller, &progress);
+	aster_app_mgr_files_unlock();
+	return result;
 }

@@ -20,9 +20,9 @@ LOG_MODULE_REGISTER(aster_imu, LOG_LEVEL_INF);
  * turns that into a build error instead of a device that is silently NULL. */
 #if IS_ENABLED(CONFIG_ASTER_HAS_ACCEL) || IS_ENABLED(CONFIG_ASTER_HAS_GYRO)
 BUILD_ASSERT(DT_HAS_CHOSEN(aster_imu),
-	     "the board conf claims an IMU capability, but the board overlay has "
-	     "no `chosen { aster,imu = &<sensor>; }` -- the port would bind no "
-	     "device, and `hw imu` would report -ENODEV forever");
+             "the board conf claims an IMU capability, but the board overlay has "
+             "no `chosen { aster,imu = &<sensor>; }` -- the port would bind no "
+             "device, and `hw imu` would report -ENODEV forever");
 #endif
 
 K_MUTEX_DEFINE(imu_lock);
@@ -48,12 +48,24 @@ int aster_plat_imu_read(float *ax, float *ay, float *az, float *gx, float *gy, f
 		k_mutex_unlock(&imu_lock);
 		return err;
 	}
-	if (ax) { *ax = sensor_value_to_float(&a[0]); }
-	if (ay) { *ay = sensor_value_to_float(&a[1]); }
-	if (az) { *az = sensor_value_to_float(&a[2]); }
-	if (gx) { *gx = sensor_value_to_float(&g[0]); }
-	if (gy) { *gy = sensor_value_to_float(&g[1]); }
-	if (gz) { *gz = sensor_value_to_float(&g[2]); }
+	if (ax) {
+		*ax = sensor_value_to_float(&a[0]);
+	}
+	if (ay) {
+		*ay = sensor_value_to_float(&a[1]);
+	}
+	if (az) {
+		*az = sensor_value_to_float(&a[2]);
+	}
+	if (gx) {
+		*gx = sensor_value_to_float(&g[0]);
+	}
+	if (gy) {
+		*gy = sensor_value_to_float(&g[1]);
+	}
+	if (gz) {
+		*gz = sensor_value_to_float(&g[2]);
+	}
 	k_mutex_unlock(&imu_lock);
 	return 0;
 }

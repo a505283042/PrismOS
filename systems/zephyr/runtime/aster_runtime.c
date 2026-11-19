@@ -54,8 +54,8 @@ LOG_MODULE_REGISTER(aster_rt, LOG_LEVEL_INF);
  * already on the glass. */
 #if DT_HAS_CHOSEN(zephyr_display)
 #define ASTER_WAMR_FRAME_BYTES \
-	(DT_PROP(DT_CHOSEN(zephyr_display), width) * \
-	 DT_PROP(DT_CHOSEN(zephyr_display), height) * 2u)
+	(DT_PROP(DT_CHOSEN(zephyr_display), width) * DT_PROP(DT_CHOSEN(zephyr_display), height) * \
+	 2u)
 #else
 #define ASTER_WAMR_FRAME_BYTES (240u * 320u * 2u)
 #endif
@@ -155,6 +155,7 @@ static uint32_t wamr_guest_pages(void)
 	}
 	return (uint32_t)(budget / 65536u);
 }
+
 static bool runtime_inited;
 
 /* single running app (V1) */
@@ -179,54 +180,63 @@ static void relaunch_policy_after(const char *exited_id);
  * self-exit / trap paths always reclaim `current`. */
 static struct k_thread app_thread_obj;
 static aster_app_ctx_t *worker_pending; /* ctx handed to the worker */
-static int worker_result;             /* start result, valid after worker_ready */
-static struct k_sem worker_go;        /* given by aster_app_start */
-static struct k_sem worker_ready;     /* given when start resolved (ok/err) */
-static struct k_sem worker_done;      /* given when app fully torn down */
-static atomic_t worker_sync_start;    /* only synchronous callers await ready */
+static int worker_result;               /* start result, valid after worker_ready */
+static struct k_sem worker_go;          /* given by aster_app_start */
+static struct k_sem worker_ready;       /* given when start resolved (ok/err) */
+static struct k_sem worker_done;        /* given when app fully torn down */
+static atomic_t worker_sync_start;      /* only synchronous callers await ready */
 
 static atomic_t display_mode_request = ATOMIC_INIT(-1);
 
 int aster_runtime_display_mode_request(enum aster_display_mode mode)
 {
-    if (mode < ASTER_DISPLAY_MODE_HEADLESS || mode > ASTER_DISPLAY_MODE_LANDSCAPE) {
-        return ASTER_EINVAL;
-    }
+	if (mode < ASTER_DISPLAY_MODE_HEADLESS || mode > ASTER_DISPLAY_MODE_LANDSCAPE) {
+		return ASTER_EINVAL;
+	}
 #if IS_ENABLED(CONFIG_ASTER_LAUNCHER_NATIVE)
-    /* Idle system UI has one orientation. APP manifests use the platform
+	/* Idle system UI has one orientation. APP manifests use the platform
      * orientation API through the runtime lease, independently of this. */
-    if (mode == ASTER_DISPLAY_MODE_LANDSCAPE) return ASTER_ENOTSUP;
+	if (mode == ASTER_DISPLAY_MODE_LANDSCAPE)
+		return ASTER_ENOTSUP;
 #endif
-    if (!runtime_inited) return ASTER_ESTATE;
-    k_mutex_lock(&app_lock, K_FOREVER);
-    int result = ASTER_OK;
-    if (current || worker_pending) result = ASTER_EBUSY;
-    else atomic_set(&display_mode_request, mode);
-    k_mutex_unlock(&app_lock);
-    return result;
+	if (!runtime_inited)
+		return ASTER_ESTATE;
+	k_mutex_lock(&app_lock, K_FOREVER);
+	int result = ASTER_OK;
+	if (current || worker_pending)
+		result = ASTER_EBUSY;
+	else
+		atomic_set(&display_mode_request, mode);
+	k_mutex_unlock(&app_lock);
+	return result;
 }
 
 static void apply_display_mode(void)
 {
-    int mode = (int)atomic_set(&display_mode_request, -1);
-    if (mode < 0) return;
+	int mode = (int)atomic_set(&display_mode_request, -1);
+	if (mode < 0)
+		return;
 #if IS_ENABLED(CONFIG_ASTER_LAUNCHER_NATIVE)
-    aster_launcher_hide();
+	aster_launcher_hide();
 #endif
-    int err = aster_plat_display_set_enabled(mode != ASTER_DISPLAY_MODE_HEADLESS);
-    if (!err && mode != ASTER_DISPLAY_MODE_HEADLESS) {
-        err = aster_plat_display_orientation_set(mode == ASTER_DISPLAY_MODE_PORTRAIT
-                                                ? ASTER_ORIENT_PORTRAIT : ASTER_ORIENT_LANDSCAPE);
+	int err = aster_plat_display_set_enabled(mode != ASTER_DISPLAY_MODE_HEADLESS);
+	if (!err && mode != ASTER_DISPLAY_MODE_HEADLESS) {
+		err = aster_plat_display_orientation_set(mode == ASTER_DISPLAY_MODE_PORTRAIT
+		                                                 ? ASTER_ORIENT_PORTRAIT
+		                                                 : ASTER_ORIENT_LANDSCAPE);
 #if IS_ENABLED(CONFIG_ASTER_LVGL)
-        aster_ui_lvgl_resync_window();
+		aster_ui_lvgl_resync_window();
 #endif
 #if IS_ENABLED(CONFIG_ASTER_LAUNCHER_NATIVE)
-        aster_launcher_request_show();
+		aster_launcher_request_show();
 #endif
-    }
-    if (err) LOG_ERR("display mode %d failed: %d", mode, err);
-    else LOG_INF("display mode: %s", mode == ASTER_DISPLAY_MODE_HEADLESS ? "headless" :
-                 mode == ASTER_DISPLAY_MODE_PORTRAIT ? "portrait" : "landscape");
+	}
+	if (err)
+		LOG_ERR("display mode %d failed: %d", mode, err);
+	else
+		LOG_INF("display mode: %s", mode == ASTER_DISPLAY_MODE_HEADLESS   ? "headless"
+		                            : mode == ASTER_DISPLAY_MODE_PORTRAIT ? "portrait"
+		                                                                  : "landscape");
 }
 
 static void worker_fn(void *p1, void *p2, void *p3);
@@ -238,7 +248,7 @@ static void worker_fn(void *p1, void *p2, void *p3);
 static struct {
 	int8_t from; /* what the window was before we changed it */
 	int8_t to;   /* what we set; ASTER_ORIENT_ANY = no lease is held */
-} orient_lease = { ASTER_ORIENT_ANY, ASTER_ORIENT_ANY };
+} orient_lease = {ASTER_ORIENT_ANY, ASTER_ORIENT_ANY};
 
 static void orient_lease_take(const aster_app_rec_t *rec)
 {
@@ -251,8 +261,7 @@ static void orient_lease_take(const aster_app_rec_t *rec)
 	}
 	cur = aster_plat_display_orientation_get();
 	if (cur < 0) {
-		LOG_DBG("app %s asked for %s; this build has no display", rec->id,
-			name);
+		LOG_DBG("app %s asked for %s; this build has no display", rec->id, name);
 		return;
 	}
 	if (cur == want) {
@@ -268,14 +277,14 @@ static void orient_lease_take(const aster_app_rec_t *rec)
 		 * other aspect will look wrong and that is otherwise a
 		 * mystery on the glass. */
 		LOG_WRN("app %s declared %s, which this panel refused (%d); "
-			"starting on %s", rec->id, name, err,
-			aster_pkg_orientation_name((int8_t)cur));
+		        "starting on %s",
+		        rec->id, name, err, aster_pkg_orientation_name((int8_t)cur));
 		return;
 	}
 	orient_lease.from = (int8_t)cur;
 	orient_lease.to = (int8_t)want;
 	LOG_INF("app %s: window -> %s (was %s)", rec->id, name,
-		aster_pkg_orientation_name((int8_t)cur));
+	        aster_pkg_orientation_name((int8_t)cur));
 }
 
 /* Give the window back. Called on BOTH ways out of worker_fn -- an app that
@@ -288,25 +297,26 @@ static void orient_lease_release(void)
 	const int8_t back_to = ASTER_ORIENT_PORTRAIT;
 #else
 	const int8_t back_to = orient_lease.from;
-	if (orient_lease.to == ASTER_ORIENT_ANY) return;
+	if (orient_lease.to == ASTER_ORIENT_ANY)
+		return;
 #endif
 	orient_lease.to = ASTER_ORIENT_ANY;
 	orient_lease.from = ASTER_ORIENT_ANY;
 	int cur = aster_plat_display_orientation_get();
-	if (cur < 0 || cur == back_to) return;
+	if (cur < 0 || cur == back_to)
+		return;
 
 	if (aster_plat_display_orientation_set(back_to)) {
 		LOG_ERR("orientation: could not restore the %s window",
-			aster_pkg_orientation_name(back_to));
+		        aster_pkg_orientation_name(back_to));
 	} else {
-		LOG_INF("orientation: window -> %s",
-			aster_pkg_orientation_name(back_to));
+		LOG_INF("orientation: window -> %s", aster_pkg_orientation_name(back_to));
 	}
 }
 
 int aster_runtime_init(void)
 {
-	RuntimeInitArgs args = { 0 };
+	RuntimeInitArgs args = {0};
 
 	if (runtime_inited) {
 		return 0;
@@ -330,26 +340,26 @@ int aster_runtime_init(void)
 	k_sem_init(&worker_done, 0, 1);
 	k_work_init(&relaunch_work, relaunch_fn);
 	int guard = aster_watchdog_init();
-	if (guard) { return guard; }
-	k_thread_stack_t *app_stack = aster_dram_alloc(
-			K_KERNEL_STACK_LEN(CONFIG_ASTER_APP_STACK_SIZE));
+	if (guard) {
+		return guard;
+	}
+	k_thread_stack_t *app_stack =
+	        aster_dram_alloc(K_KERNEL_STACK_LEN(CONFIG_ASTER_APP_STACK_SIZE));
 
 	if (app_stack == NULL) {
 		LOG_ERR("app stack alloc failed");
 		return -ENOMEM;
 	}
 	k_thread_create(&app_thread_obj, app_stack,
-			K_KERNEL_STACK_LEN(CONFIG_ASTER_APP_STACK_SIZE) -
-				K_KERNEL_STACK_RESERVED, worker_fn,
-			NULL, NULL, NULL, K_PRIO_PREEMPT(7), 0, K_NO_WAIT);
+	                K_KERNEL_STACK_LEN(CONFIG_ASTER_APP_STACK_SIZE) - K_KERNEL_STACK_RESERVED,
+	                worker_fn, NULL, NULL, NULL, K_PRIO_PREEMPT(7), 0, K_NO_WAIT);
 	k_thread_name_set(&app_thread_obj, "aster_app");
 	runtime_inited = true;
 
 	uint32_t vmaj, vmin, vpat;
 	wasm_runtime_get_version(&vmaj, &vmin, &vpat);
-	LOG_INF("ASTER runtime ready (ABI %u.%u, guest cap %d KB, WAMR %u.%u.%u)",
-		ASTER_ABI_MAJOR, ASTER_ABI_MINOR, CONFIG_ASTER_WAMR_HEAP_SIZE / 1024,
-		vmaj, vmin, vpat);
+	LOG_INF("ASTER runtime ready (ABI %u.%u, guest cap %d KB, WAMR %u.%u.%u)", ASTER_ABI_MAJOR,
+	        ASTER_ABI_MINOR, CONFIG_ASTER_WAMR_HEAP_SIZE / 1024, vmaj, vmin, vpat);
 	return 0;
 }
 
@@ -364,57 +374,60 @@ aster_app_ctx_t *aster_runtime_owner(void *module_inst)
 
 /* ---------- image loading ---------- */
 
-static int load_image(const char *path, uint8_t **out, size_t *out_len,
-                      uint32_t linear_initial)
+static int load_image(const char *path, uint8_t **out, size_t *out_len, uint32_t linear_initial)
 {
-    struct fs_dirent st;
-    int err = fs_stat(path, &st);
-    if (err) return err;
-    struct fs_file_t f;
-    fs_file_t_init(&f);
-    err = fs_open(&f, path, FS_O_READ);
-    if (err) return err;
+	struct fs_dirent st;
+	int err = fs_stat(path, &st);
+	if (err)
+		return err;
+	struct fs_file_t f;
+	fs_file_t_init(&f);
+	err = fs_open(&f, path, FS_O_READ);
+	if (err)
+		return err;
 
-    uint8_t header[64];
-    size_t prefix = MIN((size_t)st.size, sizeof(header));
-    err = aster_fs_read_safe(&f, header, prefix);
-    if (err < 0 || (size_t)err != prefix) {
-        fs_close(&f);
-        return err < 0 ? err : -EIO;
-    }
-    size_t allocation = (size_t)st.size;
-    /* A large staging image followed by executable text can split the only
+	uint8_t header[64];
+	size_t prefix = MIN((size_t)st.size, sizeof(header));
+	err = aster_fs_read_safe(&f, header, prefix);
+	if (err < 0 || (size_t)err != prefix) {
+		fs_close(&f);
+		return err < 0 ? err : -EIO;
+	}
+	size_t allocation = (size_t)st.size;
+	/* A large staging image followed by executable text can split the only
      * large PSRAM hole. Reuse a future-linear-sized staging reservation so
      * releasing it leaves room for the instance and display reserve.
      * The canonical format-6 target section fits in this prefix. XIP must
      * keep its backing image and is deliberately excluded. */
-    if (prefix == sizeof(header) && linear_initial >= 1024u * 1024u &&
-        (size_t)st.size > linear_initial / 4u &&
-        get_package_type(header, prefix) == Wasm_Module_AoT &&
-        !wasm_runtime_is_xip_file(header, prefix)) {
-        size_t staging = (size_t)linear_initial + ASTER_WAMR_RESERVE + 65536u;
-        if (staging <= CONFIG_ASTER_WAMR_HEAP_SIZE && staging > allocation)
-            allocation = staging;
-    }
-    uint8_t *b = aster_psram_alloc(allocation);
-    if (!b && allocation > (size_t)st.size) {
-        allocation = (size_t)st.size;
-        b = aster_psram_alloc(allocation);
-    }
-    if (!b) { fs_close(&f); return -ENOMEM; }
-    memcpy(b, header, prefix);
-    size_t tail = (size_t)st.size - prefix;
-    err = tail ? aster_fs_read_safe(&f, b + prefix, tail) : 0;
-    fs_close(&f);
-    if (err < 0 || (size_t)err != tail) {
-        aster_psram_free(b);
-        return err < 0 ? err : -EIO;
-    }
-    LOG_INF("AOT staging %u bytes for %u-byte image", (unsigned)allocation,
-            (unsigned)st.size);
-    *out = b;
-    *out_len = (size_t)st.size;
-    return 0;
+	if (prefix == sizeof(header) && linear_initial >= 1024u * 1024u &&
+	    (size_t)st.size > linear_initial / 4u &&
+	    get_package_type(header, prefix) == Wasm_Module_AoT &&
+	    !wasm_runtime_is_xip_file(header, prefix)) {
+		size_t staging = (size_t)linear_initial + ASTER_WAMR_RESERVE + 65536u;
+		if (staging <= CONFIG_ASTER_WAMR_HEAP_SIZE && staging > allocation)
+			allocation = staging;
+	}
+	uint8_t *b = aster_psram_alloc(allocation);
+	if (!b && allocation > (size_t)st.size) {
+		allocation = (size_t)st.size;
+		b = aster_psram_alloc(allocation);
+	}
+	if (!b) {
+		fs_close(&f);
+		return -ENOMEM;
+	}
+	memcpy(b, header, prefix);
+	size_t tail = (size_t)st.size - prefix;
+	err = tail ? aster_fs_read_safe(&f, b + prefix, tail) : 0;
+	fs_close(&f);
+	if (err < 0 || (size_t)err != tail) {
+		aster_psram_free(b);
+		return err < 0 ? err : -EIO;
+	}
+	LOG_INF("AOT staging %u bytes for %u-byte image", (unsigned)allocation, (unsigned)st.size);
+	*out = b;
+	*out_len = (size_t)st.size;
+	return 0;
 }
 
 static int ctx_load(aster_app_ctx_t *ctx, const aster_app_rec_t *rec)
@@ -422,7 +435,9 @@ static int ctx_load(aster_app_ctx_t *ctx, const aster_app_rec_t *rec)
 	char dir[192];
 	char path[224];
 	int selected = aster_storage_app_code_dir(dir, sizeof(dir), rec->id);
-	if (selected) { return selected; }
+	if (selected) {
+		return selected;
+	}
 
 	if (!rec->has_aot || !IS_ENABLED(CONFIG_ASTER_AOT)) {
 		LOG_ERR("AOT required on device: rebuild and reinstall %s with AOT", rec->id);
@@ -446,11 +461,11 @@ static int ctx_load(aster_app_ctx_t *ctx, const aster_app_rec_t *rec)
 	/* Copy retained strings/data into the module so the input AOT image can
 	 * be reclaimed before allocating the much larger guest linear memory.
 	 * XIP code still points into that image and must retain its backing. */
-	LoadArgs load_args = { 0 };
+	LoadArgs load_args = {0};
 	load_args.wasm_binary_freeable =
-		!wasm_runtime_is_xip_file(ctx->img, (uint32_t)ctx->img_size);
-	ctx->module = wasm_runtime_load_ex(ctx->img, (uint32_t)ctx->img_size,
-					   &load_args, error_buf, sizeof(error_buf));
+	        !wasm_runtime_is_xip_file(ctx->img, (uint32_t)ctx->img_size);
+	ctx->module = wasm_runtime_load_ex(ctx->img, (uint32_t)ctx->img_size, &load_args, error_buf,
+	                                   sizeof(error_buf));
 	if (!ctx->module) {
 		LOG_ERR("AOT load failed: %s", error_buf);
 		aster_psram_free(ctx->img);
@@ -469,7 +484,7 @@ static int ctx_load(aster_app_ctx_t *ctx, const aster_app_rec_t *rec)
 	uint32_t heap_size = rec->mem_heap ? rec->mem_heap : 262144;
 	uint32_t pages = wamr_guest_pages();
 	uint32_t budget = pages * 65536u;
-	InstantiationArgs iargs = { 0 };
+	InstantiationArgs iargs = {0};
 
 	if (stack_size > 512 * 1024) {
 		stack_size = 512 * 1024;
@@ -487,8 +502,8 @@ static int ctx_load(aster_app_ctx_t *ctx, const aster_app_rec_t *rec)
 	iargs.max_memory_pages = pages;
 	LOG_INF("guest linear cap %u pages (%u KB heap)", pages, heap_size / 1024u);
 
-	ctx->module_inst = wasm_runtime_instantiate_ex(ctx->module, &iargs,
-						       error_buf, sizeof(error_buf));
+	ctx->module_inst =
+	        wasm_runtime_instantiate_ex(ctx->module, &iargs, error_buf, sizeof(error_buf));
 	if (!ctx->module_inst) {
 		LOG_ERR("instantiate: %s", error_buf);
 		return -ENOMEM;
@@ -521,8 +536,8 @@ static int ctx_load(aster_app_ctx_t *ctx, const aster_app_rec_t *rec)
 static void ctx_note_linear_memory(aster_app_ctx_t *ctx)
 {
 	uint64_t first = 0, end = 0;
-	if (wasm_runtime_get_app_addr_range(ctx->module_inst, 0, &first, &end) &&
-	    end >= first && end - first <= UINT32_MAX) {
+	if (wasm_runtime_get_app_addr_range(ctx->module_inst, 0, &first, &end) && end >= first &&
+	    end - first <= UINT32_MAX) {
 		aster_app_mgr_note_mem(ctx->id, (uint32_t)(end - first));
 	}
 }
@@ -532,17 +547,23 @@ static int call_fn(aster_app_ctx_t *ctx, void *func, uint32_t argc, uint32_t *re
 	if (!func) {
 		return 0;
 	}
-	uint32_t argv[2] = { 0, 0 };
-	enum aster_callback_phase phase = func == ctx->f_init ? ASTER_CB_INIT :
-		func == ctx->f_start ? ASTER_CB_START : func == ctx->f_stop ? ASTER_CB_STOP :
-		func == ctx->f_destroy ? ASTER_CB_DESTROY : func == ctx->f_pause ? ASTER_CB_PAUSE : ASTER_CB_RESUME;
-	aster_watchdog_begin(ctx->id,phase);
+	uint32_t argv[2] = {0, 0};
+	enum aster_callback_phase phase = func == ctx->f_init      ? ASTER_CB_INIT
+	                                  : func == ctx->f_start   ? ASTER_CB_START
+	                                  : func == ctx->f_stop    ? ASTER_CB_STOP
+	                                  : func == ctx->f_destroy ? ASTER_CB_DESTROY
+	                                  : func == ctx->f_pause   ? ASTER_CB_PAUSE
+	                                                           : ASTER_CB_RESUME;
+	aster_watchdog_begin(ctx->id, phase);
 	bool ok = wasm_runtime_call_wasm(ctx->exec_env, func, argc, argv);
 	int late = aster_watchdog_end();
-	if (late) { ctx->crashed = ctx->quit = true; return ASTER_ETIMEDOUT; }
+	if (late) {
+		ctx->crashed = ctx->quit = true;
+		return ASTER_ETIMEDOUT;
+	}
 	if (!ok) {
 		const char *ex = wasm_runtime_get_exception(ctx->module_inst);
-		if (ctx->exit_clean && ex && strstr(ex,"terminated by user")) {
+		if (ctx->exit_clean && ex && strstr(ex, "terminated by user")) {
 			/* aster_app_exit() -> wasm_runtime_terminate(): expected */
 			LOG_DBG("wasm call ended by aster_app_exit: %s", ex ? ex : "?");
 		} else {
@@ -563,20 +584,22 @@ static int call_fn(aster_app_ctx_t *ctx, void *func, uint32_t argc, uint32_t *re
 static void deliver_event(aster_app_ctx_t *ctx, const aster_event_t *ev)
 {
 	void *native = NULL;
-	uint32_t offset = (uint32_t)wasm_runtime_module_malloc(ctx->module_inst, sizeof(*ev),
-							      &native);
+	uint32_t offset =
+	        (uint32_t)wasm_runtime_module_malloc(ctx->module_inst, sizeof(*ev), &native);
 	if (!offset || !native) {
 		return; /* app OOM: drop event */
 	}
 	memcpy(native, ev, sizeof(*ev));
 
-	uint32_t argv[1] = { offset };
-	aster_watchdog_begin(ctx->id,ASTER_CB_EVENT);
+	uint32_t argv[1] = {offset};
+	aster_watchdog_begin(ctx->id, ASTER_CB_EVENT);
 	bool ok = wasm_runtime_call_wasm(ctx->exec_env, ctx->f_event, 1, argv);
 	int late = aster_watchdog_end();
 	if (!ok || late) {
 		const char *detail = wasm_runtime_get_exception(ctx->module_inst);
-		char ex[128];snprintf(ex,sizeof(ex),"%s",detail ? detail : (late ? "callback deadline exceeded" : "?"));
+		char ex[128];
+		snprintf(ex, sizeof(ex), "%s",
+		         detail ? detail : (late ? "callback deadline exceeded" : "?"));
 		wasm_runtime_clear_exception(ctx->module_inst);
 		wasm_runtime_module_free(ctx->module_inst, offset);
 		/* aster_app_exit aborts the in-flight call: that is a clean stop */
@@ -592,8 +615,8 @@ static void deliver_event(aster_app_ctx_t *ctx, const aster_event_t *ev)
 
 /* pending lifecycle callbacks to run on the app thread (WAMR calls must
  * stay on the app thread): set by shell, consumed here. */
-#define ASTER_CTRL_NONE   0
-#define ASTER_CTRL_PAUSE  1
+#define ASTER_CTRL_NONE 0
+#define ASTER_CTRL_PAUSE 1
 #define ASTER_CTRL_RESUME 2
 
 /* Drain platform key edges into ASTER_EVENT_KEY (edge stream: pressed 1/0). */
@@ -603,7 +626,8 @@ static void drain_keys(aster_app_ctx_t *ctx)
 	int n = aster_plat_input_keys_poll(kev, ASTER_PLAT_MAX_KEYS);
 	for (int i = 0; i < n && !ctx->quit; i++) {
 #if IS_ENABLED(CONFIG_ASTER_LVGL)
-		if (aster_qpanel_exit_is_open()) continue;
+		if (aster_qpanel_exit_is_open())
+			continue;
 #endif
 		/* Global exit key (platform INPUT_KEY_* code, see Kconfig):
 		 * intercepted BEFORE delivery. A press cleanly quits the
@@ -613,15 +637,14 @@ static void drain_keys(aster_app_ctx_t *ctx)
 		 * press and the matching release are consumed, so the app never
 		 * sees a half edge. */
 		if (CONFIG_ASTER_EXIT_KEY_CODE && kev[i].code == CONFIG_ASTER_EXIT_KEY_CODE) {
-			if (kev[i].pressed &&
-			    strcmp(ctx->id, CONFIG_ASTER_SYSTEM_UI) != 0) {
+			if (kev[i].pressed && strcmp(ctx->id, CONFIG_ASTER_SYSTEM_UI) != 0) {
 				LOG_INF("exit key: force-quitting %s", ctx->id);
 				ctx->exit_clean = true;
 				ctx->quit = true;
 			}
 			continue;
 		}
-		aster_event_t ev = { 0 };
+		aster_event_t ev = {0};
 		ev.size = sizeof(ev);
 		ev.version = 1;
 		ev.type = ASTER_EVENT_KEY;
@@ -643,16 +666,19 @@ static int sync_lifecycle_pause(aster_app_ctx_t *ctx)
 	overlay = aster_qpanel_is_open() || aster_qpanel_exit_is_open();
 #endif
 	bool wanted = ctx->paused || overlay;
-	if (wanted == ctx->lifecycle_paused) return 0;
+	if (wanted == ctx->lifecycle_paused)
+		return 0;
 	if (wanted) {
 		aster_native_frame_abort(ctx);
 		int err = call_fn(ctx, ctx->f_pause, 0, NULL);
-		if (err) return err;
+		if (err)
+			return err;
 		ctx->lifecycle_paused = true;
 		ctx->touch_slots_down = 0;
 	} else {
 		int err = call_fn(ctx, ctx->f_resume, 0, NULL);
-		if (err) return err;
+		if (err)
+			return err;
 		ctx->lifecycle_paused = false;
 	}
 #if IS_ENABLED(CONFIG_ASTER_AUDIO)
@@ -671,15 +697,18 @@ static void deliver_touch_event(aster_app_ctx_t *ctx, const aster_event_t *ev)
 	deliver_event(ctx, ev);
 #if IS_ENABLED(CONFIG_ASTER_AXS15231B_RAW_DIAG)
 	if (ev->u.touch.action == ASTER_TOUCH_DOWN || ev->u.touch.action == ASTER_TOUCH_UP) {
-		LOG_INF("touch delivered app=%s slot=%u action=%u x=%u y=%u quit=%u",
-			ctx->id, ev->u.touch.slot, ev->u.touch.action,
-			ev->u.touch.x, ev->u.touch.y, (unsigned)ctx->quit);
+		LOG_INF("touch delivered app=%s slot=%u action=%u x=%u y=%u quit=%u", ctx->id,
+		        ev->u.touch.slot, ev->u.touch.action, ev->u.touch.x, ev->u.touch.y,
+		        (unsigned)ctx->quit);
 	}
 #endif
-	if (ctx->quit || ev->u.touch.slot >= ASTER_TOUCH_MAX) return;
+	if (ctx->quit || ev->u.touch.slot >= ASTER_TOUCH_MAX)
+		return;
 	uint8_t bit = (uint8_t)(1u << ev->u.touch.slot);
-	if (ev->u.touch.action == ASTER_TOUCH_DOWN) ctx->touch_slots_down |= bit;
-	else if (ev->u.touch.action == ASTER_TOUCH_UP) ctx->touch_slots_down &= (uint8_t)~bit;
+	if (ev->u.touch.action == ASTER_TOUCH_DOWN)
+		ctx->touch_slots_down |= bit;
+	else if (ev->u.touch.action == ASTER_TOUCH_UP)
+		ctx->touch_slots_down &= (uint8_t)~bit;
 }
 
 /* The UI service for the app context: the gesture recognizer, the
@@ -709,19 +738,22 @@ static void ui_service(aster_app_ctx_t *ctx)
 	/* The previous LVGL pump may have closed the overlay. Pair that pause
 	 * before the next queued DOWN reaches wasm, whose resume hook may clear
 	 * captured controls. */
-	if (sync_lifecycle_pause(ctx) != 0 || ctx->quit) return;
+	if (sync_lifecycle_pause(ctx) != 0 || ctx->quit)
+		return;
 	aster_touch_evt_t tev[ASTER_PLAT_TOUCH_EVENT_QUEUE];
 	int n = aster_plat_input_poll(tev, ARRAY_SIZE(tev));
 	uint32_t masks[ASTER_PLAT_TOUCH_EVENT_QUEUE];
-	for (int i = 0; i < n; ++i) masks[i] = tev[i].contact_mask;
+	for (int i = 0; i < n; ++i)
+		masks[i] = tev[i].contact_mask;
 	aster_touch_ui_begin_batch(&runtime_touch_ui, masks, (uint8_t)n);
 
 	for (int i = 0; i < n && !ctx->quit; i++) {
-		if(aster_launcher_power_touch(tev[i].contact_mask!=0))continue;
+		if (aster_launcher_power_touch(tev[i].contact_mask != 0))
+			continue;
 		bool pressed = tev[i].action != ASTER_TOUCH_UP;
-		struct aster_touch_ui_decision ui = aster_touch_ui_accept(
-			&runtime_touch_ui, (uint8_t)i, tev[i].action, tev[i].slot,
-			tev[i].contact_mask);
+		struct aster_touch_ui_decision ui =
+		        aster_touch_ui_accept(&runtime_touch_ui, (uint8_t)i, tev[i].action,
+		                              tev[i].slot, tev[i].contact_mask);
 		if (ui.reset_gesture) {
 			aster_gesture_reset();
 		}
@@ -736,15 +768,15 @@ static void ui_service(aster_app_ctx_t *ctx)
 			 * have opened or closed the quick-settings sheet. Touch input
 			 * is already in the current display's logical orientation. */
 			aster_gest_t g = aster_gesture_feed(tev[i].x, tev[i].y, pressed,
-							aster_qpanel_allow(false),
-							(int32_t)aster_ui_lvgl_height());
+			                                    aster_qpanel_allow(false),
+			                                    (int32_t)aster_ui_lvgl_height());
 			aster_ui_lvgl_pointer(tev[i].x, tev[i].y, pressed);
 			if (g != ASTER_GEST_NONE) {
 				lv_indev_wait_release(aster_ui_lvgl_indev());
 				if (aster_qpanel_on_gesture(g, ASTER_QPANEL_OVER_APP)) {
 					LOG_INF("runtime: pull-down (%d,%d) -> panel %s",
-						(int)tev[i].x, (int)tev[i].y,
-						aster_qpanel_is_open() ? "open" : "closed");
+					        (int)tev[i].x, (int)tev[i].y,
+					        aster_qpanel_is_open() ? "open" : "closed");
 					ctx->touch_suppressed = true;
 					continue;
 				}
@@ -752,7 +784,7 @@ static void ui_service(aster_app_ctx_t *ctx)
 					bool opened = aster_qpanel_request_exit(ctx->rec->name);
 					aster_gesture_reset();
 					LOG_INF("runtime: pull-up -> return confirmation %s (%s)",
-						ctx->id, opened ? "open" : "unavailable");
+					        ctx->id, opened ? "open" : "unavailable");
 					ctx->touch_suppressed = true;
 					continue;
 				}
@@ -765,13 +797,15 @@ static void ui_service(aster_app_ctx_t *ctx)
 		bool overlay = aster_qpanel_is_open() || aster_qpanel_exit_is_open();
 		if (ctx->paused || overlay) {
 			ctx->touch_suppressed = true;
-			if (sync_lifecycle_pause(ctx) != 0 || ctx->quit) return;
+			if (sync_lifecycle_pause(ctx) != 0 || ctx->quit)
+				return;
 		}
 		if (ctx->touch_suppressed) {
-			if (tev[i].contact_mask == 0) ctx->touch_suppressed = false;
+			if (tev[i].contact_mask == 0)
+				ctx->touch_suppressed = false;
 			continue;
 		}
-		aster_event_t ev = { 0 };
+		aster_event_t ev = {0};
 		ev.size = sizeof(ev);
 		ev.version = 1;
 		ev.type = ASTER_EVENT_TOUCH;
@@ -810,7 +844,8 @@ static void ui_service(aster_app_ctx_t *ctx)
 	/* The launcher normally polls the sheet. While a guest owns this
 	 * worker, service radio completion and status from this same UI thread. */
 	aster_qpanel_tick();
-	if (sync_lifecycle_pause(ctx) != 0 || ctx->quit) return;
+	if (sync_lifecycle_pause(ctx) != 0 || ctx->quit)
+		return;
 
 	/* Keeps the LVGL timer alive while an app owns the worker: it services
 	 * the screenshot poll (the shell blocks on it) and drains async flush
@@ -818,10 +853,11 @@ static void ui_service(aster_app_ctx_t *ctx)
 	 * launcher pixels leak from this pump. */
 	aster_native_frame_refresh(ctx);
 	aster_ui_lvgl_pump();
- if(aster_qpanel_take_exit_confirmed()) {
-  ctx->exit_clean=true;ctx->quit=true;
-  LOG_INF("runtime: confirmed return -> %s",ctx->id);
- }
+	if (aster_qpanel_take_exit_confirmed()) {
+		ctx->exit_clean = true;
+		ctx->quit = true;
+		LOG_INF("runtime: confirmed return -> %s", ctx->id);
+	}
 #else
 	/* Headless: no gestures, no sheet, no LVGL -- just the guest's own
 	 * input, and therefore nothing worth doing while it is parked. The
@@ -834,7 +870,7 @@ static void ui_service(aster_app_ctx_t *ctx)
 	int n = aster_plat_input_poll(tev, ARRAY_SIZE(tev));
 
 	for (int i = 0; i < n && !ctx->quit; i++) {
-		aster_event_t ev = { 0 };
+		aster_event_t ev = {0};
 		ev.size = sizeof(ev);
 		ev.version = 1;
 		ev.type = ASTER_EVENT_TOUCH;
@@ -847,7 +883,8 @@ static void ui_service(aster_app_ctx_t *ctx)
 		 * no firmware UI to keep apart from it. */
 		(void)aster_plat_display_app_touch(&ev.u.touch.x, &ev.u.touch.y);
 		if (ctx->touch_suppressed) {
-			if (tev[i].contact_mask == 0) ctx->touch_suppressed = false;
+			if (tev[i].contact_mask == 0)
+				ctx->touch_suppressed = false;
 			continue;
 		}
 		deliver_touch_event(ctx, &ev);
@@ -860,24 +897,28 @@ static void ui_service(aster_app_ctx_t *ctx)
  * event. Only handles owned by this APP session are eligible (the ring is
  * keyed by owner), so a neighbour APP or the CLI can never be observed. */
 uint32_t aster_net_public_handle(uint64_t owner, uint32_t kind, uint32_t internal);
+
 static void pump_net_events(aster_app_ctx_t *ctx)
 {
 #if IS_ENABLED(CONFIG_ASTER_NET)
-    if (!ctx->network_owner) return;
-    uint32_t handle = 0, kind = 0, state = 0;
-    if (!aster_network_event_take(ctx->network_owner, &handle, &kind, &state)) return;
-    uint32_t pub = aster_net_public_handle(ctx->network_owner, kind, handle);
-    if (!pub) return;
-    aster_event_t ev = { 0 };
-    ev.size = sizeof(ev);
-    ev.version = 1;
-    ev.type = ASTER_EVENT_SYS;
-    ev.timestamp_ms = (uint64_t)k_uptime_get();
-    ev.u.sys.code = ASTER_SYS_NET_STATE;
-    ev.u.sys.value = pub;
-    ev.u.data[2] = kind;
-    ev.u.data[3] = state;
-    deliver_event(ctx, &ev);
+	if (!ctx->network_owner)
+		return;
+	uint32_t handle = 0, kind = 0, state = 0;
+	if (!aster_network_event_take(ctx->network_owner, &handle, &kind, &state))
+		return;
+	uint32_t pub = aster_net_public_handle(ctx->network_owner, kind, handle);
+	if (!pub)
+		return;
+	aster_event_t ev = {0};
+	ev.size = sizeof(ev);
+	ev.version = 1;
+	ev.type = ASTER_EVENT_SYS;
+	ev.timestamp_ms = (uint64_t)k_uptime_get();
+	ev.u.sys.code = ASTER_SYS_NET_STATE;
+	ev.u.sys.value = pub;
+	ev.u.data[2] = kind;
+	ev.u.data[3] = state;
+	deliver_event(ctx, &ev);
 #endif
 }
 
@@ -893,21 +934,27 @@ static void app_event_loop(aster_app_ctx_t *ctx)
 	uint32_t frame_period = ctx->framerate ? (1000 / ctx->framerate) : 33;
 
 	while (!ctx->quit) {
-        if(aster_power_pending()){ctx->quit=true;break;}
+		if (aster_power_pending()) {
+			ctx->quit = true;
+			break;
+		}
 		uint64_t loop_start = (uint64_t)k_uptime_get();
 
 		/* lifecycle callbacks (pause/resume) run here, not on shell thread */
 		switch (ctx->pending_ctrl) {
 		case ASTER_CTRL_PAUSE:
 			ctx->paused = true;
-			if (ctx->touch_slots_down) ctx->touch_suppressed = true;
+			if (ctx->touch_slots_down)
+				ctx->touch_suppressed = true;
 			ctx->pending_ctrl = ASTER_CTRL_NONE;
-			if (sync_lifecycle_pause(ctx) != 0) continue;
+			if (sync_lifecycle_pause(ctx) != 0)
+				continue;
 			continue;
 		case ASTER_CTRL_RESUME:
 			ctx->paused = false;
 			ctx->pending_ctrl = ASTER_CTRL_NONE;
-			if (sync_lifecycle_pause(ctx) != 0) continue;
+			if (sync_lifecycle_pause(ctx) != 0)
+				continue;
 			break;
 		default:
 			break;
@@ -921,9 +968,9 @@ static void app_event_loop(aster_app_ctx_t *ctx)
 
 		if (ctx->paused
 #if IS_ENABLED(CONFIG_ASTER_LVGL)
-            || aster_qpanel_exit_is_open()
+		    || aster_qpanel_exit_is_open()
 #endif
-        ) {
+		) {
 			k_msleep(20);
 			continue;
 		}
@@ -932,7 +979,7 @@ static void app_event_loop(aster_app_ctx_t *ctx)
 		for (int i = 0; i < ASTER_TIMER_MAX && !ctx->quit; i++) {
 			aster_timer_t *t = &ctx->timers[i];
 			if (t->used && t->next_ms && (uint64_t)k_uptime_get() >= t->next_ms) {
-				aster_event_t ev = { 0 };
+				aster_event_t ev = {0};
 				ev.size = sizeof(ev);
 				ev.version = 1;
 				ev.type = ASTER_EVENT_TIMER;
@@ -949,11 +996,12 @@ static void app_event_loop(aster_app_ctx_t *ctx)
 		}
 
 		/* 2b) N5.5 network state change (coalesced, one per frame) */
-		if (!ctx->quit) pump_net_events(ctx);
+		if (!ctx->quit)
+			pump_net_events(ctx);
 
 		/* 3) frame */
 		if (!ctx->quit) {
-			aster_event_t ev = { 0 };
+			aster_event_t ev = {0};
 			ev.size = sizeof(ev);
 			ev.version = 1;
 			ev.type = ASTER_EVENT_FRAME;
@@ -1042,17 +1090,19 @@ static void ctx_cleanup(aster_app_ctx_t *ctx)
  * event loop; on failure everything allocated so far is reclaimed. */
 static int ctx_startup(aster_app_ctx_t *ctx)
 {
-    /* A package can remain installed when the display mode changes. Recheck
+	/* A package can remain installed when the display mode changes. Recheck
      * its requirements on the worker after applying a queued mode change. */
-    aster_manifest_t manifest;
-    int manifest_err = aster_app_mgr_read_manifest(ctx->id, &manifest);
-    if (manifest_err) return manifest_err;
-    for (uint32_t i = 0; i < manifest.requires_n; ++i) {
-        if (!aster_sysinfo_feature_by_name(manifest.requires[i])) {
-            LOG_ERR("start: capability unavailable in current mode: %s", manifest.requires[i]);
-            return ASTER_ENOTSUP;
-        }
-    }
+	aster_manifest_t manifest;
+	int manifest_err = aster_app_mgr_read_manifest(ctx->id, &manifest);
+	if (manifest_err)
+		return manifest_err;
+	for (uint32_t i = 0; i < manifest.requires_n; ++i) {
+		if (!aster_sysinfo_feature_by_name(manifest.requires[i])) {
+			LOG_ERR("start: capability unavailable in current mode: %s",
+			        manifest.requires[i]);
+			return ASTER_ENOTSUP;
+		}
+	}
 	aster_app_rec_t *rec = ctx->rec; /* ctx_load may downgrade has_aot */
 
 	int err = ctx_load(ctx, rec);
@@ -1106,26 +1156,32 @@ static int ctx_startup(aster_app_ctx_t *ctx)
 
 static void worker_fn(void *p1, void *p2, void *p3)
 {
-	ARG_UNUSED(p1); ARG_UNUSED(p2); ARG_UNUSED(p3);
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
 
 	for (;;) {
-        aster_power_poll();
-        apply_display_mode();
+		aster_power_poll();
+		apply_display_mode();
 #if IS_ENABLED(CONFIG_ASTER_LAUNCHER_FLUX)
-        uint32_t idle_wait=aster_launcher_idle_wait_ms();
+		uint32_t idle_wait = aster_launcher_idle_wait_ms();
 #else
-        uint32_t idle_wait=10;
+		uint32_t idle_wait = 10;
 #endif
-        if (k_sem_take(&worker_go, K_MSEC(idle_wait))) {
+		if (k_sem_take(&worker_go, K_MSEC(idle_wait))) {
 #if IS_ENABLED(CONFIG_ASTER_LAUNCHER_NATIVE)
-            if(aster_deploy_ui_tick())continue;
-            aster_launcher_pump_idle();
+			if (aster_deploy_ui_tick())
+				continue;
+			aster_launcher_pump_idle();
 #endif
-            continue;
-        }
+			continue;
+		}
 #if IS_ENABLED(CONFIG_ASTER_LAUNCHER_NATIVE)
-        aster_deploy_snapshot deployment;if(aster_deploy_get(&deployment))aster_deploy_dismiss(deployment.generation);aster_deploy_ui_close();
-        aster_launcher_hide();
+		aster_deploy_snapshot deployment;
+		if (aster_deploy_get(&deployment))
+			aster_deploy_dismiss(deployment.generation);
+		aster_deploy_ui_close();
+		aster_launcher_hide();
 #endif
 		aster_app_ctx_t *ctx = worker_pending;
 		/* Keep the pending reservation until startup has finished. Async
@@ -1142,16 +1198,17 @@ static void worker_fn(void *p1, void *p2, void *p3)
 		/* publish the owner *before* running aster_app_init: native
 		 * calls (surface/fs) resolve ctx_of() during init too */
 #if IS_ENABLED(CONFIG_ASTER_LVGL)
-        aster_ui_lvgl_resync_window();
-        aster_gesture_reset();
-        aster_font_sd_session_begin();
-        aster_ui_fonts_prepare(aster_ui_lvgl_width(),aster_ui_lvgl_height(),ctx->rec->name);
+		aster_ui_lvgl_resync_window();
+		aster_gesture_reset();
+		aster_font_sd_session_begin();
+		aster_ui_fonts_prepare(aster_ui_lvgl_width(), aster_ui_lvgl_height(),
+		                       ctx->rec->name);
 #endif
 		current = ctx;
 		worker_result = ctx_startup(ctx);
 		if (worker_result != ASTER_OK) {
 #if IS_ENABLED(CONFIG_ASTER_LVGL)
-            aster_font_sd_session_end();
+			aster_font_sd_session_end();
 #endif
 			current = NULL;
 #if IS_ENABLED(CONFIG_ASTER_AUDIO)
@@ -1160,7 +1217,8 @@ static void worker_fn(void *p1, void *p2, void *p3)
 #endif
 			/* the ctx never ran: hand the record back, aster_app_start
 			 * published it as RUNNING before the handoff */
-			aster_app_mgr_set_state(ctx->id, ASTER_APP_STATE_CRASHED, (uint32_t)-worker_result);
+			aster_app_mgr_set_state(ctx->id, ASTER_APP_STATE_CRASHED,
+			                        (uint32_t)-worker_result);
 			/* this path skips the teardown below, and it is the
 			 * launcher -- not another app -- that comes back, so
 			 * the window has to be put back here too. */
@@ -1179,7 +1237,7 @@ static void worker_fn(void *p1, void *p2, void *p3)
 			aster_app_mgr_set_state(ctx->id, ASTER_APP_STATE_RUNNING, 0);
 			aster_app_mgr_note_start(ctx->id, (uint64_t)k_uptime_get());
 			LOG_INF("app started: %s (%s, %u KB, %s)", ctx->id, ctx->rec->name,
-				(unsigned)(ctx->img_size / 1024), ctx->is_aot ? "AOT" : "wasm");
+			        (unsigned)(ctx->img_size / 1024), ctx->is_aot ? "AOT" : "wasm");
 		}
 		if (atomic_cas(&worker_sync_start, 1, 0)) {
 			k_sem_give(&worker_ready);
@@ -1220,8 +1278,9 @@ static void worker_fn(void *p1, void *p2, void *p3)
 		aster_qpanel_on_app_stop();
 #endif
 
-		aster_app_mgr_set_state(id, crashed ? ASTER_APP_STATE_CRASHED
-					    : ASTER_APP_STATE_STOPPED, crashed ? (uint32_t)-ASTER_ECORRUPT : 0);
+		aster_app_mgr_set_state(id,
+		                        crashed ? ASTER_APP_STATE_CRASHED : ASTER_APP_STATE_STOPPED,
+		                        crashed ? (uint32_t)-ASTER_ECORRUPT : 0);
 		if (crashed) {
 			LOG_ERR("app crashed: %s (resources reclaimed)", id);
 		}
@@ -1234,16 +1293,18 @@ static void worker_fn(void *p1, void *p2, void *p3)
 
 		current = NULL;
 		k_sem_give(&worker_done);
-        bool installed;
+		bool installed;
 #if IS_ENABLED(CONFIG_ASTER_LVGL)
-        installed=aster_app_mgr_finish_install_progress(id,!crashed,aster_ui_install_progress,NULL);
-        aster_ui_install_end();
+		installed = aster_app_mgr_finish_install_progress(id, !crashed,
+		                                                  aster_ui_install_progress, NULL);
+		aster_ui_install_end();
 #else
-        installed=aster_app_mgr_finish_install(id,!crashed);
+		installed = aster_app_mgr_finish_install(id, !crashed);
 #endif
-        if(installed) {
-            if(!crashed && aster_runtime_launch_async(id)==ASTER_OK)continue;
-        }
+		if (installed) {
+			if (!crashed && aster_runtime_launch_async(id) == ASTER_OK)
+				continue;
+		}
 
 		/* ABI 1.2 launch policy: handoff target or home UI, deferred
 		 * to sysworkq (worker cannot launch itself). After the give so
@@ -1255,7 +1316,8 @@ static void worker_fn(void *p1, void *p2, void *p3)
 
 static int app_start_common(const char *id, bool wait_ready)
 {
-    if(aster_power_pending())return ASTER_EBUSY;
+	if (aster_power_pending())
+		return ASTER_EBUSY;
 	if (!id || !id[0]) {
 		return ASTER_EINVAL;
 	}
@@ -1286,7 +1348,7 @@ static int app_start_common(const char *id, bool wait_ready)
 	}
 	if (rec->abi_major != ASTER_ABI_MAJOR) {
 		LOG_ERR("abi mismatch: 需用新 SDK 重编 (device %u app %u)",
-			(unsigned)ASTER_ABI_MAJOR, rec->abi_major);
+		        (unsigned)ASTER_ABI_MAJOR, rec->abi_major);
 		ret = ASTER_EABI;
 		goto out;
 	}
@@ -1338,7 +1400,9 @@ static int app_start_common(const char *id, bool wait_ready)
 	}
 	ret = worker_result;
 out:
-	if (files_locked) { aster_app_mgr_files_unlock(); }
+	if (files_locked) {
+		aster_app_mgr_files_unlock();
+	}
 	k_mutex_unlock(&app_lock);
 	return ret;
 }
@@ -1506,8 +1570,7 @@ void aster_runtime_boot_ui(void)
 		return;
 	}
 	if (!aster_app_mgr_find(CONFIG_ASTER_SYSTEM_UI)) {
-		LOG_WRN("system ui %s not installed; shell only",
-			CONFIG_ASTER_SYSTEM_UI);
+		LOG_WRN("system ui %s not installed; shell only", CONFIG_ASTER_SYSTEM_UI);
 		return;
 	}
 	k_mutex_lock(&app_lock, K_FOREVER);
@@ -1560,4 +1623,7 @@ void aster_runtime_terminate(void)
 	aster_runtime_exit(0);
 }
 
-bool aster_runtime_power_busy(void){return current!=NULL||worker_pending!=NULL;}
+bool aster_runtime_power_busy(void)
+{
+	return current != NULL || worker_pending != NULL;
+}

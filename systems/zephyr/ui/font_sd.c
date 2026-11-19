@@ -21,21 +21,51 @@
 #define SCRATCH_BYTES ASTER_FONT_MAX_SCRATCH
 BUILD_ASSERT(ASTER_FONT_MAX_BMP <= SPARSE_BYTES && SCRATCH_BYTES > 0);
 BUILD_ASSERT(LV_DRAW_BUF_STRIDE_ALIGN == 1);
-enum {ST_EMPTY,ST_SPARSE,ST_DEAD};
-typedef struct {uint8_t w,h;uint16_t adv;int16_t left,top;uint16_t dlen;uint32_t doff;} cp_rec_t;
-typedef struct {uint32_t first,last,offset;} cp_iv_t;
-struct sparse_ent {uint8_t px;uint32_t cp;cp_rec_t rec;uint16_t off,len;uint32_t touched;};
-struct sparse_cache {uint8_t *mem,*scratch;uint32_t capacity,used,clock;uint16_t n;struct sparse_ent entries[SPARSE_N];};
+
+enum { ST_EMPTY, ST_SPARSE, ST_DEAD };
+
 typedef struct {
- uint8_t px,state,two_bpp,advY;int16_t asc,desc;
- char path[64];uint32_t fsize,iv_cnt,gl_cnt,rec_foff,bm_foff;
- volatile uint32_t cache_bytes,cache_used,cache_glyphs;
- cp_iv_t *ivs;struct sparse_cache *cache;lv_draw_buf_t dbuf;lv_font_t font;
-} slot_t;
-static const uint8_t LUT2[4] = { 0, 85, 170, 255 };
-static const uint8_t LUT4[16] = {
-	0, 17, 34, 51, 68, 85, 102, 119, 136, 153, 170, 187, 204, 221, 238, 255
+	uint8_t w, h;
+	uint16_t adv;
+	int16_t left, top;
+	uint16_t dlen;
+	uint32_t doff;
+} cp_rec_t;
+
+typedef struct {
+	uint32_t first, last, offset;
+} cp_iv_t;
+
+struct sparse_ent {
+	uint8_t px;
+	uint32_t cp;
+	cp_rec_t rec;
+	uint16_t off, len;
+	uint32_t touched;
 };
+
+struct sparse_cache {
+	uint8_t *mem, *scratch;
+	uint32_t capacity, used, clock;
+	uint16_t n;
+	struct sparse_ent entries[SPARSE_N];
+};
+
+typedef struct {
+	uint8_t px, state, two_bpp, advY;
+	int16_t asc, desc;
+	char path[64];
+	uint32_t fsize, iv_cnt, gl_cnt, rec_foff, bm_foff;
+	volatile uint32_t cache_bytes, cache_used, cache_glyphs;
+	cp_iv_t *ivs;
+	struct sparse_cache *cache;
+	lv_draw_buf_t dbuf;
+	lv_font_t font;
+} slot_t;
+
+static const uint8_t LUT2[4] = {0, 85, 170, 255};
+static const uint8_t LUT4[16] = {0,   17,  34,  51,  68,  85,  102, 119,
+                                 136, 153, 170, 187, 204, 221, 238, 255};
 
 static inline uint8_t pix2a(const uint8_t *b, uint32_t i, bool two_bpp)
 {
@@ -45,17 +75,26 @@ static inline uint8_t pix2a(const uint8_t *b, uint32_t i, bool two_bpp)
 	return LUT4[(i & 1u) ? (b[i >> 1] & 0xFu) : (b[i >> 1] >> 4)];
 }
 
-static const uint8_t s_baked_px[]=ASTER_FONT_BAKED_PX;
+static const uint8_t s_baked_px[] = ASTER_FONT_BAKED_PX;
 static slot_t s_slots[ARRAY_SIZE(s_baked_px)] __attribute__((section(".ext_ram.bss.font_sd")));
-static bool s_inited,s_probe_first,s_repaint;
-static uint32_t s_probe_ms,s_generation,s_full_refs;
+static bool s_inited, s_probe_first, s_repaint;
+static uint32_t s_probe_ms, s_generation, s_full_refs;
 static aster_font_sd_stats_t s_st;
-uint32_t aster_font_sd_face_n(void) {return ARRAY_SIZE(s_baked_px);}
-uint8_t aster_font_sd_face_px(uint32_t i) {return i<ARRAY_SIZE(s_baked_px)?s_baked_px[i]:0;}
+
+uint32_t aster_font_sd_face_n(void)
+{
+	return ARRAY_SIZE(s_baked_px);
+}
+
+uint8_t aster_font_sd_face_px(uint32_t i)
+{
+	return i < ARRAY_SIZE(s_baked_px) ? s_baked_px[i] : 0;
+}
+
 static uint32_t ld32(const uint8_t *p)
 {
-	return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
-	       ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+	return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) |
+	       ((uint32_t)p[3] << 24);
 }
 
 static int16_t ld16s(const uint8_t *p)
@@ -174,108 +213,161 @@ static bool read_at(aster_os_file_t *f, uint32_t off, void *dst, uint32_t len)
 static aster_os_file_t s_io_file;
 static slot_t *s_io_slot;
 static uint32_t s_io_depth;
+
 static void font_io_close(void)
 {
- if(!s_io_slot) return;
- uint32_t start=aster_os_cycle_us();
- if(aster_os_file_close(&s_io_file)) s_st.load_failures++;
- s_st.close_us+=aster_os_elapsed_us((uint32_t)(aster_os_cycle_us()-start));
- s_io_slot=NULL;
+	if (!s_io_slot)
+		return;
+	uint32_t start = aster_os_cycle_us();
+	if (aster_os_file_close(&s_io_file))
+		s_st.load_failures++;
+	s_st.close_us += aster_os_elapsed_us((uint32_t)(aster_os_cycle_us() - start));
+	s_io_slot = NULL;
 }
-void aster_font_sd_io_begin(void) {s_io_depth++;}
+
+void aster_font_sd_io_begin(void)
+{
+	s_io_depth++;
+}
+
 void aster_font_sd_io_end(void)
 {
- if(s_io_depth && --s_io_depth==0) font_io_close();
+	if (s_io_depth && --s_io_depth == 0)
+		font_io_close();
 }
 
 static bool cache_acquire(slot_t *s)
 {
- if(s->cache) return true;
- struct sparse_cache *c=aster_os_alloc_external(sizeof(*c));
- if(!c) return false;
- memset(c,0,sizeof(*c));
- c->capacity=CLAMP((uint32_t)s->px*s->px*48u,8192u,SPARSE_BYTES);
- c->mem=aster_os_alloc_external(c->capacity);
- c->scratch=aster_os_alloc_external(SCRATCH_BYTES);
- if(!c->mem || !c->scratch) {
-  aster_os_free_external(c->mem);aster_os_free_external(c->scratch);aster_os_free_external(c);
-  return false;
- }
- s->cache=c;s->cache_bytes=sizeof(*c)+c->capacity+SCRATCH_BYTES;
- aster_service_logf(3,"cpfont cache: %upx allocated %u B",s->px,
-         (unsigned)(sizeof(*c)+c->capacity+SCRATCH_BYTES));
- return true;
+	if (s->cache)
+		return true;
+	struct sparse_cache *c = aster_os_alloc_external(sizeof(*c));
+	if (!c)
+		return false;
+	memset(c, 0, sizeof(*c));
+	c->capacity = CLAMP((uint32_t)s->px * s->px * 48u, 8192u, SPARSE_BYTES);
+	c->mem = aster_os_alloc_external(c->capacity);
+	c->scratch = aster_os_alloc_external(SCRATCH_BYTES);
+	if (!c->mem || !c->scratch) {
+		aster_os_free_external(c->mem);
+		aster_os_free_external(c->scratch);
+		aster_os_free_external(c);
+		return false;
+	}
+	s->cache = c;
+	s->cache_bytes = sizeof(*c) + c->capacity + SCRATCH_BYTES;
+	aster_service_logf(3, "cpfont cache: %upx allocated %u B", s->px,
+	                   (unsigned)(sizeof(*c) + c->capacity + SCRATCH_BYTES));
+	return true;
 }
 
 static void cache_evict(struct sparse_cache *c)
 {
- uint16_t oldest=0;
- for(uint16_t i=1;i<c->n;i++)
-  if(c->clock-c->entries[i].touched>c->clock-c->entries[oldest].touched) oldest=i;
- uint32_t off=c->entries[oldest].off,len=c->entries[oldest].len;
- memmove(c->mem+off,c->mem+off+len,c->used-off-len);
- for(uint16_t i=0;i<c->n;i++)
-  if(c->entries[i].off>=off+len) c->entries[i].off-=len;
- c->entries[oldest]=c->entries[--c->n];c->used-=len;
- s_st.evictions++;
+	uint16_t oldest = 0;
+	for (uint16_t i = 1; i < c->n; i++)
+		if (c->clock - c->entries[i].touched > c->clock - c->entries[oldest].touched)
+			oldest = i;
+	uint32_t off = c->entries[oldest].off, len = c->entries[oldest].len;
+	memmove(c->mem + off, c->mem + off + len, c->used - off - len);
+	for (uint16_t i = 0; i < c->n; i++)
+		if (c->entries[i].off >= off + len)
+			c->entries[i].off -= len;
+	c->entries[oldest] = c->entries[--c->n];
+	c->used -= len;
+	s_st.evictions++;
 }
 
 static const struct sparse_ent *sparse_fetch(slot_t *s, uint32_t cp, int32_t gi)
 {
- aster_os_file_t local,*f=&local;uint8_t raw[16];cp_rec_t rec;
- if(gi<0 || !cache_acquire(s)) return NULL;
- struct sparse_cache *c=s->cache;
- for(uint16_t i=0;i<c->n;i++) if(c->entries[i].cp==cp) {
-  c->entries[i].touched=++c->clock;s_st.hits++;return &c->entries[i];
- }
- s_st.misses++;
- uint32_t started=aster_os_cycle_us();
- if(s_io_depth) {
-  if(s_io_slot!=s) font_io_close();
-  f=&s_io_file;
- }
- if(!s_io_depth || !s_io_slot) {
-  aster_os_file_init(f);
-  if(aster_os_file_open(f,s->path,ASTER_OS_READ)!=0) {s_st.load_failures++;return NULL;}
-  if(s_io_depth) s_io_slot=s;
- }
- uint32_t opened=aster_os_cycle_us();
- if(!read_at(f,s->rec_foff+(uint32_t)gi*CPF_REC,raw,sizeof(raw))) {
-  if(s_io_depth) font_io_close();else if(aster_os_file_close(f)) s_st.load_failures++;
-  s_st.load_failures++;return NULL;
- }
- uint32_t recorded=aster_os_cycle_us();
- rd_rec(&rec,raw);
- if(rec.dlen>c->capacity || (uint32_t)rec.w*rec.h>SCRATCH_BYTES ||
-    rec.dlen!=((uint32_t)rec.w*rec.h+(s->two_bpp?3u:1u))/(s->two_bpp?4u:2u) ||
-    (uint64_t)s->bm_foff+rec.doff+rec.dlen>s->fsize) {
-  if(s_io_depth) font_io_close();else if(aster_os_file_close(f)) s_st.load_failures++;
-  s_st.load_failures++;return NULL;
- }
- while(c->n && (c->n>=SPARSE_N || c->used+rec.dlen>c->capacity)) cache_evict(c);
- if(rec.dlen && !read_at(f,s->bm_foff+rec.doff,c->mem+c->used,rec.dlen)) {
-  if(s_io_depth) font_io_close();else if(aster_os_file_close(f)) s_st.load_failures++;
-  s_st.load_failures++;return NULL;
- }
- uint32_t bitmap_read=aster_os_cycle_us();
- if(!s_io_depth && aster_os_file_close(f)) s_st.load_failures++;
- uint32_t closed=aster_os_cycle_us();
- s_st.open_us+=aster_os_elapsed_us((uint32_t)(opened-started));
- s_st.record_us+=aster_os_elapsed_us((uint32_t)(recorded-opened));
- s_st.bitmap_us+=aster_os_elapsed_us((uint32_t)(bitmap_read-recorded));
- s_st.close_us+=aster_os_elapsed_us((uint32_t)(closed-bitmap_read));
- struct sparse_ent *e=&c->entries[c->n++];
- e->px=s->px;e->cp=cp;e->rec=rec;e->off=c->used;e->len=rec.dlen;
- e->touched=++c->clock;c->used+=rec.dlen;
- s->cache_used=c->used;s->cache_glyphs=c->n;s_st.miss_filled++;
- s_st.reads+=rec.dlen?2u:1u;s_st.read_bytes+=sizeof(raw)+rec.dlen;
- uint32_t elapsed=aster_os_elapsed_us((uint32_t)(closed-started));
- s_st.load_us+=elapsed;if(elapsed>s_st.max_load_us)s_st.max_load_us=elapsed;
- return e;
+	aster_os_file_t local, *f = &local;
+	uint8_t raw[16];
+	cp_rec_t rec;
+	if (gi < 0 || !cache_acquire(s))
+		return NULL;
+	struct sparse_cache *c = s->cache;
+	for (uint16_t i = 0; i < c->n; i++)
+		if (c->entries[i].cp == cp) {
+			c->entries[i].touched = ++c->clock;
+			s_st.hits++;
+			return &c->entries[i];
+		}
+	s_st.misses++;
+	uint32_t started = aster_os_cycle_us();
+	if (s_io_depth) {
+		if (s_io_slot != s)
+			font_io_close();
+		f = &s_io_file;
+	}
+	if (!s_io_depth || !s_io_slot) {
+		aster_os_file_init(f);
+		if (aster_os_file_open(f, s->path, ASTER_OS_READ) != 0) {
+			s_st.load_failures++;
+			return NULL;
+		}
+		if (s_io_depth)
+			s_io_slot = s;
+	}
+	uint32_t opened = aster_os_cycle_us();
+	if (!read_at(f, s->rec_foff + (uint32_t)gi * CPF_REC, raw, sizeof(raw))) {
+		if (s_io_depth)
+			font_io_close();
+		else if (aster_os_file_close(f))
+			s_st.load_failures++;
+		s_st.load_failures++;
+		return NULL;
+	}
+	uint32_t recorded = aster_os_cycle_us();
+	rd_rec(&rec, raw);
+	if (rec.dlen > c->capacity || (uint32_t)rec.w * rec.h > SCRATCH_BYTES ||
+	    rec.dlen !=
+	            ((uint32_t)rec.w * rec.h + (s->two_bpp ? 3u : 1u)) / (s->two_bpp ? 4u : 2u) ||
+	    (uint64_t)s->bm_foff + rec.doff + rec.dlen > s->fsize) {
+		if (s_io_depth)
+			font_io_close();
+		else if (aster_os_file_close(f))
+			s_st.load_failures++;
+		s_st.load_failures++;
+		return NULL;
+	}
+	while (c->n && (c->n >= SPARSE_N || c->used + rec.dlen > c->capacity))
+		cache_evict(c);
+	if (rec.dlen && !read_at(f, s->bm_foff + rec.doff, c->mem + c->used, rec.dlen)) {
+		if (s_io_depth)
+			font_io_close();
+		else if (aster_os_file_close(f))
+			s_st.load_failures++;
+		s_st.load_failures++;
+		return NULL;
+	}
+	uint32_t bitmap_read = aster_os_cycle_us();
+	if (!s_io_depth && aster_os_file_close(f))
+		s_st.load_failures++;
+	uint32_t closed = aster_os_cycle_us();
+	s_st.open_us += aster_os_elapsed_us((uint32_t)(opened - started));
+	s_st.record_us += aster_os_elapsed_us((uint32_t)(recorded - opened));
+	s_st.bitmap_us += aster_os_elapsed_us((uint32_t)(bitmap_read - recorded));
+	s_st.close_us += aster_os_elapsed_us((uint32_t)(closed - bitmap_read));
+	struct sparse_ent *e = &c->entries[c->n++];
+	e->px = s->px;
+	e->cp = cp;
+	e->rec = rec;
+	e->off = c->used;
+	e->len = rec.dlen;
+	e->touched = ++c->clock;
+	c->used += rec.dlen;
+	s->cache_used = c->used;
+	s->cache_glyphs = c->n;
+	s_st.miss_filled++;
+	s_st.reads += rec.dlen ? 2u : 1u;
+	s_st.read_bytes += sizeof(raw) + rec.dlen;
+	uint32_t elapsed = aster_os_elapsed_us((uint32_t)(closed - started));
+	s_st.load_us += elapsed;
+	if (elapsed > s_st.max_load_us)
+		s_st.max_load_us = elapsed;
+	return e;
 }
 
-static bool sd_get_dsc(const lv_font_t *font, lv_font_glyph_dsc_t *d,
-		       uint32_t letter, uint32_t letter_next)
+static bool sd_get_dsc(const lv_font_t *font, lv_font_glyph_dsc_t *d, uint32_t letter,
+                       uint32_t letter_next)
 {
 	slot_t *s = CONTAINER_OF(font, slot_t, font);
 	int32_t gi;
@@ -324,7 +416,7 @@ static bool sd_get_dsc(const lv_font_t *font, lv_font_glyph_dsc_t *d,
 static const void *sd_get_bitmap(lv_font_glyph_dsc_t *d, lv_draw_buf_t *buf)
 {
 	slot_t *s = CONTAINER_OF(d->resolved_font, slot_t, font);
- uint32_t gi=d->gid.index;
+	uint32_t gi = d->gid.index;
 
 	ARG_UNUSED(buf);
 	if (s->state == ST_SPARSE) {
@@ -336,8 +428,8 @@ static const void *sd_get_bitmap(lv_font_glyph_dsc_t *d, lv_draw_buf_t *buf)
 			return NULL;
 		}
 		stride = lv_draw_buf_width_to_stride(e->rec.w, LV_COLOR_FORMAT_A8);
-		if (stride * e->rec.h > SCRATCH_BYTES ||
-		    !s->cache || (uint32_t)e->off + e->len > s->cache->used) {
+		if (stride * e->rec.h > SCRATCH_BYTES || !s->cache ||
+		    (uint32_t)e->off + e->len > s->cache->used) {
 			return NULL;
 		}
 		for (uint32_t y = 0; y < e->rec.h; y++) {
@@ -346,22 +438,23 @@ static const void *sd_get_bitmap(lv_font_glyph_dsc_t *d, lv_draw_buf_t *buf)
 
 			for (x = 0; x < e->rec.w; x++) {
 				row[x] = pix2a(s->cache->mem + e->off, y * e->rec.w + x,
-					       s->two_bpp != 0u);
+				               s->two_bpp != 0u);
 			}
 			for (; x < stride; x++) {
 				row[x] = 0;
 			}
 		}
 		lv_draw_buf_init(&s->dbuf, e->rec.w, e->rec.h, LV_COLOR_FORMAT_A8, stride,
-				 s->cache->scratch, stride * e->rec.h);
+		                 s->cache->scratch, stride * e->rec.h);
 		d->entry = NULL;
 		return &s->dbuf;
 	}
 
- return NULL;
+	return NULL;
 }
 
-static bool sd_get_dsc(const lv_font_t *,lv_font_glyph_dsc_t *,uint32_t,uint32_t);
+static bool sd_get_dsc(const lv_font_t *, lv_font_glyph_dsc_t *, uint32_t, uint32_t);
+
 static void font_bind(slot_t *s)
 {
 	s->font.get_glyph_dsc = sd_get_dsc;
@@ -391,30 +484,31 @@ static int load_meta(slot_t *s)
 	if (r) {
 		return r;
 	}
-	if (!read_at(&f, 0, hdr, 64) || memcmp(hdr, "CPFONT", 6) != 0 ||
-	    hdr[6] != 0 || hdr[7] != 0 ||
-	    (uint32_t)(hdr[8] | (hdr[9] << 8)) != CPF_VERSION) {
-		aster_service_logf(2,"cpfont %upx: bad header/version", (unsigned)s->px);
+	if (!read_at(&f, 0, hdr, 64) || memcmp(hdr, "CPFONT", 6) != 0 || hdr[6] != 0 ||
+	    hdr[7] != 0 || (uint32_t)(hdr[8] | (hdr[9] << 8)) != CPF_VERSION) {
+		aster_service_logf(2, "cpfont %upx: bad header/version", (unsigned)s->px);
 		aster_os_file_close(&f);
 		s->state = ST_DEAD;
 		return -EINVAL;
 	}
 	if (hdr[12] != 1u) {
-		aster_service_logf(3,"cpfont %upx: %u styles, regular only",
-			(unsigned)s->px, (unsigned)hdr[12]);
+		aster_service_logf(3, "cpfont %upx: %u styles, regular only", (unsigned)s->px,
+		                   (unsigned)hdr[12]);
 	}
 	/* flags bit0 is the bitmap depth: 0 = 4bpp (what ASTER bakes), 1 = 2bpp.
 	 * v4 has no way to say anything else -- an 8bpp file would set a bit we
 	 * do not know and be read as if the rest were zero, which decodes to
 	 * plausible grey mush rather than to an error. Reject unknown bits. */
 	if ((hdr[10] & ~1u) != 0u) {
-		aster_service_logf(2,"cpfont %upx: unknown flags %#04x (depth beyond 2/4bpp "
-			"needs a newer format)", (unsigned)s->px, (unsigned)hdr[10]);
+		aster_service_logf(2,
+		                   "cpfont %upx: unknown flags %#04x (depth beyond 2/4bpp "
+		                   "needs a newer format)",
+		                   (unsigned)s->px, (unsigned)hdr[10]);
 		aster_os_file_close(&f);
 		s->state = ST_DEAD;
 		return -EINVAL;
 	}
-	s->two_bpp = (uint8_t)(hdr[10] & 1u);	/* flags bit0 */
+	s->two_bpp = (uint8_t)(hdr[10] & 1u); /* flags bit0 */
 	/* TOC[0] @32: styleId(1) pad(3) | ivc u32 @4 | glc u32 @8 |
 	 * advY u8 @12 | asc i16 @13 | desc i16 @15 | kern.. @17..23 |
 	 * dataOff u32 @24 | reserved @28..31 */
@@ -424,15 +518,14 @@ static int load_meta(slot_t *s)
 	s->asc = ld16s(hdr + 32 + 13);
 	s->desc = ld16s(hdr + 32 + 15);
 	data_off = ld32(hdr + 32 + 24);
-	if (ivc == 0u || ivc > 20000u || glc == 0u || glc > 65536u ||
-	    data_off != 64u || s->advY == 0u) {
+	if (ivc == 0u || ivc > 20000u || glc == 0u || glc > 65536u || data_off != 64u ||
+	    s->advY == 0u) {
 		aster_os_file_close(&f);
 		s->state = ST_DEAD;
 		return -EINVAL;
 	}
 	if ((uint64_t)data_off + 12u * ivc > s->fsize ||
-	    (uint64_t)data_off + 12u * ivc + (uint64_t)CPF_REC * glc >
-		    s->fsize) {
+	    (uint64_t)data_off + 12u * ivc + (uint64_t)CPF_REC * glc > s->fsize) {
 		aster_os_file_close(&f);
 		s->state = ST_DEAD;
 		return -EINVAL;
@@ -449,8 +542,8 @@ static int load_meta(slot_t *s)
 	}
 	s->ivs = aster_os_alloc_external(12u * ivc);
 	if (!s->ivs) {
-		aster_service_logf(2,"cpfont %upx: no PSRAM for ivs (%u B)",
-			(unsigned)s->px, (unsigned)(12u * ivc));
+		aster_service_logf(2, "cpfont %upx: no PSRAM for ivs (%u B)", (unsigned)s->px,
+		                   (unsigned)(12u * ivc));
 		aster_os_file_close(&f);
 		return -ENOMEM;
 	}
@@ -466,114 +559,190 @@ static int load_meta(slot_t *s)
 	s->iv_cnt = ivc;
 	s->rec_foff = data_off + 12u * ivc;
 	s->bm_foff = s->rec_foff + CPF_REC * glc;
- font_bind(s);s->state=ST_SPARSE;
- aster_service_logf(3,"cpfont %upx: %u glyphs available",s->px,glc);
- return 0;
+	font_bind(s);
+	s->state = ST_SPARSE;
+	aster_service_logf(3, "cpfont %upx: %u glyphs available", s->px, glc);
+	return 0;
 }
 
 void aster_font_sd_init(void)
 {
- for(uint32_t i=0;i<ARRAY_SIZE(s_slots);i++) {
-  s_slots[i].px=s_baked_px[i];
-  snprintf(s_slots[i].path,sizeof(s_slots[i].path),CP_DIR "/ui_%u.cpfont",s_slots[i].px);
- }
- s_inited=true;
+	for (uint32_t i = 0; i < ARRAY_SIZE(s_slots); i++) {
+		s_slots[i].px = s_baked_px[i];
+		snprintf(s_slots[i].path, sizeof(s_slots[i].path), CP_DIR "/ui_%u.cpfont",
+		         s_slots[i].px);
+	}
+	s_inited = true;
 }
+
 int aster_font_sd_poll(void)
 {
- if(!s_inited) return 0;
- uint32_t now=aster_os_uptime32();int changed=0;aster_os_entry_t st;
- if(s_probe_first && now-s_probe_ms<PROBE_MS) return 0;
- s_probe_first=true;s_probe_ms=now;
- for(uint32_t i=0;i<ARRAY_SIZE(s_slots);i++) {
-  slot_t *s=&s_slots[i];
-  if(s->state==ST_SPARSE) continue;
-  if(aster_os_stat(s->path,&st)==0 && st.type==ASTER_OS_FILE && st.size>96) {
-   s->fsize=st.size;
-   if(load_meta(s)==0) changed=1;
-  }
- }
- if(changed) {s_repaint=true;s_generation++;}
- return changed;
+	if (!s_inited)
+		return 0;
+	uint32_t now = aster_os_uptime32();
+	int changed = 0;
+	aster_os_entry_t st;
+	if (s_probe_first && now - s_probe_ms < PROBE_MS)
+		return 0;
+	s_probe_first = true;
+	s_probe_ms = now;
+	for (uint32_t i = 0; i < ARRAY_SIZE(s_slots); i++) {
+		slot_t *s = &s_slots[i];
+		if (s->state == ST_SPARSE)
+			continue;
+		if (aster_os_stat(s->path, &st) == 0 && st.type == ASTER_OS_FILE && st.size > 96) {
+			s->fsize = st.size;
+			if (load_meta(s) == 0)
+				changed = 1;
+		}
+	}
+	if (changed) {
+		s_repaint = true;
+		s_generation++;
+	}
+	return changed;
 }
-bool aster_font_sd_streaming(void) {return false;}
-bool aster_font_sd_busy(void) {return false;}
-bool aster_font_sd_commit(void) {return false;}
-bool aster_font_sd_repaint_pending(void) {aster_font_sd_poll();return s_repaint;}
-void aster_font_sd_repaint_ack(void) {s_repaint=false;}
-uint32_t aster_font_sd_generation(void) {return s_generation;}
-uint32_t aster_font_sd_progress(void) {return s_probe_first?100:0;}
+
+bool aster_font_sd_streaming(void)
+{
+	return false;
+}
+
+bool aster_font_sd_busy(void)
+{
+	return false;
+}
+
+bool aster_font_sd_commit(void)
+{
+	return false;
+}
+
+bool aster_font_sd_repaint_pending(void)
+{
+	aster_font_sd_poll();
+	return s_repaint;
+}
+
+void aster_font_sd_repaint_ack(void)
+{
+	s_repaint = false;
+}
+
+uint32_t aster_font_sd_generation(void)
+{
+	return s_generation;
+}
+
+uint32_t aster_font_sd_progress(void)
+{
+	return s_probe_first ? 100 : 0;
+}
+
 const lv_font_t *aster_font_sd_get(uint8_t px)
 {
- slot_t *s=slot_by_px(px);
- if(!s || s->state!=ST_SPARSE || !cache_acquire(s)) return NULL;
- return &s->font;
+	slot_t *s = slot_by_px(px);
+	if (!s || s->state != ST_SPARSE || !cache_acquire(s))
+		return NULL;
+	return &s->font;
 }
-bool aster_font_sd_has_cp(uint8_t px,uint32_t cp)
+
+bool aster_font_sd_has_cp(uint8_t px, uint32_t cp)
 {
- slot_t *s=slot_by_px(px);
- return s && s->state==ST_SPARSE && iv_find(s,cp)>=0;
+	slot_t *s = slot_by_px(px);
+	return s && s->state == ST_SPARSE && iv_find(s, cp) >= 0;
 }
-void aster_font_sd_warm(uint8_t px,const char *utf8)
+
+void aster_font_sd_warm(uint8_t px, const char *utf8)
 {
- slot_t *s=slot_by_px(px);
- if(!s || s->state!=ST_SPARSE || !utf8) return;
- uint32_t started=aster_os_cycle_us();
- s_st.warm_bursts++;
- aster_font_sd_io_begin();
- const uint8_t *p=(const uint8_t *)utf8;
- while(*p) {uint32_t cp=utf8_next(&p);int32_t gi=iv_find(s,cp);
-  if(gi>=0 && sparse_fetch(s,cp,gi)) s_st.warm_glyphs++;
- }
- aster_font_sd_io_end();
- s_st.warm_us+=aster_os_elapsed_us((uint32_t)(aster_os_cycle_us()-started));
+	slot_t *s = slot_by_px(px);
+	if (!s || s->state != ST_SPARSE || !utf8)
+		return;
+	uint32_t started = aster_os_cycle_us();
+	s_st.warm_bursts++;
+	aster_font_sd_io_begin();
+	const uint8_t *p = (const uint8_t *)utf8;
+	while (*p) {
+		uint32_t cp = utf8_next(&p);
+		int32_t gi = iv_find(s, cp);
+		if (gi >= 0 && sparse_fetch(s, cp, gi))
+			s_st.warm_glyphs++;
+	}
+	aster_font_sd_io_end();
+	s_st.warm_us += aster_os_elapsed_us((uint32_t)(aster_os_cycle_us() - started));
 }
-void aster_font_sd_stats(aster_font_sd_stats_t *out) {if(out) *out=s_st;}
+
+void aster_font_sd_stats(aster_font_sd_stats_t *out)
+{
+	if (out)
+		*out = s_st;
+}
+
 void aster_font_sd_cache_drop(void)
 {
- font_io_close();s_io_depth=0;
- unsigned freed=0;
- for(uint32_t i=0;i<ARRAY_SIZE(s_slots);i++) {
-  struct sparse_cache *c=s_slots[i].cache;
-  if(!c) continue;
-  freed+=sizeof(*c)+c->capacity+SCRATCH_BYTES;
-  aster_os_free_external(c->mem);aster_os_free_external(c->scratch);aster_os_free_external(c);
-  s_slots[i].cache=NULL;s_slots[i].cache_bytes=0;s_slots[i].cache_used=0;s_slots[i].cache_glyphs=0;
- }
- if(freed) aster_service_logf(3,"cpfont cache: released %u B",freed);
+	font_io_close();
+	s_io_depth = 0;
+	unsigned freed = 0;
+	for (uint32_t i = 0; i < ARRAY_SIZE(s_slots); i++) {
+		struct sparse_cache *c = s_slots[i].cache;
+		if (!c)
+			continue;
+		freed += sizeof(*c) + c->capacity + SCRATCH_BYTES;
+		aster_os_free_external(c->mem);
+		aster_os_free_external(c->scratch);
+		aster_os_free_external(c);
+		s_slots[i].cache = NULL;
+		s_slots[i].cache_bytes = 0;
+		s_slots[i].cache_used = 0;
+		s_slots[i].cache_glyphs = 0;
+	}
+	if (freed)
+		aster_service_logf(3, "cpfont cache: released %u B", freed);
 }
 
 void aster_font_sd_reload(void)
 {
- aster_font_sd_cache_drop();
- for(uint32_t i=0;i<ARRAY_SIZE(s_slots);i++) {
-  slot_t *s=&s_slots[i];aster_os_free_external(s->ivs);s->ivs=NULL;
-  s->state=ST_EMPTY;s->iv_cnt=s->gl_cnt=s->fsize=0;
- }
- s_probe_first=false;s_repaint=true;s_generation++;
- (void)aster_font_sd_poll();
+	aster_font_sd_cache_drop();
+	for (uint32_t i = 0; i < ARRAY_SIZE(s_slots); i++) {
+		slot_t *s = &s_slots[i];
+		aster_os_free_external(s->ivs);
+		s->ivs = NULL;
+		s->state = ST_EMPTY;
+		s->iv_cnt = s->gl_cnt = s->fsize = 0;
+	}
+	s_probe_first = false;
+	s_repaint = true;
+	s_generation++;
+	(void)aster_font_sd_poll();
 }
 
 void aster_font_sd_session_begin(void)
 {
- if(!s_inited || s_full_refs++!=0u) return;
- /* The launcher has been hidden; font objects stay stable, glyph data does not. */
- aster_font_sd_cache_drop();
- aster_service_logf(3,"cpfont app session: size caches on demand");
+	if (!s_inited || s_full_refs++ != 0u)
+		return;
+	/* The launcher has been hidden; font objects stay stable, glyph data does not. */
+	aster_font_sd_cache_drop();
+	aster_service_logf(3, "cpfont app session: size caches on demand");
 }
 
 void aster_font_sd_session_end(void)
 {
- if(!s_full_refs || --s_full_refs) return;
- aster_font_sd_cache_drop();
- aster_service_logf(3,"cpfont app session: caches released");
+	if (!s_full_refs || --s_full_refs)
+		return;
+	aster_font_sd_cache_drop();
+	aster_service_logf(3, "cpfont app session: caches released");
 }
 
-bool aster_font_sd_cache_status(uint32_t index,aster_font_cache_status_t *out)
+bool aster_font_sd_cache_status(uint32_t index, aster_font_cache_status_t *out)
 {
- if(index>=ARRAY_SIZE(s_slots) || !out) return false;
- const slot_t *s=&s_slots[index];
- *out=(aster_font_cache_status_t){.px=s->px,.available=s->state==ST_SPARSE,
-   .coverage=s->gl_cnt,.glyphs=s->cache_glyphs,.used=s->cache_used,.bytes=s->cache_bytes};
- return true;
+	if (index >= ARRAY_SIZE(s_slots) || !out)
+		return false;
+	const slot_t *s = &s_slots[index];
+	*out = (aster_font_cache_status_t){.px = s->px,
+	                                   .available = s->state == ST_SPARSE,
+	                                   .coverage = s->gl_cnt,
+	                                   .glyphs = s->cache_glyphs,
+	                                   .used = s->cache_used,
+	                                   .bytes = s->cache_bytes};
+	return true;
 }

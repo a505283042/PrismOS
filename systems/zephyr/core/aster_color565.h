@@ -18,7 +18,7 @@
 /* 565 channel (w bits) widened toward 8-bit for the lerp */
 static inline uint32_t ch_up(uint32_t v, uint32_t bits)
 {
-	return (v << (8 - bits)) | (v >> (2 * bits - 8 > 0 ? 2 * bits - 8 : 0));
+    return (v << (8 - bits)) | (v >> (2 * bits - 8 > 0 ? 2 * bits - 8 : 0));
 }
 
 /* Coverage is interpolated directly in native channel space and rounded once.
@@ -27,8 +27,10 @@ static inline uint32_t ch_up(uint32_t v, uint32_t bits)
  * Preserve endpoints, identity, symmetry and the channel convex hull. */
 static inline uint16_t blend565(uint16_t d, uint16_t c, uint32_t a)
 {
-    if(a >= 255u) return c;
-    if(a == 0u) return d;
+    if (a >= 255u)
+        return c;
+    if (a == 0u)
+        return d;
     uint32_t inverse = 255u - a;
     uint32_t r = (((d >> 11) & 31u) * inverse + ((c >> 11) & 31u) * a + 127u) / 255u;
     uint32_t g = (((d >> 5) & 63u) * inverse + ((c >> 5) & 63u) * a + 127u) / 255u;

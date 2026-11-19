@@ -50,7 +50,11 @@ LOG_MODULE_REGISTER(aster_gfx, LOG_LEVEL_INF);
 /* ---------------- target + bounds accumulation ---------------- */
 
 static aster_dirty_set_t s_last_dirty;
-void aster_gfx_last_dirty(aster_dirty_set_t *out) { *out=s_last_dirty; }
+
+void aster_gfx_last_dirty(aster_dirty_set_t *out)
+{
+	*out = s_last_dirty;
+}
 
 typedef struct {
 	uint32_t x0, y0, x1, y1;
@@ -109,8 +113,7 @@ static inline uint16_t out_blend(uint16_t raw_dst, uint16_t le_col, uint32_t a)
 	return out_pack(blend565(out_unpack(raw_dst), le_col, a));
 }
 
-static inline void acc_merge(acc_t *a, uint32_t x0, uint32_t y0, uint32_t x1,
-			     uint32_t y1)
+static inline void acc_merge(acc_t *a, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1)
 {
 	if (!a->has) {
 		a->x0 = x0;
@@ -135,9 +138,8 @@ static inline void acc_merge(acc_t *a, uint32_t x0, uint32_t y0, uint32_t x1,
 }
 
 /* intersect with the surface; false = fully clipped */
-static inline bool clip_rect(const ppg_target_t *t, int32_t x, int32_t y,
-			     uint32_t w, uint32_t h, uint32_t *cx, uint32_t *cy,
-			     uint32_t *cw, uint32_t *ch)
+static inline bool clip_rect(const ppg_target_t *t, int32_t x, int32_t y, uint32_t w, uint32_t h,
+                             uint32_t *cx, uint32_t *cy, uint32_t *cw, uint32_t *ch)
 {
 	if (w == 0u || h == 0u) {
 		return false;
@@ -211,12 +213,14 @@ static void fill_row(uint16_t *dst, uint32_t n, uint16_t c)
 	}
 }
 
-static void fill_rect(ppg_target_t *t,uint32_t x,uint32_t y,uint32_t w,uint32_t h,uint16_t c)
+static void fill_rect(ppg_target_t *t, uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
 {
 #if defined(ASTER_SYSTEM_ESP_IDF) && !defined(ASTER_IDF_HOST_TEST)
-    if(!s_out_be && aster_idf_ppa_fill_rgb565(t->px,t->pitch,t->h,x,y,w,h,c))return;
+	if (!s_out_be && aster_idf_ppa_fill_rgb565(t->px, t->pitch, t->h, x, y, w, h, c))
+		return;
 #endif
-    for(uint32_t row=0;row<h;row++)fill_row(row_at(t,y+row)+x,w,c);
+	for (uint32_t row = 0; row < h; row++)
+		fill_row(row_at(t, y + row) + x, w, c);
 }
 
 /* ---------------- ops (draw + merge their clipped bounds) ---------------- */
@@ -238,7 +242,7 @@ static void op_clear(ppg_target_t *t, const aster_gfx_cmd_t *c, acc_t *acc)
 			y1 = t->h;
 		}
 	}
-	fill_rect(t,x0,y0,x1-x0,y1-y0,col);
+	fill_rect(t, x0, y0, x1 - x0, y1 - y0, col);
 	acc_merge(acc, x0, y0, x1, y1);
 }
 
@@ -246,21 +250,19 @@ static void op_rect(ppg_target_t *t, const aster_gfx_cmd_t *c, acc_t *acc)
 {
 	uint32_t cx, cy, cw, ch;
 
-	if (!clip_rect(t, (int32_t)cmd_xy0(c), (int32_t)cmd_xy1(c),
-		       ASTER_GFX_U16(c->w[2]), ASTER_GFX_HI16(c->w[2]), &cx, &cy, &cw,
-		       &ch)) {
+	if (!clip_rect(t, (int32_t)cmd_xy0(c), (int32_t)cmd_xy1(c), ASTER_GFX_U16(c->w[2]),
+	               ASTER_GFX_HI16(c->w[2]), &cx, &cy, &cw, &ch)) {
 		return;
 	}
 	uint16_t col = ASTER_GFX_U16(c->w[3]);
 
-	fill_rect(t,cx,cy,cw,ch,col);
+	fill_rect(t, cx, cy, cw, ch, col);
 	acc_merge(acc, cx, cy, cx + cw, cy + ch);
 }
 
 /* Paint an inclusive horizontal run [a, b] on row `py`, clipped to the
  * target, and merge it into the dirty accumulator. */
-static void run_px(ppg_target_t *t, int32_t py, int32_t a, int32_t b,
-		   uint16_t col, acc_t *acc)
+static void run_px(ppg_target_t *t, int32_t py, int32_t a, int32_t b, uint16_t col, acc_t *acc)
 {
 	if (py < 0 || py >= (int32_t)t->h) {
 		return;
@@ -278,8 +280,7 @@ static void run_px(ppg_target_t *t, int32_t py, int32_t a, int32_t b,
 		b = (int32_t)t->w - 1;
 	}
 	if (s_clip_w && s_clip_h) {
-		if (py < (int32_t)s_clip_y ||
-		    py >= (int32_t)(s_clip_y + s_clip_h)) {
+		if (py < (int32_t)s_clip_y || py >= (int32_t)(s_clip_y + s_clip_h)) {
 			return;
 		}
 		if (a < (int32_t)s_clip_x) {
@@ -293,8 +294,7 @@ static void run_px(ppg_target_t *t, int32_t py, int32_t a, int32_t b,
 		return;
 	}
 	fill_row(row_at(t, (uint32_t)py) + a, (uint32_t)(b - a + 1), col);
-	acc_merge(acc, (uint32_t)a, (uint32_t)py, (uint32_t)b + 1u,
-		  (uint32_t)py + 1u);
+	acc_merge(acc, (uint32_t)a, (uint32_t)py, (uint32_t)b + 1u, (uint32_t)py + 1u);
 }
 
 /* How far the left/right ends of row `yy` of a rounded rect pull inward,
@@ -317,8 +317,7 @@ static uint32_t row_inset(uint32_t r, uint32_t h, uint32_t yy)
 	int32_t best = 0;
 
 	for (int32_t dx = 0; dx <= (int32_t)r; dx++) {
-		if (dx * dx + (int32_t)cy_in * (int32_t)cy_in <=
-		    (int32_t)r * (int32_t)r) {
+		if (dx * dx + (int32_t)cy_in * (int32_t)cy_in <= (int32_t)r * (int32_t)r) {
 			best = dx;
 		} else {
 			break;
@@ -334,9 +333,8 @@ static uint32_t row_inset(uint32_t r, uint32_t h, uint32_t yy)
  * stitcher below, which is crisp but stair-steps.
  * The contour sampling itself lives in gfx_shapes.h so the host-side shape
  * preview can render the exact same vertices the device does. */
-static void op_rect_round_legacy(ppg_target_t *t, int32_t x, int32_t y, uint32_t w,
-				 uint32_t h, uint32_t r, uint32_t outline,
-				 uint16_t col, acc_t *acc)
+static void op_rect_round_legacy(ppg_target_t *t, int32_t x, int32_t y, uint32_t w, uint32_t h,
+                                 uint32_t r, uint32_t outline, uint16_t col, acc_t *acc)
 {
 	for (uint32_t yy = 0; yy < h; yy++) {
 		int32_t py = y + (int32_t)yy;
@@ -367,8 +365,8 @@ static void op_rect_round_legacy(ppg_target_t *t, int32_t x, int32_t y, uint32_t
 
 /* Straight axis-aligned span fill, clipped to the target. Used for the
  * parts of a rounded rect that need no feathering. */
-static void fill_span(ppg_target_t *t, int32_t x0, int32_t y0, int32_t x1, int32_t y1,
-		      uint16_t col, acc_t *acc)
+static void fill_span(ppg_target_t *t, int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint16_t col,
+                      acc_t *acc)
 {
 	int32_t min_x = 0, min_y = 0;
 	int32_t max_x = (int32_t)t->w, max_y = (int32_t)t->h;
@@ -431,7 +429,7 @@ static void op_rect_round(ppg_target_t *t, const aster_gfx_cmd_t *c, acc_t *acc)
 		r = h / 2u;
 	}
 	acc_merge(acc, (uint32_t)(x < 0 ? 0 : x), (uint32_t)(y < 0 ? 0 : y),
-		  (uint32_t)(x + (int32_t)w), (uint32_t)(y + (int32_t)h));
+	          (uint32_t)(x + (int32_t)w), (uint32_t)(y + (int32_t)h));
 
 	/* r<2 or a degenerate box: no curvature to feather, legacy is exact */
 	if (r < 2u || w < 2u || h < 2u) {
@@ -454,34 +452,32 @@ static void op_rect_round(ppg_target_t *t, const aster_gfx_cmd_t *c, acc_t *acc)
 			op_rect_round_legacy(t, x, y, w, h, r, outline, col, acc);
 			return;
 		}
+
 		const struct {
 			int32_t x0, y0, x1, y1;
 		} corners[4] = {
-			{ x, y, x + R, y + R },              /* top-left */
-			{ x1 - R, y, x1, y + R },            /* top-right */
-			{ x, y1 - R, x + R, y1 },            /* bottom-left */
-			{ x1 - R, y1 - R, x1, y1 },          /* bottom-right */
+		        {x, y, x + R, y + R},     /* top-left */
+		        {x1 - R, y, x1, y + R},   /* top-right */
+		        {x, y1 - R, x + R, y1},   /* bottom-left */
+		        {x1 - R, y1 - R, x1, y1}, /* bottom-right */
 		};
 
 		for (int i = 0; i < 4; i++) {
-			ppg_clip_t cl = { corners[i].x0, corners[i].y0,
-					  corners[i].x1, corners[i].y1 };
+			ppg_clip_t cl = {corners[i].x0, corners[i].y0, corners[i].x1,
+			                 corners[i].y1};
 			int32_t bx0, by0, bx1, by1;
 
-			if (ppg_path(t, xy, (int)n,
-				     outline ? 2.0f : 0.0f, col, &cl, &bx0, &by0,
-				     &bx1, &by1) != 0) {
+			if (ppg_path(t, xy, (int)n, outline ? 2.0f : 0.0f, col, &cl, &bx0, &by0,
+			             &bx1, &by1) != 0) {
 				/* Out of arena or bad contour: fall back for
 				 * the whole shape rather than leave it half
 				 * drawn. Earlier corners may be painted
 				 * twice, which is idempotent for opaque
 				 * colours and harmless for the acc. */
-				op_rect_round_legacy(t, x, y, w, h, r, outline,
-						     col, acc);
+				op_rect_round_legacy(t, x, y, w, h, r, outline, col, acc);
 				return;
 			}
-			acc_merge(acc, (uint32_t)bx0, (uint32_t)by0, (uint32_t)bx1,
-				  (uint32_t)by1);
+			acc_merge(acc, (uint32_t)bx0, (uint32_t)by0, (uint32_t)bx1, (uint32_t)by1);
 		}
 	}
 
@@ -515,16 +511,14 @@ static void op_ellipse(ppg_target_t *t, const aster_gfx_cmd_t *c, acc_t *acc)
 	int32_t by0 = ccy - (int32_t)ry, by1 = ccy + (int32_t)ry + 1;
 
 	acc_merge(acc, bx0 < 0 ? 0 : (uint32_t)bx0, by0 < 0 ? 0 : (uint32_t)by0,
-		  bx1 > (int32_t)t->w ? t->w : (uint32_t)bx1,
-		  by1 > (int32_t)t->h ? t->h : (uint32_t)by1);
+	          bx1 > (int32_t)t->w ? t->w : (uint32_t)bx1,
+	          by1 > (int32_t)t->h ? t->h : (uint32_t)by1);
 
 	static float xy[64 * 2u]; /* 60 max verts, keep off the 2K stack */
 	uint32_t n = aster_gfx_ell_polygon(xy, ccx, ccy, rx, ry);
 	int32_t ix0, iy0, ix1, iy1;
 
-	if (ppg_path(t, xy, (int)n,
-		     stroke ? 2.0f : 0.0f, col, NULL, &ix0, &iy0, &ix1,
-		     &iy1) == 0) {
+	if (ppg_path(t, xy, (int)n, stroke ? 2.0f : 0.0f, col, NULL, &ix0, &iy0, &ix1, &iy1) == 0) {
 		return;
 	}
 
@@ -541,8 +535,7 @@ static void op_ellipse(ppg_target_t *t, const aster_gfx_cmd_t *c, acc_t *acc)
 			continue;
 		}
 		for (int32_t dx = 0; dx <= (int32_t)rx; dx++) {
-			if ((int64_t)dx * dx * (int64_t)ry * ry +
-			    dy * dy * (int64_t)rx * rx <=
+			if ((int64_t)dx * dx * (int64_t)ry * ry + dy * dy * (int64_t)rx * rx <=
 			    (int64_t)rx * rx * (int64_t)ry * ry) {
 				hw = dx;
 			} else {
@@ -572,17 +565,14 @@ static void op_ellipse(ppg_target_t *t, const aster_gfx_cmd_t *c, acc_t *acc)
 
 /* ---------------- antialiased line (Xiaolin Wu) ---------------- */
 
-static inline void px_a(ppg_target_t *t, int32_t x, int32_t y, uint16_t c,
-			uint32_t a)
+static inline void px_a(ppg_target_t *t, int32_t x, int32_t y, uint16_t c, uint32_t a)
 {
-	if (x < 0 || y < 0 || x >= (int32_t)t->w || y >= (int32_t)t->h ||
-	    a == 0u) {
+	if (x < 0 || y < 0 || x >= (int32_t)t->w || y >= (int32_t)t->h || a == 0u) {
 		return;
 	}
 	if (s_clip_w && s_clip_h &&
 	    (x < (int32_t)s_clip_x || y < (int32_t)s_clip_y ||
-	     x >= (int32_t)(s_clip_x + s_clip_w) ||
-	     y >= (int32_t)(s_clip_y + s_clip_h))) {
+	     x >= (int32_t)(s_clip_x + s_clip_w) || y >= (int32_t)(s_clip_y + s_clip_h))) {
 		return;
 	}
 	uint16_t *d = row_at(t, (uint32_t)y) + x;
@@ -594,8 +584,8 @@ static inline void px_a(ppg_target_t *t, int32_t x, int32_t y, uint16_t c,
 }
 
 /* general case: steep handled by axis swap at the caller */
-static void wu_x(ppg_target_t *t, int32_t x0, int32_t y0, int32_t x1, int32_t y1,
-		 uint16_t col, bool steep, acc_t *acc)
+static void wu_x(ppg_target_t *t, int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint16_t col,
+                 bool steep, acc_t *acc)
 {
 	if (x0 > x1) {
 		int32_t s = x0;
@@ -622,15 +612,13 @@ static void wu_x(ppg_target_t *t, int32_t x0, int32_t y0, int32_t x1, int32_t y1
 		if (steep) {
 			px_a(t, iy, ix, col, 255u - frac);
 			px_a(t, iy + 1, ix, col, frac);
-			acc_merge(acc, (uint32_t)(ix < 0 ? 0 : ix),
-				  (uint32_t)(iy < 0 ? 0 : iy),
-				  (uint32_t)(ix + 1), (uint32_t)(iy + 2));
+			acc_merge(acc, (uint32_t)(ix < 0 ? 0 : ix), (uint32_t)(iy < 0 ? 0 : iy),
+			          (uint32_t)(ix + 1), (uint32_t)(iy + 2));
 		} else {
 			px_a(t, ix, iy, col, 255u - frac);
 			px_a(t, ix, iy + 1, col, frac);
-			acc_merge(acc, (uint32_t)(ix < 0 ? 0 : ix),
-				  (uint32_t)(iy < 0 ? 0 : iy),
-				  (uint32_t)(ix + 1), (uint32_t)(iy + 2));
+			acc_merge(acc, (uint32_t)(ix < 0 ? 0 : ix), (uint32_t)(iy < 0 ? 0 : iy),
+			          (uint32_t)(ix + 1), (uint32_t)(iy + 2));
 		}
 	}
 	/* last endpoint */
@@ -650,9 +638,8 @@ static void wu_x(ppg_target_t *t, int32_t x0, int32_t y0, int32_t x1, int32_t y1
 			px_a(t, ix, iy, col, 255u - frac);
 			px_a(t, ix, iy + 1, col, frac);
 		}
-		acc_merge(acc, (uint32_t)(ix < 0 ? 0 : ix),
-			  (uint32_t)(iy < 0 ? 0 : iy),
-			  (uint32_t)(ix + 1), (uint32_t)(iy + 2));
+		acc_merge(acc, (uint32_t)(ix < 0 ? 0 : ix), (uint32_t)(iy < 0 ? 0 : iy),
+		          (uint32_t)(ix + 1), (uint32_t)(iy + 2));
 	}
 	/* main body */
 	float intery = (float)y0 + 0.5f * grad + grad;
@@ -688,8 +675,8 @@ static void op_line(ppg_target_t *t, const aster_gfx_cmd_t *c, acc_t *acc)
 	int32_t mx = x0 < x1 ? x0 : x1, my = y0 < y1 ? y0 : y1;
 	int32_t Mx = x0 > x1 ? x0 : x1, My = y0 > y1 ? y0 : y1;
 
-	acc_merge(acc, mx < 0 ? 0 : (uint32_t)mx, my < 0 ? 0 : (uint32_t)my,
-		  (uint32_t)Mx + 1u, (uint32_t)My + 1u);
+	acc_merge(acc, mx < 0 ? 0 : (uint32_t)mx, my < 0 ? 0 : (uint32_t)my, (uint32_t)Mx + 1u,
+	          (uint32_t)My + 1u);
 	if (dx >= dy) {
 		wu_x(t, x0, y0, x1, y1, col, false, acc);
 	} else {
@@ -732,17 +719,14 @@ static void op_tri(ppg_target_t *t, const aster_gfx_cmd_t *c, acc_t *acc)
 		return;
 	}
 
-	acc_merge(acc, (uint32_t)minx, (uint32_t)miny, (uint32_t)maxx + 1u,
-		  (uint32_t)maxy + 1u);
+	acc_merge(acc, (uint32_t)minx, (uint32_t)miny, (uint32_t)maxx + 1u, (uint32_t)maxy + 1u);
 
 	/* pretty-poly AA triangle; the even-odd span builder handles any
 	 * winding, so pos/neg area both work. */
-	const float xy[6] = { (float)x0, (float)y0, (float)x1, (float)y1,
-			      (float)x2, (float)y2 };
+	const float xy[6] = {(float)x0, (float)y0, (float)x1, (float)y1, (float)x2, (float)y2};
 	int32_t bx0, by0, bx1, by1;
 
-	if (ppg_path(t, xy, 3, 0.0f, col, NULL,
-		     &bx0, &by0, &bx1, &by1) == 0) {
+	if (ppg_path(t, xy, 3, 0.0f, col, NULL, &bx0, &by0, &bx1, &by1) == 0) {
 		return;
 	}
 
@@ -761,13 +745,12 @@ static void op_tri(ppg_target_t *t, const aster_gfx_cmd_t *c, acc_t *acc)
 				int32_t e2 = (x0 - x2) * (py - y2) - (y0 - y2) * (px - x2);
 
 				in = pos ? (e0 >= 0 && e1 >= 0 && e2 >= 0)
-					 : (e0 <= 0 && e1 <= 0 && e2 <= 0);
+				         : (e0 <= 0 && e1 <= 0 && e2 <= 0);
 			}
 			if (in && run < 0) {
 				run = px;
 			} else if (!in && run >= 0) {
-				fill_row(row_at(t, (uint32_t)py) + run,
-					 (uint32_t)(px - run), col);
+				fill_row(row_at(t, (uint32_t)py) + run, (uint32_t)(px - run), col);
 				run = -1;
 			}
 		}
@@ -778,7 +761,7 @@ static void op_tri(ppg_target_t *t, const aster_gfx_cmd_t *c, acc_t *acc)
 static inline uint16_t grad_px(int32_t rr, int32_t rg, int32_t rb)
 {
 	uint32_t R = (uint32_t)(rr + 128) >> 8, G = (uint32_t)(rg + 128) >> 8,
-		 B = (uint32_t)(rb + 128) >> 8;
+	         B = (uint32_t)(rb + 128) >> 8;
 
 	R = R > 255u ? 255u : R;
 	G = G > 255u ? 255u : G;
@@ -834,8 +817,7 @@ static void op_grad(ppg_target_t *t, const aster_gfx_cmd_t *c, acc_t *acc)
 			rb += db;
 		}
 		for (uint32_t yy = 0; yy < ch; yy++) {
-			memcpy(row_at(t, cy + yy) + cx, s_grad_row,
-			       (size_t)cw * 2u);
+			memcpy(row_at(t, cy + yy) + cx, s_grad_row, (size_t)cw * 2u);
 		}
 		acc_merge(acc, cx, cy, cx + cw, cy + ch);
 		return;
@@ -925,7 +907,7 @@ int32_t aster_gfx_text_measure(uint8_t px, const char *utf8, uint32_t len)
 }
 
 static void op_text(ppg_target_t *t, const aster_gfx_cmd_t *c, const uint8_t *arena,
-		    uint32_t arena_len, acc_t *acc)
+                    uint32_t arena_len, acc_t *acc)
 {
 	int32_t x = (int32_t)cmd_xy0(c), base = (int32_t)cmd_xy1(c);
 	uint32_t px = ASTER_GFX_U16(c->w[2]);
@@ -980,14 +962,14 @@ static void op_text(ppg_target_t *t, const aster_gfx_cmd_t *c, const uint8_t *ar
 			 * it is the chain's contract, kept for any resolved
 			 * font that owns what it handed back. */
 			const lv_font_t *rf = gd.resolved_font ? gd.resolved_font : f;
-			lv_draw_buf_t *db = (lv_draw_buf_t *)
-				lv_font_get_glyph_bitmap(&gd, NULL);
+			lv_draw_buf_t *db = (lv_draw_buf_t *)lv_font_get_glyph_bitmap(&gd, NULL);
 
 			if (db && db->data && db->header.w && db->header.h) {
-				uint32_t stride = db->header.stride ?
-					db->header.stride :
-					lv_draw_buf_width_to_stride(db->header.w,
-							    LV_COLOR_FORMAT_A8);
+				uint32_t stride =
+				        db->header.stride
+				                ? db->header.stride
+				                : lv_draw_buf_width_to_stride(db->header.w,
+				                                              LV_COLOR_FORMAT_A8);
 				/* LVGL label convention, base ==
 				 * line_top + resolved base_line:
 				 * y1 = base - box_h - ofs_y */
@@ -997,9 +979,10 @@ static void op_text(ppg_target_t *t, const aster_gfx_cmd_t *c, const uint8_t *ar
 				 * the actual glyph box: baseline-descent would omit its
 				 * upper rows whenever an automatic batch has no explicit rect. */
 				uint32_t cx, cy, cw, ch;
-				if (!clip_rect(t, gx0, gy0, gd.box_w, gd.box_h,
-					       &cx, &cy, &cw, &ch)) {
-					if (rf->release_glyph) rf->release_glyph(rf, &gd);
+				if (!clip_rect(t, gx0, gy0, gd.box_w, gd.box_h, &cx, &cy, &cw,
+				               &ch)) {
+					if (rf->release_glyph)
+						rf->release_glyph(rf, &gd);
 					pen += gw;
 					continue;
 				}
@@ -1011,8 +994,7 @@ static void op_text(ppg_target_t *t, const aster_gfx_cmd_t *c, const uint8_t *ar
 					if (py < (int32_t)cy || py >= (int32_t)(cy + ch)) {
 						continue;
 					}
-					const uint8_t *srow = db->data +
-						(size_t)yy * stride;
+					const uint8_t *srow = db->data + (size_t)yy * stride;
 					uint16_t *drow = row_at(t, (uint32_t)py);
 					uint16_t pbg = out_pack(bg);
 
@@ -1020,8 +1002,8 @@ static void op_text(ppg_target_t *t, const aster_gfx_cmd_t *c, const uint8_t *ar
 						int32_t pxx = gx0 + (int32_t)xx;
 						uint8_t cov = srow[xx];
 
-
-						if (pxx < (int32_t)cx || pxx >= (int32_t)(cx + cw)) {
+						if (pxx < (int32_t)cx ||
+						    pxx >= (int32_t)(cx + cw)) {
 							continue;
 						}
 						if (cov == 0u) {
@@ -1030,7 +1012,8 @@ static void op_text(ppg_target_t *t, const aster_gfx_cmd_t *c, const uint8_t *ar
 							}
 							continue;
 						}
-						drow[pxx] = out_blend(has_bg ? pbg : drow[pxx], fg, cov);
+						drow[pxx] = out_blend(has_bg ? pbg : drow[pxx], fg,
+						                      cov);
 					}
 				}
 				if (rf->release_glyph) {
@@ -1042,13 +1025,12 @@ static void op_text(ppg_target_t *t, const aster_gfx_cmd_t *c, const uint8_t *ar
 		}
 		pen += gw;
 	}
-
 }
 
 /* ---------------- sprite cache ---------------- */
 
-#define SPRITE_SLOTS   6
-#define SPRITE_MAX_PX  (160u * 160u)
+#define SPRITE_SLOTS 6
+#define SPRITE_MAX_PX (160u * 160u)
 /* Optional row bounds never exceed 1 KiB per sprite (six slots). */
 #define SPRITE_ROW_BUDGET 1024u
 
@@ -1074,25 +1056,36 @@ static bool s_last_be;
  * reset at APP exit, so a freed slot cannot revive an old handle. */
 static sprite_t *sprite_lookup(uint32_t handle)
 {
- for (uint32_t i=0; i<SPRITE_SLOTS; i++)
-  if (s_spr[i].used && s_spr[i].handle==handle) return &s_spr[i];
- return NULL;
+	for (uint32_t i = 0; i < SPRITE_SLOTS; i++)
+		if (s_spr[i].used && s_spr[i].handle == handle)
+			return &s_spr[i];
+	return NULL;
 }
 
 static int sprite_alloc(uint32_t w, uint32_t h, uint32_t *handle)
 {
- if (!w || !h || (uint64_t)w*h>SPRITE_MAX_PX) return ASTER_EINVAL;
- if (s_spr_sequence==UINT32_MAX) return ASTER_ENOMEM;
- for (uint32_t i=0; i<SPRITE_SLOTS; i++) {
-  sprite_t *sp=&s_spr[i];
-  if (sp->used) continue;
-  uint16_t *pixels=aster_psram_alloc((size_t)w*h*2u);
-  if (!pixels) return ASTER_ENOMEM;
-  sp->buf=pixels;sp->row_bounds=NULL;sp->w=w;sp->h=h;sp->handle=++s_spr_sequence;sp->used=true;sp->opaque=false;
-  *handle=sp->handle;
-  return ASTER_OK;
- }
- return ASTER_ENOMEM;
+	if (!w || !h || (uint64_t)w * h > SPRITE_MAX_PX)
+		return ASTER_EINVAL;
+	if (s_spr_sequence == UINT32_MAX)
+		return ASTER_ENOMEM;
+	for (uint32_t i = 0; i < SPRITE_SLOTS; i++) {
+		sprite_t *sp = &s_spr[i];
+		if (sp->used)
+			continue;
+		uint16_t *pixels = aster_psram_alloc((size_t)w * h * 2u);
+		if (!pixels)
+			return ASTER_ENOMEM;
+		sp->buf = pixels;
+		sp->row_bounds = NULL;
+		sp->w = w;
+		sp->h = h;
+		sp->handle = ++s_spr_sequence;
+		sp->used = true;
+		sp->opaque = false;
+		*handle = sp->handle;
+		return ASTER_OK;
+	}
+	return ASTER_ENOMEM;
 }
 
 /* Build optional immutable bounds once, alongside decoded pixels. A row may
@@ -1100,27 +1093,34 @@ static int sprite_alloc(uint32_t w, uint32_t h, uint32_t *handle)
  * Tall/narrow sprites and allocation failure retain the scalar-key fallback. */
 static void sprite_prepare_rows(sprite_t *sp)
 {
- sp->opaque = true;
- for (size_t i=0;i<(size_t)sp->w*sp->h;i++) {
-  if (!sp->buf[i]) {sp->opaque=false;break;}
- }
- size_t bytes=(size_t)sp->h*2u*sizeof(uint16_t);
- if (sp->opaque || bytes>SPRITE_ROW_BUDGET ||
-     bytes>=(size_t)sp->w*sp->h*sizeof(uint16_t)) return;
- sp->row_bounds=aster_psram_alloc(bytes);
- if (!sp->row_bounds) return;
- for (uint32_t y=0;y<sp->h;y++) {
-  const uint16_t *row=sp->buf+(size_t)y*sp->w;
-  uint32_t first=0,last=sp->w;
-  while (first<last && !row[first]) first++;
-  while (last>first && !row[last-1]) last--;
-  sp->row_bounds[y*2u]=(uint16_t)first;
-  sp->row_bounds[y*2u+1u]=(uint16_t)last;
- }
+	sp->opaque = true;
+	for (size_t i = 0; i < (size_t)sp->w * sp->h; i++) {
+		if (!sp->buf[i]) {
+			sp->opaque = false;
+			break;
+		}
+	}
+	size_t bytes = (size_t)sp->h * 2u * sizeof(uint16_t);
+	if (sp->opaque || bytes > SPRITE_ROW_BUDGET ||
+	    bytes >= (size_t)sp->w * sp->h * sizeof(uint16_t))
+		return;
+	sp->row_bounds = aster_psram_alloc(bytes);
+	if (!sp->row_bounds)
+		return;
+	for (uint32_t y = 0; y < sp->h; y++) {
+		const uint16_t *row = sp->buf + (size_t)y * sp->w;
+		uint32_t first = 0, last = sp->w;
+		while (first < last && !row[first])
+			first++;
+		while (last > first && !row[last - 1])
+			last--;
+		sp->row_bounds[y * 2u] = (uint16_t)first;
+		sp->row_bounds[y * 2u + 1u] = (uint16_t)last;
+	}
 }
 
 int32_t aster_gfx_bmp_load_into(const char *real_path, uint32_t cap_w, uint32_t cap_h,
-			      uint32_t *out_handle, uint32_t *out_w, uint32_t *out_h)
+                                uint32_t *out_handle, uint32_t *out_w, uint32_t *out_h)
 {
 	aster_imgdec_info_t info;
 	aster_error_t e = aster_imgdec_probe(real_path, &info, cap_w, cap_h);
@@ -1164,11 +1164,15 @@ int32_t aster_gfx_bmp_load_into(const char *real_path, uint32_t cap_w, uint32_t 
 
 int aster_gfx_bmp_release(uint32_t handle)
 {
- sprite_t *sp=sprite_lookup(handle);
- if (!sp) return ASTER_EBADF;
- aster_psram_free(sp->row_bounds);sp->row_bounds=NULL;
- aster_psram_free(sp->buf);sp->buf=NULL;sp->used=false;
- return ASTER_OK;
+	sprite_t *sp = sprite_lookup(handle);
+	if (!sp)
+		return ASTER_EBADF;
+	aster_psram_free(sp->row_bounds);
+	sp->row_bounds = NULL;
+	aster_psram_free(sp->buf);
+	sp->buf = NULL;
+	sp->used = false;
+	return ASTER_OK;
 }
 
 void aster_gfx_drop_all(void)
@@ -1191,15 +1195,16 @@ static void op_bmp(ppg_target_t *t, const aster_gfx_cmd_t *c, acc_t *acc)
 	int32_t x = (int32_t)cmd_xy0(c), y = (int32_t)cmd_xy1(c);
 	uint32_t handle = c->w[2]; /* whole word, not a packed half */
 	uint32_t scale = (op == ASTER_GFX_BMP_S || op == ASTER_GFX_BMP_SA)
-				 ? (c->w[4] & ASTER_GFX_SCALE_MASK) : 256u;
+	                         ? (c->w[4] & ASTER_GFX_SCALE_MASK)
+	                         : 256u;
 	uint32_t alpha = (op == ASTER_GFX_BMP_A || op == ASTER_GFX_BMP_SA)
-				 ? ((op == ASTER_GFX_BMP_SA
-					     ? (c->w[5] & ASTER_GFX_ALPHA_MASK)
-					     : (c->w[4] & ASTER_GFX_ALPHA_MASK)))
-				 : 255u;
+	                         ? ((op == ASTER_GFX_BMP_SA ? (c->w[5] & ASTER_GFX_ALPHA_MASK)
+	                                                    : (c->w[4] & ASTER_GFX_ALPHA_MASK)))
+	                         : 255u;
 
 	sprite_t *sp = sprite_lookup(handle);
-	if (!sp || scale < 8u) return;
+	if (!sp || scale < 8u)
+		return;
 	if (alpha == 0u) {
 		return;
 	}
@@ -1210,59 +1215,80 @@ static void op_bmp(ppg_target_t *t, const aster_gfx_cmd_t *c, acc_t *acc)
 		return;
 	}
 	uint32_t cx, cy, cw, ch;
-    if (!clip_rect(t,x,y,dw,dh,&cx,&cy,&cw,&ch)) return;
-    acc_merge(acc,cx,cy,cx+cw,cy+ch);
-    /* Common icons: exact-size opaque rows avoid sampling divides/blends. */
-    if (scale==256u && alpha>=255u && sp->opaque) {
-        for (uint32_t ty=cy;ty<cy+ch;ty++) {
-            const uint16_t *src=sp->buf+(size_t)((int64_t)ty-y)*sp->w+(uint32_t)((int64_t)cx-x);
-            uint16_t *dst=row_at(t,ty)+cx;
-            if (!s_out_be) memcpy(dst,src,(size_t)cw*2u);
-            else for (uint32_t i=0;i<cw;i++) dst[i]=out_pack(src[i]);
-        }
-        return;
-    }
-    /* Exact rational stepping: floor(offset*source/destination), including
+	if (!clip_rect(t, x, y, dw, dh, &cx, &cy, &cw, &ch))
+		return;
+	acc_merge(acc, cx, cy, cx + cw, cy + ch);
+	/* Common icons: exact-size opaque rows avoid sampling divides/blends. */
+	if (scale == 256u && alpha >= 255u && sp->opaque) {
+		for (uint32_t ty = cy; ty < cy + ch; ty++) {
+			const uint16_t *src = sp->buf + (size_t)((int64_t)ty - y) * sp->w +
+			                      (uint32_t)((int64_t)cx - x);
+			uint16_t *dst = row_at(t, ty) + cx;
+			if (!s_out_be)
+				memcpy(dst, src, (size_t)cw * 2u);
+			else
+				for (uint32_t i = 0; i < cw; i++)
+					dst[i] = out_pack(src[i]);
+		}
+		return;
+	}
+	/* Exact rational stepping: floor(offset*source/destination), including
      * after clipping. Quotient/remainder carry replaces divides in the pixel
      * loop without fixed-point approximation or accumulated sampling drift. */
-    uint64_t ox=(uint64_t)((int64_t)cx-x)*sp->w;
-    uint64_t oy=(uint64_t)((int64_t)cy-y)*sp->h;
-    uint32_t sx0=(uint32_t)(ox/dw),rx0=(uint32_t)(ox%dw);
-    uint32_t sy=(uint32_t)(oy/dh),ry=(uint32_t)(oy%dh);
-    uint32_t dx=sp->w/dw,ex=sp->w%dw;
-    uint32_t dy=sp->h/dh,ey=sp->h%dh;
-    for (uint32_t ty=cy;ty<cy+ch;ty++) {
-        const uint16_t *srow=sp->buf+(size_t)sy*sp->w;
-        uint32_t left=cx,right=cx+cw,sx=sx0,rx=rx0;
-        if (sp->row_bounds) {
-            uint32_t first=sp->row_bounds[sy*2u],last=sp->row_bounds[sy*2u+1u];
-            /* ceil(source_edge*destination/source_width) is the exact
+	uint64_t ox = (uint64_t)((int64_t)cx - x) * sp->w;
+	uint64_t oy = (uint64_t)((int64_t)cy - y) * sp->h;
+	uint32_t sx0 = (uint32_t)(ox / dw), rx0 = (uint32_t)(ox % dw);
+	uint32_t sy = (uint32_t)(oy / dh), ry = (uint32_t)(oy % dh);
+	uint32_t dx = sp->w / dw, ex = sp->w % dw;
+	uint32_t dy = sp->h / dh, ey = sp->h % dh;
+	for (uint32_t ty = cy; ty < cy + ch; ty++) {
+		const uint16_t *srow = sp->buf + (size_t)sy * sp->w;
+		uint32_t left = cx, right = cx + cw, sx = sx0, rx = rx0;
+		if (sp->row_bounds) {
+			uint32_t first = sp->row_bounds[sy * 2u],
+			         last = sp->row_bounds[sy * 2u + 1u];
+			/* ceil(source_edge*destination/source_width) is the exact
              * destination interval whose nearest samples lie in [first,last). */
-            int64_t lo=(int64_t)x+(int64_t)(((uint64_t)first*dw+sp->w-1u)/sp->w);
-            int64_t hi=(int64_t)x+(int64_t)(((uint64_t)last*dw+sp->w-1u)/sp->w);
-            if (lo>(int64_t)left) left=(uint32_t)lo;
-            if (hi<(int64_t)right) right=hi>0?(uint32_t)hi:0u;
-            if (left<right && left!=cx) {
-                uint64_t off=(uint64_t)((int64_t)left-x)*sp->w;
-                sx=(uint32_t)(off/dw);rx=(uint32_t)(off%dw);
-            }
-        }
-        uint16_t *drow=row_at(t,ty);
-        for (uint32_t tx=left;tx<right;tx++) {
-            uint16_t col=srow[sx];
-            if (col) drow[tx]=alpha>=255u?out_pack(col):out_blend(drow[tx],col,alpha);
-            sx+=dx;rx+=ex;
-            if (rx>=dw) {rx-=dw;sx++;}
-        }
-        sy+=dy;ry+=ey;
-        if (ry>=dh) {ry-=dh;sy++;}
-    }
+			int64_t lo =
+			        (int64_t)x + (int64_t)(((uint64_t)first * dw + sp->w - 1u) / sp->w);
+			int64_t hi =
+			        (int64_t)x + (int64_t)(((uint64_t)last * dw + sp->w - 1u) / sp->w);
+			if (lo > (int64_t)left)
+				left = (uint32_t)lo;
+			if (hi < (int64_t)right)
+				right = hi > 0 ? (uint32_t)hi : 0u;
+			if (left < right && left != cx) {
+				uint64_t off = (uint64_t)((int64_t)left - x) * sp->w;
+				sx = (uint32_t)(off / dw);
+				rx = (uint32_t)(off % dw);
+			}
+		}
+		uint16_t *drow = row_at(t, ty);
+		for (uint32_t tx = left; tx < right; tx++) {
+			uint16_t col = srow[sx];
+			if (col)
+				drow[tx] = alpha >= 255u ? out_pack(col)
+				                         : out_blend(drow[tx], col, alpha);
+			sx += dx;
+			rx += ex;
+			if (rx >= dw) {
+				rx -= dw;
+				sx++;
+			}
+		}
+		sy += dy;
+		ry += ey;
+		if (ry >= dh) {
+			ry -= dh;
+			sy++;
+		}
+	}
 }
 
 /* ---------------- public entry ---------------- */
 
-bool aster_gfx_last_frame(const uint8_t **buf, uint32_t *w, uint32_t *h,
-			uint32_t *pitch, bool *out_be)
+bool aster_gfx_last_frame(const uint8_t **buf, uint32_t *w, uint32_t *h, uint32_t *pitch,
+                          bool *out_be)
 {
 	if (!s_last_buf) {
 		return false;
@@ -1298,8 +1324,8 @@ static void gfx_op_note(uint32_t op, uint32_t cyc)
  * aligned with the op numbers, and so a nonzero count here is immediately
  * readable as "an app sent the reserved op". */
 static const char *const gfx_op_name[GFX_OP_BUCKETS] = {
-	"CLEAR", "RECT_F", "RECT_S", "LINE_AA", "ELLIPSE", "TRI", "GRAD",
-	"TEXT", "reserved", "BMP", "BMP_S", "BMP_A", "BMP_SA",
+        "CLEAR", "RECT_F",   "RECT_S", "LINE_AA", "ELLIPSE", "TRI",    "GRAD",
+        "TEXT",  "reserved", "BMP",    "BMP_S",   "BMP_A",   "BMP_SA",
 };
 
 /* The 64-frame timing dump (the aggregate "gfx tim:" line plus this
@@ -1324,11 +1350,10 @@ static void gfx_timing_dump(struct k_work *work)
 
 	ARG_UNUSED(work);
 	LOG_INF("gfx tim: raster=%u us flush=%u us sum=%u us "
-		"(max %u/%u) cmds=%u flushed=%u px",
-		(unsigned)s_tim_snap[0], (unsigned)s_tim_snap[1],
-		(unsigned)(s_tim_snap[0] + s_tim_snap[1]),
-		(unsigned)s_tim_snap[2], (unsigned)s_tim_snap[3],
-		(unsigned)s_tim_snap[4], (unsigned)s_tim_snap[5]);
+	        "(max %u/%u) cmds=%u flushed=%u px",
+	        (unsigned)s_tim_snap[0], (unsigned)s_tim_snap[1],
+	        (unsigned)(s_tim_snap[0] + s_tim_snap[1]), (unsigned)s_tim_snap[2],
+	        (unsigned)s_tim_snap[3], (unsigned)s_tim_snap[4], (unsigned)s_tim_snap[5]);
 
 	for (uint32_t i = 0; i < GFX_OP_BUCKETS; i++) {
 		total += s_op_snap_cyc[i];
@@ -1345,9 +1370,8 @@ static void gfx_timing_dump(struct k_work *work)
 		uint32_t pct = (uint32_t)((uint64_t)s_op_snap_cyc[i] * 100u / total);
 
 		if (us >= 100u || pct >= 3u) {
-			LOG_INF("gfx op: %-8s %5u us/frame %3u%%  n=%u",
-				gfx_op_name[i], (unsigned)us, (unsigned)pct,
-				(unsigned)(s_op_snap_n[i] / 64u));
+			LOG_INF("gfx op: %-8s %5u us/frame %3u%%  n=%u", gfx_op_name[i],
+			        (unsigned)us, (unsigned)pct, (unsigned)(s_op_snap_n[i] / 64u));
 		}
 	}
 }
@@ -1361,20 +1385,19 @@ static int gfx_timing_wq_init(void)
 		LOG_ERR("gfx timing stack alloc failed");
 		return -ENOMEM;
 	}
-	k_work_queue_start(&s_tim_wq, stack,
-			   K_KERNEL_STACK_LEN(2048) - K_KERNEL_STACK_RESERVED,
-			   K_PRIO_PREEMPT(10), NULL);
+	k_work_queue_start(&s_tim_wq, stack, K_KERNEL_STACK_LEN(2048) - K_KERNEL_STACK_RESERVED,
+	                   K_PRIO_PREEMPT(10), NULL);
 	k_thread_name_set(&s_tim_wq.thread, "gfx_tim");
 	k_work_init(&s_tim_work, gfx_timing_dump);
 	return 0;
 }
+
 SYS_INIT(gfx_timing_wq_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
 
 /* Snapshot the histogram and the aggregate numbers (both are the render
  * thread's state), then clear them; the worker prints from the snapshot. */
-void aster_gfx_timing_report(uint32_t raster_us, uint32_t flush_us,
-			     uint32_t raster_max_us, uint32_t flush_max_us,
-			     uint32_t cmds, uint32_t px)
+void aster_gfx_timing_report(uint32_t raster_us, uint32_t flush_us, uint32_t raster_max_us,
+                             uint32_t flush_max_us, uint32_t cmds, uint32_t px)
 {
 	s_tim_snap[0] = raster_us;
 	s_tim_snap[1] = flush_us;
@@ -1399,23 +1422,22 @@ void aster_gfx_set_clip(uint32_t x, uint32_t y, uint32_t w, uint32_t h)
 }
 
 int aster_gfx_exec_into(uint8_t *buf565, uint32_t w, uint32_t h, uint32_t pitch,
-		      const aster_gfx_cmd_t *cmds, uint32_t n,
-		      const uint8_t *arena, uint32_t arena_len,
-		      uint32_t *dirty_x, uint32_t *dirty_y, uint32_t *dirty_w,
-		      uint32_t *dirty_h, bool out_be)
+                        const aster_gfx_cmd_t *cmds, uint32_t n, const uint8_t *arena,
+                        uint32_t arena_len, uint32_t *dirty_x, uint32_t *dirty_y, uint32_t *dirty_w,
+                        uint32_t *dirty_h, bool out_be)
 {
 	/* Commands paint only their own pixels; the accumulator is the
 	 * dirty box the present uses. A panel canvas (out_be) still has to
 	 * repaint every pixel it will show, because its front buffer holds
 	 * an older frame. */
-	ppg_target_t t = { .px = (uint16_t *)buf565, .w = w, .h = h, .pitch = pitch };
-	acc_t total = { 0 };
-	s_last_dirty.count=0;
+	ppg_target_t t = {.px = (uint16_t *)buf565, .w = w, .h = h, .pitch = pitch};
+	acc_t total = {0};
+	s_last_dirty.count = 0;
 
 	/* Validate resource references before any command changes pixels. */
-	for (uint32_t i=0;i<n;i++) {
-		uint32_t op=ASTER_GFX_OP(&cmds[i]);
-		if (op>=ASTER_GFX_BMP && op<=ASTER_GFX_BMP_SA && !sprite_lookup(cmds[i].w[2]))
+	for (uint32_t i = 0; i < n; i++) {
+		uint32_t op = ASTER_GFX_OP(&cmds[i]);
+		if (op >= ASTER_GFX_BMP && op <= ASTER_GFX_BMP_SA && !sprite_lookup(cmds[i].w[2]))
 			return ASTER_EBADF;
 	}
 	set_out_be(out_be);
@@ -1438,7 +1460,7 @@ int aster_gfx_exec_into(uint8_t *buf565, uint32_t w, uint32_t h, uint32_t pitch,
 
 	for (uint32_t i = 0; i < n; i++) {
 		const aster_gfx_cmd_t *c = &cmds[i];
-		acc_t acc={0};
+		acc_t acc = {0};
 #if IS_ENABLED(CONFIG_ASTER_GFX_TIMING)
 		uint32_t t_op0 = k_cycle_get_32();
 		uint32_t bucket = ASTER_GFX_OP(c);
@@ -1478,9 +1500,10 @@ int aster_gfx_exec_into(uint8_t *buf565, uint32_t w, uint32_t h, uint32_t pitch,
 		default:
 			break;
 		}
-		if(acc.has) {
-			acc_merge(&total,acc.x0,acc.y0,acc.x1,acc.y1);
-			aster_dirty_add(&s_last_dirty,w,h,acc.x0,acc.y0,acc.x1-acc.x0,acc.y1-acc.y0);
+		if (acc.has) {
+			acc_merge(&total, acc.x0, acc.y0, acc.x1, acc.y1);
+			aster_dirty_add(&s_last_dirty, w, h, acc.x0, acc.y0, acc.x1 - acc.x0,
+			                acc.y1 - acc.y0);
 		}
 #if IS_ENABLED(CONFIG_ASTER_GFX_TIMING)
 		gfx_op_note(bucket, k_cycle_get_32() - t_op0);
@@ -1488,7 +1511,7 @@ int aster_gfx_exec_into(uint8_t *buf565, uint32_t w, uint32_t h, uint32_t pitch,
 	}
 
 	aster_font_sd_io_end();
-	acc_t acc=total;
+	acc_t acc = total;
 	if (dirty_x) {
 		if (!acc.has) {
 			*dirty_x = *dirty_y = *dirty_w = *dirty_h = 0;
@@ -1509,18 +1532,30 @@ int aster_gfx_exec_into(uint8_t *buf565, uint32_t w, uint32_t h, uint32_t pitch,
 	return (int)n;
 }
 
-int aster_gfx_exec_unpublished_into(uint8_t *pixels,uint32_t w,uint32_t h,uint32_t pitch,
- const aster_gfx_cmd_t *cmds,uint32_t n,const uint8_t *arena,uint32_t arena_len,
- uint32_t *dx,uint32_t *dy,uint32_t *dw,uint32_t *dh)
+int aster_gfx_exec_unpublished_into(uint8_t *pixels, uint32_t w, uint32_t h, uint32_t pitch,
+                                    const aster_gfx_cmd_t *cmds, uint32_t n, const uint8_t *arena,
+                                    uint32_t arena_len, uint32_t *dx, uint32_t *dy, uint32_t *dw,
+                                    uint32_t *dh)
 {
- const uint8_t *last=s_last_buf;
- uint32_t lw=s_last_w,lh=s_last_h,lp=s_last_pitch;bool be=s_last_be;
- int result=aster_gfx_exec_into(pixels,w,h,pitch,cmds,n,arena,arena_len,dx,dy,dw,dh,false);
- s_last_buf=last;s_last_w=lw;s_last_h=lh;s_last_pitch=lp;s_last_be=be;
- return result;
+	const uint8_t *last = s_last_buf;
+	uint32_t lw = s_last_w, lh = s_last_h, lp = s_last_pitch;
+	bool be = s_last_be;
+	int result = aster_gfx_exec_into(pixels, w, h, pitch, cmds, n, arena, arena_len, dx, dy, dw,
+	                                 dh, false);
+	s_last_buf = last;
+	s_last_w = lw;
+	s_last_h = lh;
+	s_last_pitch = lp;
+	s_last_be = be;
+	return result;
 }
 
-void aster_gfx_note_committed_frame(const uint8_t *pixels,uint32_t w,uint32_t h,uint32_t pitch,bool be)
+void aster_gfx_note_committed_frame(const uint8_t *pixels, uint32_t w, uint32_t h, uint32_t pitch,
+                                    bool be)
 {
- s_last_buf=pixels;s_last_w=w;s_last_h=h;s_last_pitch=pitch;s_last_be=be;
+	s_last_buf = pixels;
+	s_last_w = w;
+	s_last_h = h;
+	s_last_pitch = pitch;
+	s_last_be = be;
 }

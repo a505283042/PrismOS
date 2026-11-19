@@ -11,14 +11,13 @@
 #include "font_sd.h"
 #include "system_font.h"
 
-
 /* ------------------------------------------------------------------ *
  * Placeholder: used as LV_FONT_DEFAULT (lv_conf.h) and whenever no
  * baked face can answer. Zero glyphs resolve -> nothing draws.
  * ------------------------------------------------------------------ */
 
-static bool placeholder_get_dsc(const lv_font_t *font, lv_font_glyph_dsc_t *dsc,
-				uint32_t letter, uint32_t letter_next)
+static bool placeholder_get_dsc(const lv_font_t *font, lv_font_glyph_dsc_t *dsc, uint32_t letter,
+                                uint32_t letter_next)
 {
 	(void)font;
 	(void)dsc;
@@ -35,17 +34,17 @@ static const void *placeholder_get_bitmap(lv_font_glyph_dsc_t *g, lv_draw_buf_t 
 }
 
 const lv_font_t aster_ui_placeholder_font = {
-	.get_glyph_dsc = placeholder_get_dsc,
-	.get_glyph_bitmap = placeholder_get_bitmap,
-	.line_height = 8,
-	.base_line = 0,
-	.subpx = LV_FONT_SUBPX_NONE,
-	.kerning = LV_FONT_KERNING_NONE,
-	.underline_position = 0,
-	.underline_thickness = 0,
-	.dsc = NULL,
-	.fallback = NULL,
-	.user_data = NULL,
+        .get_glyph_dsc = placeholder_get_dsc,
+        .get_glyph_bitmap = placeholder_get_bitmap,
+        .line_height = 8,
+        .base_line = 0,
+        .subpx = LV_FONT_SUBPX_NONE,
+        .kerning = LV_FONT_KERNING_NONE,
+        .underline_position = 0,
+        .underline_thickness = 0,
+        .dsc = NULL,
+        .fallback = NULL,
+        .user_data = NULL,
 };
 
 /* ------------------------------------------------------------------ *
@@ -96,11 +95,12 @@ const lv_font_t *aster_ui_font(uint8_t px)
 
 		if (!warned) {
 			warned = true;
-			aster_service_logf(2,"no SD face for %upx (nearest baked %dpx): "
-				"using system UI font",
-				(unsigned)px, snap);
+			aster_service_logf(2,
+			                   "no SD face for %upx (nearest baked %dpx): "
+			                   "using system UI font",
+			                   (unsigned)px, snap);
 		}
-        return aster_system_font(px);
+		return aster_system_font(px);
 	}
 	return f;
 }
@@ -155,22 +155,33 @@ void aster_ui_font_warm(uint8_t px, const char *utf8)
 
 /* Prepare the common body/title sizes after hardware orientation is known.
  * Exact requested sizes still work independently; no glyph bitmap is scaled. */
-static uint8_t screen_font_px(uint32_t role,uint32_t width,uint32_t height)
+static uint8_t screen_font_px(uint32_t role, uint32_t width, uint32_t height)
 {
- uint64_t x=(uint64_t)width*role*256u/320u,y=(uint64_t)height*role*256u/480u;
- uint64_t request=MIN(x,y),best=UINT64_MAX;uint8_t pick=ASTER_FONT_UI_PX;
- for(uint32_t i=0;i<aster_font_sd_face_n();i++) {
-  uint8_t px=aster_font_sd_face_px(i);uint64_t size=(uint64_t)px*256u;
-  uint64_t d=size>request?size-request:request-size;
-  if(d<best) {best=d;pick=px;}
- }
- return pick;
+	uint64_t x = (uint64_t)width * role * 256u / 320u,
+	         y = (uint64_t)height * role * 256u / 480u;
+	uint64_t request = MIN(x, y), best = UINT64_MAX;
+	uint8_t pick = ASTER_FONT_UI_PX;
+	for (uint32_t i = 0; i < aster_font_sd_face_n(); i++) {
+		uint8_t px = aster_font_sd_face_px(i);
+		uint64_t size = (uint64_t)px * 256u;
+		uint64_t d = size > request ? size - request : request - size;
+		if (d < best) {
+			best = d;
+			pick = px;
+		}
+	}
+	return pick;
 }
-void aster_ui_fonts_prepare(uint32_t width,uint32_t height,const char *title)
+
+void aster_ui_fonts_prepare(uint32_t width, uint32_t height, const char *title)
 {
- const char *common="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz .,:;!?+-/%()";
- uint8_t body=screen_font_px(16,width,height),heading=screen_font_px(20,width,height);
- (void)aster_font_sd_poll();
- (void)aster_ui_font(body);aster_ui_font_warm(body,common);
- (void)aster_ui_font(heading);aster_ui_font_warm(heading,title?title:"");
+	const char *common =
+	        "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz .,:;!?+-/%()";
+	uint8_t body = screen_font_px(16, width, height),
+	        heading = screen_font_px(20, width, height);
+	(void)aster_font_sd_poll();
+	(void)aster_ui_font(body);
+	aster_ui_font_warm(body, common);
+	(void)aster_ui_font(heading);
+	aster_ui_font_warm(heading, title ? title : "");
 }

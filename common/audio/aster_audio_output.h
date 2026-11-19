@@ -25,43 +25,48 @@
 #define ASTER_AUDIO_OUTPUT_EXCLUSIVE 1u
 
 typedef struct {
- uint32_t size,version,rate,channels,format,flags;
+    uint32_t size, version, rate, channels, format, flags;
 } aster_audio_format_t;
+
 typedef struct {
- uint32_t size,version,formats,rates,channels,flags;
- uint32_t max_write_frames;
+    uint32_t size, version, formats, rates, channels, flags;
+    uint32_t max_write_frames;
 } aster_audio_output_caps_t;
+
 typedef struct {
- uint32_t size,version,rate,channels,format,flags;
- uint64_t submitted_frames;
- uint32_t underruns,errors;
+    uint32_t size, version, rate, channels, format, flags;
+    uint64_t submitted_frames;
+    uint32_t underruns, errors;
 } aster_audio_output_stats_t;
+
 typedef struct {
- uint32_t size,version;const char *name;
- int (*caps)(void *context,aster_audio_output_caps_t *out);
- int (*open)(void *context,const aster_audio_format_t *format);
- /* Complete interleaved frames accepted, partial count, or negative errno.
+    uint32_t size, version;
+    const char *name;
+    int (*caps)(void *context, aster_audio_output_caps_t *out);
+    int (*open)(void *context, const aster_audio_format_t *format);
+    /* Complete interleaved frames accepted, partial count, or negative errno.
   * Return only after consuming/copying caller bytes; never retain pointers. */
- int (*write)(void *context,const void *pcm,uint32_t frames);
- int (*drain)(void *context);
- int (*close)(void *context);
- int (*stats)(void *context,aster_audio_output_stats_t *out);
+    int (*write)(void *context, const void *pcm, uint32_t frames);
+    int (*drain)(void *context);
+    int (*close)(void *context);
+    int (*stats)(void *context, aster_audio_output_stats_t *out);
 } aster_audio_output_ops_t;
+
 uint32_t aster_audio_rate_bit(uint32_t rate);
 size_t aster_audio_frame_bytes(const aster_audio_format_t *format);
 /* Input/output buffers must not overlap. Samples are left aligned in s32. */
-int aster_audio_pcm_to_s32(const void *pcm,uint32_t frames,const aster_audio_format_t *format,
-                         int32_t *out,size_t out_samples);
-int aster_audio_output_derive(aster_audio_output_ops_t *out,const aster_audio_output_ops_t *base,
+int aster_audio_pcm_to_s32(const void *pcm, uint32_t frames, const aster_audio_format_t *format,
+                           int32_t *out, size_t out_samples);
+int aster_audio_output_derive(aster_audio_output_ops_t *out, const aster_audio_output_ops_t *base,
                               const aster_audio_output_ops_t *overrides);
-int aster_audio_output_bind(uint32_t endpoint,const aster_audio_output_ops_t *ops,void *context);
+int aster_audio_output_bind(uint32_t endpoint, const aster_audio_output_ops_t *ops, void *context);
 void aster_audio_output_seal(void);
-int aster_audio_output_caps(uint32_t endpoint,aster_audio_output_caps_t *out);
-int aster_audio_output_open(uint32_t endpoint,const aster_audio_format_t *format);
-int aster_audio_output_write(uint32_t endpoint,const void *pcm,uint32_t frames);
+int aster_audio_output_caps(uint32_t endpoint, aster_audio_output_caps_t *out);
+int aster_audio_output_open(uint32_t endpoint, const aster_audio_format_t *format);
+int aster_audio_output_write(uint32_t endpoint, const void *pcm, uint32_t frames);
 int aster_audio_output_drain(uint32_t endpoint);
 int aster_audio_output_close(uint32_t endpoint);
-int aster_audio_output_stats(uint32_t endpoint,aster_audio_output_stats_t *out);
+int aster_audio_output_stats(uint32_t endpoint, aster_audio_output_stats_t *out);
 #if ASTER_AUDIO_SPECTRUM_ENABLED
 /* Four 8-bit low-to-high bands per channel, least significant band first. */
 void aster_audio_output_spectrum(uint32_t endpoint, uint32_t bands[2]);
