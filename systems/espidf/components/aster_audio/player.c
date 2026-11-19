@@ -13,10 +13,18 @@ const char *aster_idf_bt_device_name(void);
 int aster_idf_bt_audio_control(uint32_t command);
 static int info(aster_player_info_t *out){
  out->capabilities=ASTER_PLAYER_CAP_WAV|ASTER_PLAYER_CAP_FLAC;
+#ifdef ASTER_AUDIO_SPECTRUM_ENABLED
+ out->capabilities|=ASTER_PLAYER_CAP_SPECTRUM;
+#endif
 #if CONFIG_BT_ENABLED && CONFIG_BT_CLASSIC_ENABLED
  out->capabilities|=ASTER_PLAYER_CAP_BT_SINK|ASTER_PLAYER_CAP_REMOTE|ASTER_PLAYER_CAP_BT_SOURCE;
 #endif
- if(aster_idf_bt_audio_info(out))return 0;
+ if(aster_idf_bt_audio_info(out)){
+#ifdef ASTER_AUDIO_SPECTRUM_ENABLED
+  if(out->state==ASTER_PLAYER_PLAYING)aster_audio_output_spectrum(ASTER_AUDIO_OUTPUT_WIRED,out->reserved);
+#endif
+  return 0;
+ }
  snprintf(out->device,sizeof(out->device),"%s",aster_idf_bt_device_name());
  aster_media_snapshot_t media;int r=aster_media_snapshot(&media);if(r)return r;
  out->mode=ASTER_PLAYER_LOCAL;out->state=media.state;out->error=media.error;
@@ -24,6 +32,9 @@ static int info(aster_player_info_t *out){
  if(media.rate){out->position_ms=(uint32_t)(media.frame*1000/media.rate);out->duration_ms=(uint32_t)(media.total_frames*1000/media.rate);}
  memcpy(out->path,media.path,sizeof(out->path));
  if(media.endpoint==ASTER_AUDIO_OUTPUT_BLUETOOTH)out->flags|=ASTER_PLAYER_F_BT_OUTPUT;
+#ifdef ASTER_AUDIO_SPECTRUM_ENABLED
+ if(out->state==ASTER_PLAYER_PLAYING)aster_audio_output_spectrum(media.endpoint,out->reserved);
+#endif
  return 0;
 }
 static int control(const aster_player_request_t *request){

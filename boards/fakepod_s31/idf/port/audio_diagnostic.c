@@ -80,6 +80,10 @@ static int media_command(int argc,char **argv){
   if(!r)printf("MEDIA state=%lu error=%ld rate=%lu bits=%lu channels=%lu codec=%lu frame=%" PRIu64 "/%" PRIu64 " decoder=%u peak=%u path=%s\n",
    (unsigned long)s.state,(long)s.error,(unsigned long)s.rate,(unsigned long)s.bits,(unsigned long)s.channels,
    (unsigned long)s.codec,s.frame,s.total_frames,(unsigned)s.decoder_bytes,(unsigned)s.decoder_peak,s.path);
+#ifdef ASTER_AUDIO_SPECTRUM_ENABLED
+  if(!r){uint32_t levels[2];aster_audio_output_spectrum(s.endpoint,levels);
+   printf("SPECTRUM left=%08" PRIx32 " right=%08" PRIx32 "\n",levels[0],levels[1]);}
+#endif
   printf("HEAP internal=%u external=%u\n",(unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT),(unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
  }
  printf("media command result=%d\n",r);return r?1:0;

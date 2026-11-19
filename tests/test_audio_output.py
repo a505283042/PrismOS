@@ -4,6 +4,41 @@ from test_waveshare import ROOT, run_c
 
 
 class AudioOutput(unittest.TestCase):
+    def test_spectrum_tracks_stereo_bands_and_resets(self):
+        source = ROOT / 'common/audio/aster_audio_spectrum.c'
+        run_c(f'#include "{source}"\n' + r'''
+#include <assert.h>
+
+static unsigned band(unsigned packet, unsigned n) { return packet >> (8*n) & 255; }
+
+int main(void)
+{
+    aster_audio_spectrum_t spectrum = {0};
+    uint8_t pcm[1920][4];
+    for (unsigned i = 0; i < 1920; i++) {
+        uint16_t left = i/400 % 2 ? 13000 : (uint16_t)-13000;
+        uint16_t right = i/4 % 2 ? 13000 : (uint16_t)-13000;
+        pcm[i][0]=left; pcm[i][1]=left>>8; pcm[i][2]=right; pcm[i][3]=right>>8;
+    }
+    aster_audio_spectrum_reset(&spectrum, 48000);
+    aster_audio_spectrum_add(&spectrum, pcm, 700, 2, 2);
+    assert(!spectrum.levels[0] && !spectrum.levels[1]);
+    aster_audio_spectrum_add(&spectrum, pcm+700, 1220, 2, 2);
+    unsigned left = spectrum.levels[0], right = spectrum.levels[1];
+    assert(band(left,0) > band(left,3));
+    assert(band(right,3) > band(right,0));
+    assert(band(left,0) > band(right,0) && band(right,3) > band(left,3));
+
+    aster_audio_spectrum_reset(&spectrum, 32000);
+    assert(!spectrum.levels[0] && !spectrum.levels[1]);
+    uint8_t mono_pcm[1280][3] = {{0}};
+    for (unsigned i=0;i<1280;i++) mono_pcm[i][2]=i/4%2?80:176;
+    aster_audio_spectrum_add(&spectrum, mono_pcm, 1280, 1, 3);
+    assert(spectrum.levels[0] && spectrum.levels[0]==spectrum.levels[1]);
+    return 0;
+}
+''')
+
     def test_native_session_blocks_legacy_teardown(self):
         source = (ROOT / 'boards/fakepod_s31/idf/port/audio.c').read_text(encoding='utf-8')
         wrappers = source[source.index('/* Legacy entry points'):source.index('static int native_caps(')]

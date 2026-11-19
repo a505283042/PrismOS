@@ -2,7 +2,8 @@ include(${CMAKE_CURRENT_LIST_DIR}/../../../../common/sources.cmake)
 set(AUDIO "${CMAKE_CURRENT_LIST_DIR}/../../../../platform/esp32s3")
 if(CONFIG_ASTER_BOARD_FAKEPOD_S31)
     set(AUDIO_PORT "${CMAKE_CURRENT_LIST_DIR}/../../../../boards/fakepod_s31/idf/port/audio.c")
-    set(MEDIA_SOURCES ${ASTER_COMMON_MEDIA_SOURCES} "bt_audio.c" "bt_avrcp.c" "bt_source.c" "player.c")
+    set(MEDIA_SOURCES ${ASTER_COMMON_MEDIA_SOURCES} "${ASTER_COMMON_ROOT}/audio/aster_audio_spectrum.c"
+        "bt_audio.c" "bt_avrcp.c" "bt_source.c" "player.c")
 elseif(CONFIG_ASTER_BOARD_OSPTEK_P4)
     set(AUDIO_PORT "port.c")
 else()
@@ -23,6 +24,7 @@ target_compile_definitions(${COMPONENT_LIB} PUBLIC CONFIG_ASTER_AUDIO=1
 
 if(CONFIG_ASTER_BOARD_FAKEPOD_S31)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE CONFIG_ASTER_AUDIO_CS43131=1)
+    target_compile_definitions(${COMPONENT_LIB} PUBLIC ASTER_AUDIO_SPECTRUM_ENABLED=1)
 elseif(CONFIG_ASTER_BOARD_OSPTEK_P4)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE CONFIG_ASTER_AUDIO_ADC_ES8311=1)
 endif()

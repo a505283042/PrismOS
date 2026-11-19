@@ -62,4 +62,8 @@ int aster_audio_output_write(uint32_t endpoint,const void *pcm,uint32_t frames);
 int aster_audio_output_drain(uint32_t endpoint);
 int aster_audio_output_close(uint32_t endpoint);
 int aster_audio_output_stats(uint32_t endpoint,aster_audio_output_stats_t *out);
+#if ASTER_AUDIO_SPECTRUM_ENABLED
+/* Four 8-bit low-to-high bands per channel, least significant band first. */
+void aster_audio_output_spectrum(uint32_t endpoint, uint32_t bands[2]);
+#endif
 #endif

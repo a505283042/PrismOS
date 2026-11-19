@@ -4,6 +4,10 @@
 #include <errno.h>
 #include <limits.h>
 #include <string.h>
+#if ASTER_AUDIO_SPECTRUM_ENABLED
+#include "aster_audio_spectrum.h"
+static aster_audio_spectrum_t spectrum[ASTER_AUDIO_OUTPUT_COUNT];
+#endif
 static struct binding {
  const aster_audio_output_ops_t *ops;void *context;bool opened;
  aster_audio_format_t format;
@@ -78,15 +82,25 @@ int aster_audio_output_open(uint32_t id,const aster_audio_format_t *f){
    ||!(caps.channels&ASTER_AUDIO_CHANNEL_BIT(f->channels))||(f->flags&~caps.flags))return -ENOTSUP;
  r=aster_power_activity_begin();if(r)return r;
  r=outputs[id].ops->open(outputs[id].context,f);
- if(!r){outputs[id].opened=true;outputs[id].format=*f;}else aster_power_activity_end();return r;
+ if(!r){
+  outputs[id].opened=true;outputs[id].format=*f;
+#if ASTER_AUDIO_SPECTRUM_ENABLED
+  aster_audio_spectrum_reset(&spectrum[id], f->rate);
+#endif
+ }else aster_power_activity_end();return r;
 }
 int aster_audio_output_write(uint32_t id,const void *pcm,uint32_t frames){
  if(!endpoint_valid(id)||!pcm||!frames||frames>INT_MAX)return -EINVAL;
  struct binding *b=&outputs[id];if(!b->ops)return -ENOTSUP;if(!b->opened)return -EBADF;
- if(frames>SIZE_MAX/aster_audio_frame_bytes(&b->format))return -EINVAL;
+ size_t frame_bytes=aster_audio_frame_bytes(&b->format);
+ if(frames>SIZE_MAX/frame_bytes)return -EINVAL;
  aster_audio_output_caps_t caps;int r=aster_audio_output_caps(id,&caps);if(r)return r;
  if(frames>caps.max_write_frames)return -EMSGSIZE;
  r=b->ops->write(b->context,pcm,frames);
+#if ASTER_AUDIO_SPECTRUM_ENABLED
+ if(r>0 && (uint32_t)r<=frames)
+  aster_audio_spectrum_add(&spectrum[id], pcm, r, b->format.channels, frame_bytes/b->format.channels);
+#endif
  return r>(int)frames?-EIO:r==0?-EAGAIN:r;
 }
 int aster_audio_output_drain(uint32_t id){
@@ -97,7 +111,12 @@ int aster_audio_output_drain(uint32_t id){
 int aster_audio_output_close(uint32_t id){
  if(!endpoint_valid(id))return -EINVAL;
  struct binding *b=&outputs[id];if(!b->ops)return -ENOTSUP;if(!b->opened)return 0;
- int r=b->ops->close(b->context);if(!r){b->opened=false;memset(&b->format,0,sizeof(b->format));aster_power_activity_end();}return r;
+ int r=b->ops->close(b->context);if(!r){
+#if ASTER_AUDIO_SPECTRUM_ENABLED
+  aster_audio_spectrum_reset(&spectrum[id], b->format.rate);
+#endif
+  b->opened=false;memset(&b->format,0,sizeof(b->format));aster_power_activity_end();
+ }return r;
 }
 int aster_audio_output_stats(uint32_t id,aster_audio_output_stats_t *out){
  if(!endpoint_valid(id)||!out)return -EINVAL;
@@ -106,3 +125,9 @@ int aster_audio_output_stats(uint32_t id,aster_audio_output_stats_t *out){
  aster_audio_output_stats_t next={.size=sizeof(next),.version=1};int r=b->ops->stats(b->context,&next);
  if(!r){if(next.size!=sizeof(next)||next.version!=1)return -EIO;*out=next;}return r;
 }
+#if ASTER_AUDIO_SPECTRUM_ENABLED
+void aster_audio_output_spectrum(uint32_t id, uint32_t bands[2]) {
+ bands[0]=endpoint_valid(id)?atomic_load(&spectrum[id].levels[0]):0;
+ bands[1]=endpoint_valid(id)?atomic_load(&spectrum[id].levels[1]):0;
+}
+#endif
