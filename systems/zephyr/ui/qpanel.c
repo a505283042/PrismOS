@@ -599,11 +599,12 @@ static void on_scrim(lv_event_t *e)
 /* ---------- build ---------- */
 static lv_obj_t *bt_root, *bt_status, *bt_rows[ASTER_PLAYER_BT_DEVICES_MAX];
 static lv_obj_t *bt_names[ASTER_PLAYER_BT_DEVICES_MAX];
-static lv_obj_t *bt_toggle, *bt_search;
+static lv_obj_t *bt_toggle, *bt_search, *bt_phone;
 static aster_player_bt_list_t bt_devices;
 static uint32_t bt_pending, bt_deadline, bt_last_poll;
+static char bt_pending_address[sizeof(bt_devices.devices[0].address)];
 static int bt_error;
-static bool bt_restore_visibility, bt_enabled, bt_peer_connected;
+static bool bt_restore_visibility, bt_enabled, bt_peer_connected, bt_turning_off;
 static void (*bt_close_owner)(void);
 
 static uint32_t bt_capabilities(void)
@@ -637,9 +638,19 @@ static void bt_start_after_stop(uint32_t command)
 	bt_deadline = aster_os_uptime32() + 10000;
 }
 
+static void bt_switch_role(uint32_t command, const char *address)
+{
+	snprintf(bt_pending_address, sizeof(bt_pending_address), "%s", address ? address : "");
+	bt_error = bt_command(ASTER_PLAYER_BT_OFF, NULL);
+	if (!bt_error) {
+		bt_restore_visibility = (bt_capabilities() & ASTER_PLAYER_CAP_BT_SINK) != 0;
+		bt_start_after_stop(command);
+	}
+}
+
 static void bt_tick(void)
 {
-	if (!bt_root && !bt_pending && !bt_restore_visibility)
+	if (!bt_root && !bt_pending && !bt_restore_visibility && !bt_turning_off)
 		return;
 	uint32_t now = aster_os_uptime32();
 	if (now - bt_last_poll < 250)
@@ -662,14 +673,33 @@ static void bt_tick(void)
 			bt_error = ASTER_ETIMEDOUT;
 		} else if (info.state != ASTER_PLAYER_STOPPING &&
 		           list.state != ASTER_PLAYER_BT_STOPPING) {
-			int error = bt_command(bt_pending, NULL);
+			int error;
+			if (bt_pending != ASTER_PLAYER_BT_ON && info.mode == ASTER_PLAYER_LOCAL &&
+			    (info.state == ASTER_PLAYER_OPENING || info.state == ASTER_PLAYER_PLAYING ||
+			     info.state == ASTER_PLAYER_PAUSED)) {
+				error = bt_command(ASTER_PLAYER_STOP, NULL);
+				if (!error)
+					return;
+			} else {
+				error = bt_command(bt_pending, bt_pending == ASTER_PLAYER_BT_CONNECT
+				                               ? bt_pending_address : NULL);
+			}
 			if (error != ASTER_EBUSY) {
 				bt_pending = 0;
 				bt_error = error;
+				if (!error)
+					return; /* Take fresh status after handing off the radio. */
 			}
 		}
 	}
+	if (bt_restore_visibility && !bt_pending && !info.device[0] &&
+	    list.state != ASTER_PLAYER_BT_STOPPING) {
+		bt_restore_visibility = false;
+		bt_start_after_stop(ASTER_PLAYER_BT_ON);
+	}
 	bt_enabled = bt_pending || info.device[0] || list.state == ASTER_PLAYER_BT_STOPPING;
+	if (!bt_enabled)
+		bt_turning_off = false;
 	if (!bt_root)
 		return;
 	bt_peer_connected =
@@ -677,7 +707,8 @@ static void bt_tick(void)
 	char waiting[96];
 	snprintf(waiting, sizeof(waiting), "本机可被发现 · %s", info.device);
 	const char *state =
-	        bt_error ? "操作失败，请重试"
+	        bt_turning_off ? "正在关闭蓝牙"
+	        : bt_error ? "操作失败，请重试"
 	        : bt_pending || info.state == ASTER_PLAYER_STOPPING ||
 	                        list.state == ASTER_PLAYER_BT_STOPPING
 	                ? "正在更新蓝牙状态"
@@ -685,29 +716,32 @@ static void bt_tick(void)
 	        : list.state == ASTER_PLAYER_BT_SCANNING   ? "正在搜索附近设备"
 	        : list.state == ASTER_PLAYER_BT_CONNECTING ? "正在连接蓝牙设备"
 	        : list.state == ASTER_PLAYER_BT_CONNECTED  ? "设备已连接 · 点击设备断开"
+	        : list.state == ASTER_PLAYER_BT_ERROR && list.error != ASTER_ETIMEDOUT
+	                ? "蓝牙操作失败，可重新搜索"
 	        : list.state == ASTER_PLAYER_BT_ERROR || (info.mode == ASTER_PLAYER_BLUETOOTH &&
 	                                                  info.state == ASTER_PLAYER_ERROR)
 	                ? "蓝牙连接失败"
 	        : bt_peer_connected     ? "设备已连接 · 点击设备断开"
+	        : list.generation       ? (list.count ? "选择要连接的设备" : "未发现设备，可再次搜索")
 	        : bt_restore_visibility ? "选择要连接的设备"
 	                                : waiting;
-	const char *toggle = bt_enabled ? "关闭蓝牙" : "开启蓝牙";
+	const char *toggle = bt_turning_off ? "正在关闭" : bt_enabled ? "关闭蓝牙" : "开启蓝牙";
 	if (strcmp(lv_label_get_text(bt_toggle), toggle))
 		set_label(bt_toggle, toggle);
 	if (bt_search) {
-		if (bt_enabled && !bt_pending)
+		if (bt_enabled && !bt_pending && list.state != ASTER_PLAYER_BT_CONNECTING &&
+		    list.state != ASTER_PLAYER_BT_CONNECTED && list.state != ASTER_PLAYER_BT_STOPPING)
 			lv_obj_remove_state(bt_search, LV_STATE_DISABLED);
 		else
 			lv_obj_add_state(bt_search, LV_STATE_DISABLED);
 	}
 	if (strcmp(lv_label_get_text(bt_status), state))
 		set_label(bt_status, state);
+	if (bt_peer_connected)
+		lv_obj_remove_flag(bt_phone, LV_OBJ_FLAG_HIDDEN);
+	else
+		lv_obj_add_flag(bt_phone, LV_OBJ_FLAG_HIDDEN);
 	for (unsigned i = 0; i < ASTER_PLAYER_BT_DEVICES_MAX; i++) {
-		if (i == 0 && bt_peer_connected) {
-			set_label(bt_names[i], "已连接的手机");
-			lv_obj_remove_flag(bt_rows[i], LV_OBJ_FLAG_HIDDEN);
-			continue;
-		}
 		if (i >= list.count) {
 			lv_obj_add_flag(bt_rows[i], LV_OBJ_FLAG_HIDDEN);
 			continue;
@@ -728,17 +762,22 @@ static void bt_select(lv_event_t *event)
 	unsigned choice =
 	        (unsigned)(uintptr_t)lv_obj_get_user_data(lv_event_get_current_target_obj(event));
 	bt_error = 0;
+	if (bt_turning_off)
+		return;
+	if (choice == ASTER_PLAYER_BT_DISCONNECT) {
+		if (bt_peer_connected && !bt_pending)
+			bt_error = bt_command(choice, NULL);
+		return;
+	}
 	if (choice >= 100) {
 		unsigned index = choice - 100;
-		if (index == 0 && bt_peer_connected) {
-			bt_error = bt_command(ASTER_PLAYER_BT_DISCONNECT, NULL);
-			return;
-		}
 		if (!bt_pending && index < bt_devices.count) {
 			bool connected = bt_devices.devices[index].flags & ASTER_PLAYER_F_CONNECTED;
 			bt_error = bt_command(connected ? ASTER_PLAYER_BT_DISCONNECT
 			                                : ASTER_PLAYER_BT_CONNECT,
 			                      connected ? NULL : bt_devices.devices[index].address);
+			if (!connected && bt_error == ASTER_ESTATE)
+				bt_switch_role(ASTER_PLAYER_BT_CONNECT, bt_devices.devices[index].address);
 		}
 		return;
 	}
@@ -747,32 +786,28 @@ static void bt_select(lv_event_t *event)
 			bt_pending = 0;
 			bt_restore_visibility = false;
 			bt_error = bt_command(ASTER_PLAYER_BT_OFF, NULL);
+			bt_turning_off = !bt_error;
 		} else {
 			uint32_t caps = bt_capabilities();
 			bt_error =
 			        bt_command(caps & ASTER_PLAYER_CAP_BT_SINK ? ASTER_PLAYER_BT_ON
 			                                                   : ASTER_PLAYER_SOURCE_ON,
 			                   NULL);
+			bt_enabled = !bt_error;
 		}
 		return;
 	}
 	if (bt_pending)
 		return;
-	aster_player_info_t info = {0};
-	aster_player_service_info(&info);
 	if (choice == ASTER_PLAYER_SOURCE_ON) {
 		if (bt_devices.state == ASTER_PLAYER_BT_SCANNING ||
 		    bt_devices.state == ASTER_PLAYER_BT_CONNECTING ||
 		    bt_devices.state == ASTER_PLAYER_BT_CONNECTED)
 			return;
-		if (!bt_command(ASTER_PLAYER_BT_SCAN, NULL))
-			return;
-		bt_restore_visibility = (bt_capabilities() & ASTER_PLAYER_CAP_BT_SINK) != 0;
+		bt_error = bt_command(ASTER_PLAYER_BT_SCAN, NULL);
+		if (bt_error == ASTER_ESTATE)
+			bt_switch_role(choice, NULL);
 	}
-	bt_command(ASTER_PLAYER_BT_OFF, NULL);
-	if (info.mode == ASTER_PLAYER_LOCAL)
-		bt_command(ASTER_PLAYER_STOP, NULL);
-	bt_start_after_stop(choice);
 }
 
 static void bt_delete(lv_event_t *event)
@@ -835,6 +870,9 @@ void aster_bluetooth_settings_open(lv_obj_t *parent, void (*close_owner)(void))
 	lv_obj_set_style_pad_row(list, 6, 0);
 	lv_obj_add_flag(list, LV_OBJ_FLAG_SCROLLABLE);
 	lv_obj_set_scroll_dir(list, LV_DIR_VER);
+	bt_phone = mk_button(list, 0, 0, w - 28, 46, "已连接的手机", bt_select, NULL);
+	lv_obj_set_style_bg_color(bt_phone, hexc(s_pal.surface), 0);
+	lv_obj_set_user_data(bt_phone, (void *)(uintptr_t)ASTER_PLAYER_BT_DISCONNECT);
 	for (unsigned i = 0; i < ASTER_PLAYER_BT_DEVICES_MAX; i++) {
 		bt_rows[i] = mk_button(list, 0, 0, w - 28, 46, "", bt_select, &bt_names[i]);
 		lv_obj_set_style_bg_color(bt_rows[i], hexc(s_pal.surface), 0);

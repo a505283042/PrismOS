@@ -27,5 +27,6 @@ int aster_media_pause(void);
 int aster_media_resume(void);
 int aster_media_seek(uint32_t milliseconds);
 int aster_media_stop(void);
+int aster_media_stop_output(uint32_t endpoint);
 int aster_media_snapshot(aster_media_snapshot_t *out);
 #endif

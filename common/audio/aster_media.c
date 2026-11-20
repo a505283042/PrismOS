@@ -251,17 +251,22 @@ int aster_media_snapshot(aster_media_snapshot_t *out)
     return 0;
 }
 
-int aster_media_stop(void)
+int aster_media_stop_output(uint32_t endpoint)
 {
     if (!lock.handle)
         return -ENOTSUP;
     take();
-    if (active) {
+    if (active && (!endpoint || endpoint == status.endpoint)) {
         atomic_store(&stopping, true);
         status.state = ASTER_MEDIA_STOPPING;
     }
     give();
     return 0;
+}
+
+int aster_media_stop(void)
+{
+    return aster_media_stop_output(0);
 }
 
 static int set_pause(bool pause)

@@ -41,6 +41,8 @@ static atomic_uint acl_attempts;
 static atomic_bool source_role, scanning, scan_requested, connect_requested, disconnect_requested,
     codec_ready;
 static atomic_uint discovery_state;
+static atomic_int discovery_error;
+static atomic_uint a2dp_state;
 static atomic_bool want_connection, connecting;
 static aster_player_bt_list_t discovery;
 static esp_bd_addr_t target_peer;
@@ -55,6 +57,8 @@ static portMUX_TYPE peer_lock = portMUX_INITIALIZER_UNLOCKED;
 
 static int bt_error(esp_err_t error)
 {
+    if (error == ESP_OK)
+        return 0;
     ESP_LOGE(TAG, "stack call failed: %s (%d)", esp_err_to_name(error), error);
     return error == ESP_ERR_NO_MEM          ? -ENOMEM
            : error == ESP_ERR_TIMEOUT       ? -ETIMEDOUT
@@ -127,17 +131,17 @@ static void discovered(esp_bt_gap_cb_param_t *p)
 
 static void gap_callback(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *p)
 {
-    if (event == ESP_BT_GAP_DISC_RES_EVT && atomic_load(&source_role)) {
+    if (event == ESP_BT_GAP_DISC_RES_EVT && !atomic_load(&stop_requested)) {
         discovered(p);
         return;
     }
-    if (event == ESP_BT_GAP_DISC_STATE_CHANGED_EVT && atomic_load(&source_role)) {
+    if (event == ESP_BT_GAP_DISC_STATE_CHANGED_EVT) {
         bool scan = p->disc_st_chg.state == ESP_BT_GAP_DISCOVERY_STARTED;
         atomic_store(&scanning, scan);
-        if (scan)
-            atomic_store(&discovery_state, ASTER_PLAYER_BT_SCANNING);
-        else if (atomic_load(&discovery_state) == ASTER_PLAYER_BT_SCANNING)
-            atomic_store(&discovery_state, ASTER_PLAYER_BT_IDLE);
+        if (!scan) {
+            unsigned expected = ASTER_PLAYER_BT_SCANNING;
+            atomic_compare_exchange_strong(&discovery_state, &expected, ASTER_PLAYER_BT_IDLE);
+        }
         return;
     }
     if (event == ESP_BT_GAP_CFM_REQ_EVT)
@@ -173,7 +177,7 @@ static void a2dp_callback(esp_a2d_cb_event_t event, esp_a2d_cb_param_t *p)
             atomic_store(&profile_down, true);
     } else if (event == ESP_A2D_CONNECTION_STATE_EVT) {
         bool up = p->conn_stat.state == ESP_A2D_CONNECTION_STATE_CONNECTED;
-        if (up) {
+        if (p->conn_stat.state != ESP_A2D_CONNECTION_STATE_DISCONNECTED) {
             portENTER_CRITICAL(&peer_lock);
             memcpy(peer, p->conn_stat.remote_bda, sizeof(peer));
             portEXIT_CRITICAL(&peer_lock);
@@ -188,14 +192,18 @@ static void a2dp_callback(esp_a2d_cb_event_t event, esp_a2d_cb_param_t *p)
             if (atomic_load(&source_role)) {
                 atomic_store(&codec_ready, false);
                 aster_bt_tx_link(false, false, atomic_load(&rate));
-                atomic_store(&discovery_state, ASTER_PLAYER_BT_IDLE);
+                atomic_store(&discovery_state, atomic_load(&want_connection)
+                                                   ? ASTER_PLAYER_BT_CONNECTING
+                                                   : ASTER_PLAYER_BT_IDLE);
             } else if (!atomic_load(&stop_requested))
                 esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
         }
         if (up && atomic_load(&source_role)) {
+            atomic_store(&want_connection, false);
             atomic_store(&discovery_state, ASTER_PLAYER_BT_CONNECTED);
             aster_bt_tx_link(true, false, atomic_load(&rate));
         }
+        atomic_store(&a2dp_state, p->conn_stat.state);
         ESP_LOGI(TAG, "connection state=%d", p->conn_stat.state);
     } else if (event == ESP_A2D_AUDIO_STATE_EVT) {
         atomic_store(&playing, p->audio_stat.state == ESP_A2D_AUDIO_STATE_STARTED);
@@ -283,38 +291,67 @@ static bool wait_flag(atomic_bool *flag, unsigned milliseconds)
     return atomic_load(flag);
 }
 
+/* Keep the GAP and A2DP callbacks registered until the last channel and
+ * baseband link close. DISCONNECTING is only the start of that exchange. */
+static void disconnect_link(bool source)
+{
+    int64_t deadline = esp_timer_get_time() + 5500000;
+    int requested_state = -1;
+    for (;;) {
+        int state = atomic_load(&a2dp_state);
+        if (state == ESP_A2D_CONNECTION_STATE_DISCONNECTED && atomic_load(&connecting))
+            state = ESP_A2D_CONNECTION_STATE_CONNECTING;
+        if (state == ESP_A2D_CONNECTION_STATE_DISCONNECTED && !atomic_load(&acl_connected))
+            return;
+        if (state != requested_state && (state == ESP_A2D_CONNECTION_STATE_CONNECTING ||
+                                         state == ESP_A2D_CONNECTION_STATE_CONNECTED)) {
+            esp_bd_addr_t remote;
+            if (source) {
+                portENTER_CRITICAL(&discovery_lock);
+                memcpy(remote, target_peer, sizeof(remote));
+                portEXIT_CRITICAL(&discovery_lock);
+                esp_a2d_source_disconnect(remote);
+            } else {
+                portENTER_CRITICAL(&peer_lock);
+                memcpy(remote, peer, sizeof(remote));
+                portEXIT_CRITICAL(&peer_lock);
+                esp_a2d_sink_disconnect(remote);
+            }
+            requested_state = state;
+        }
+        if (esp_timer_get_time() >= deadline) {
+            ESP_LOGW(TAG, "disconnect deadline: a2dp=%d acl=%d", state, atomic_load(&acl_connected));
+            return;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+static void discovery_poll(void)
+{
+    if (!atomic_exchange(&scan_requested, false))
+        return;
+    portENTER_CRITICAL(&discovery_lock);
+    discovery.count = 0;
+    discovery.generation++;
+    memset(discovery.devices, 0, sizeof(discovery.devices));
+    portEXIT_CRITICAL(&discovery_lock);
+    esp_err_t e = esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, 8, 0);
+    if (e != ESP_OK) {
+        atomic_store(&discovery_error, bt_error(e));
+        atomic_store(&discovery_state, ASTER_PLAYER_BT_ERROR);
+    }
+}
+
 static int source_poll(int64_t *check_at, int64_t *retry_at, int64_t *connect_deadline,
                        unsigned *attempts)
 {
     int64_t now = esp_timer_get_time();
     esp_err_t e;
-    if (atomic_exchange(&scan_requested, false)) {
-        atomic_store(&want_connection, false);
-        *attempts = 0;
-        if (atomic_load(&scanning))
-            esp_bt_gap_cancel_discovery();
-        int64_t end = now + 2000000;
-        while (atomic_load(&scanning) && esp_timer_get_time() < end)
-            vTaskDelay(pdMS_TO_TICKS(10));
-        portENTER_CRITICAL(&discovery_lock);
-        discovery.count = 0;
-        discovery.generation++;
-        memset(discovery.devices, 0, sizeof(discovery.devices));
-        portEXIT_CRITICAL(&discovery_lock);
-        e = esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, 8, 0);
-        if (e)
-            return bt_error(e);
-        atomic_store(&discovery_state, ASTER_PLAYER_BT_SCANNING);
-    }
     if (atomic_exchange(&disconnect_requested, false)) {
         atomic_store(&want_connection, false);
         *attempts = 0;
-        esp_bd_addr_t remote;
-        portENTER_CRITICAL(&peer_lock);
-        memcpy(remote, peer, 6);
-        portEXIT_CRITICAL(&peer_lock);
-        if (atomic_load(&connected) || atomic_load(&connecting))
-            esp_a2d_source_disconnect(remote);
+        disconnect_link(true);
     }
     if (atomic_exchange(&connect_requested, false)) {
         if (atomic_load(&scanning))
@@ -331,17 +368,22 @@ static int source_poll(int64_t *check_at, int64_t *retry_at, int64_t *connect_de
         }
     } else if (atomic_load(&want_connection) && !atomic_load(&scanning)) {
         if (atomic_load(&connecting) && now >= *connect_deadline) {
-            esp_bd_addr_t remote;
-            portENTER_CRITICAL(&discovery_lock);
-            memcpy(remote, target_peer, 6);
-            portEXIT_CRITICAL(&discovery_lock);
-            esp_a2d_source_disconnect(remote);
-            atomic_store(&connecting, false);
-            *retry_at = now + 2000000;
+            disconnect_link(true);
+            *retry_at = esp_timer_get_time() + 2000000;
+            if (atomic_load(&connecting)) {
+                atomic_store(&want_connection, false);
+                atomic_store(&discovery_error, -ETIMEDOUT);
+                atomic_store(&discovery_state, ASTER_PLAYER_BT_ERROR);
+                return 0;
+            }
         }
         if (!atomic_load(&connecting) && now >= *retry_at) {
-            if (*attempts >= 3)
-                return -ETIMEDOUT;
+            if (*attempts >= 3) {
+                atomic_store(&want_connection, false);
+                atomic_store(&discovery_error, -ETIMEDOUT);
+                atomic_store(&discovery_state, ASTER_PLAYER_BT_ERROR);
+                return 0;
+            }
             esp_bd_addr_t remote;
             portENTER_CRITICAL(&discovery_lock);
             memcpy(remote, target_peer, 6);
@@ -467,6 +509,7 @@ static void receiver(void *ctx)
     int64_t check_at = 0, retry_at = 0, connect_deadline = 0;
     unsigned attempts = 0;
     while (!atomic_load(&stop_requested)) {
+        discovery_poll();
         if (source) {
             r = source_poll(&check_at, &retry_at, &connect_deadline, &attempts);
             if (r)
@@ -555,10 +598,11 @@ static void receiver(void *ctx)
 done:
     atomic_store(&accept_pcm, false);
     atomic_store(&playing, false);
+    atomic_store(&want_connection, false);
     bool media_safe = true;
     if (source) {
-        aster_media_stop();
         aster_bt_tx_link(false, false, atomic_load(&rate));
+        aster_media_stop_output(ASTER_AUDIO_OUTPUT_BLUETOOTH);
         int64_t end = esp_timer_get_time() + 3000000;
         /* An opening decoder may not have opened the endpoint yet. Wait for the
    * whole media session, not just the endpoint's active flag, before freeing
@@ -566,30 +610,24 @@ done:
         do {
             aster_media_snapshot_t media;
             media_safe = !aster_media_snapshot(&media) &&
-                         (media.state == ASTER_MEDIA_IDLE || media.state == ASTER_MEDIA_ENDED ||
+                         (media.endpoint != ASTER_AUDIO_OUTPUT_BLUETOOTH ||
+                          media.state == ASTER_MEDIA_IDLE || media.state == ASTER_MEDIA_ENDED ||
                           media.state == ASTER_MEDIA_ERROR) &&
                          !aster_bt_tx_active();
             if (!media_safe)
                 vTaskDelay(pdMS_TO_TICKS(10));
         } while (!media_safe && esp_timer_get_time() < end);
-        if (atomic_load(&scanning) && host_on)
-            esp_bt_gap_cancel_discovery();
     }
     if (host_on)
         esp_bt_gap_set_scan_mode(ESP_BT_NON_CONNECTABLE, ESP_BT_NON_DISCOVERABLE);
-    if (sink && atomic_load(&connected)) {
-        esp_bd_addr_t remote;
-        portENTER_CRITICAL(&peer_lock);
-        memcpy(remote, peer, sizeof(remote));
-        portEXIT_CRITICAL(&peer_lock);
-        if (source)
-            esp_a2d_source_disconnect(remote);
-        else
-            esp_a2d_sink_disconnect(remote);
-        int64_t deadline = esp_timer_get_time() + 3000000;
-        while (atomic_load(&connected) && esp_timer_get_time() < deadline)
+    if (host_on && atomic_load(&scanning)) {
+        esp_bt_gap_cancel_discovery();
+        int64_t deadline = esp_timer_get_time() + 1500000;
+        while (atomic_load(&scanning) && esp_timer_get_time() < deadline)
             vTaskDelay(pdMS_TO_TICKS(10));
     }
+    if (sink)
+        disconnect_link(source);
     if (avrcp) {
         esp_err_t e = aster_bt_avrcp_stop();
         if (e && !r)
@@ -642,7 +680,7 @@ done:
     vTaskDelete(NULL);
 }
 
-static int start_audio_impl(bool enable_avrcp, bool source)
+static int start_audio_impl(bool enable_avrcp, bool source, bool connect_first)
 {
     aster_media_snapshot_t media;
     if (source && !aster_media_snapshot(&media) &&
@@ -668,15 +706,25 @@ static int start_audio_impl(bool enable_avrcp, bool source)
     atomic_store(&acl_connected, false);
     atomic_store(&acl_attempts, 0);
     atomic_store(&source_role, source);
-    atomic_store(&scan_requested, source);
-    atomic_store(&connect_requested, false);
+    atomic_store(&scan_requested, source && !connect_first);
+    atomic_store(&connect_requested, connect_first);
     atomic_store(&disconnect_requested, false);
     atomic_store(&want_connection, false);
     atomic_store(&connecting, false);
+    atomic_store(&a2dp_state, ESP_A2D_CONNECTION_STATE_DISCONNECTED);
     atomic_store(&codec_ready, false);
     atomic_store(&scanning, false);
-    if (source)
-        atomic_store(&discovery_state, ASTER_PLAYER_BT_SCANNING);
+    atomic_store(&discovery_error, 0);
+    atomic_store(&discovery_state, connect_first ? ASTER_PLAYER_BT_CONNECTING
+                                  : source      ? ASTER_PLAYER_BT_SCANNING
+                                                : ASTER_PLAYER_BT_IDLE);
+    if (!connect_first) {
+        portENTER_CRITICAL(&discovery_lock);
+        discovery.count = 0;
+        discovery.generation = 0;
+        target_address[0] = 0;
+        portEXIT_CRITICAL(&discovery_lock);
+    }
     atomic_store(&acl_status, -1);
     atomic_store(&acl_reason, -1);
     atomic_store(&auth_status, -1);
@@ -694,12 +742,12 @@ static int start_audio_impl(bool enable_avrcp, bool source)
     return 0;
 }
 
-static int start_audio(bool avrcp, bool source)
+static int start_audio(bool avrcp, bool source, bool connect_first)
 {
     int r = aster_power_activity_begin();
     if (r)
         return r;
-    r = start_audio_impl(avrcp, source);
+    r = start_audio_impl(avrcp, source, connect_first);
     if (r)
         aster_power_activity_end();
     return r;
@@ -793,7 +841,7 @@ static int command(int argc, char **argv)
     }
     if (strcmp(argv[1], "on") && strcmp(argv[1], "on-basic"))
         return 1;
-    return start_audio(!strcmp(argv[1], "on"), false) ? 1 : 0;
+    return start_audio(!strcmp(argv[1], "on"), false, false) ? 1 : 0;
 }
 
 bool aster_idf_bt_audio_info(aster_player_info_t *info)
@@ -837,7 +885,7 @@ int aster_idf_bt_audio_control(uint32_t cmd)
     if (cmd == ASTER_PLAYER_BT_ON) {
         if (atomic_load(&running))
             return atomic_load(&source_role) ? -EBUSY : 0;
-        return start_audio(true, false);
+        return start_audio(true, false, false);
     }
     if (cmd == ASTER_PLAYER_BT_OFF) {
         atomic_store(&stop_requested, true);
@@ -858,7 +906,7 @@ int aster_idf_bt_source_request(uint32_t cmd, const char *address)
     if (cmd == ASTER_PLAYER_SOURCE_ON) {
         if (atomic_load(&running))
             return atomic_load(&source_role) ? 0 : -EBUSY;
-        return start_audio(false, true);
+        return start_audio(false, true, false);
     }
     if (cmd == ASTER_PLAYER_BT_DISCONNECT && !atomic_load(&source_role)) {
         if (!atomic_load(&running) || !atomic_load(&connected))
@@ -869,16 +917,26 @@ int aster_idf_bt_source_request(uint32_t cmd, const char *address)
         portEXIT_CRITICAL(&peer_lock);
         return bt_error(esp_a2d_sink_disconnect(remote));
     }
-    if (!atomic_load(&running) || !atomic_load(&source_role) || !atomic_load(&profile_ready))
-        return -ENOTCONN;
+    bool active = atomic_load(&running);
+    bool source = atomic_load(&source_role);
+    if (active && atomic_load(&stop_requested))
+        return -EBUSY;
     if (cmd == ASTER_PLAYER_BT_SCAN) {
-        if (atomic_load(&connected) || atomic_load(&connecting))
+        if (!active)
+            return -ENOTCONN;
+        if (source && (atomic_load(&connected) || atomic_load(&connecting) ||
+                       atomic_load(&want_connection) || atomic_load(&connect_requested)))
             return -EBUSY;
-        atomic_store(&scan_requested, true);
+        if (atomic_exchange(&discovery_state, ASTER_PLAYER_BT_SCANNING) != ASTER_PLAYER_BT_SCANNING) {
+            atomic_store(&discovery_error, 0);
+            atomic_store(&scan_requested, true);
+        }
         return 0;
     }
     if (cmd == ASTER_PLAYER_BT_DISCONNECT) {
-        aster_media_stop();
+        if (!active || !source || !atomic_load(&profile_ready))
+            return -ENOTCONN;
+        aster_media_stop_output(ASTER_AUDIO_OUTPUT_BLUETOOTH);
         atomic_store(&want_connection, false);
         atomic_store(&connect_requested, false);
         atomic_store(&disconnect_requested, true);
@@ -886,7 +944,7 @@ int aster_idf_bt_source_request(uint32_t cmd, const char *address)
     }
     if (cmd != ASTER_PLAYER_BT_CONNECT || !address || strlen(address) != 17)
         return -EINVAL;
-    if (atomic_load(&connected) || atomic_load(&connecting))
+    if (active && source && (atomic_load(&connected) || atomic_load(&connecting)))
         return -EBUSY;
     unsigned b[6];
     if (sscanf(address, "%2x:%2x:%2x:%2x:%2x:%2x", &b[0], &b[1], &b[2], &b[3], &b[4], &b[5]) != 6)
@@ -902,8 +960,11 @@ int aster_idf_bt_source_request(uint32_t cmd, const char *address)
              selected[1], selected[2], selected[3], selected[4], selected[5]);
     bool found = false;
     portENTER_CRITICAL(&discovery_lock);
+    /* A receiver-to-source handoff can finish after the receiver stops. Only
+     * the address selected in the live receiver session is eligible then. */
+    bool eligible = active || (!source && !strcmp(canonical, target_address));
     for (unsigned i = 0; i < discovery.count; i++)
-        if (!strcmp(discovery.devices[i].address, canonical)) {
+        if (eligible && !strcmp(discovery.devices[i].address, canonical)) {
             memcpy(target_peer, selected, 6);
             memcpy(target_name, discovery.devices[i].name, sizeof(target_name));
             memcpy(target_address, canonical, sizeof(canonical));
@@ -913,6 +974,11 @@ int aster_idf_bt_source_request(uint32_t cmd, const char *address)
     portEXIT_CRITICAL(&discovery_lock);
     if (!found)
         return -ENOENT;
+    if (!active)
+        return start_audio(false, true, true);
+    if (!source)
+        return -ENOTCONN;
+    atomic_store(&discovery_error, 0);
     atomic_store(&connect_requested, true);
     return 0;
 }
@@ -920,23 +986,23 @@ int aster_idf_bt_source_request(uint32_t cmd, const char *address)
 int aster_idf_bt_source_list(aster_player_bt_list_t *out)
 {
     bool source = atomic_load(&source_role);
-    bool active = source && atomic_load(&running);
+    bool active = atomic_load(&running);
     portENTER_CRITICAL(&discovery_lock);
     if (active) {
         out->count = discovery.count;
         out->generation = discovery.generation;
         memcpy(out->devices, discovery.devices, sizeof(out->devices));
-        if (atomic_load(&connected))
+        if (source && atomic_load(&connected))
             for (unsigned i = 0; i < out->count; i++)
                 if (!strcmp(out->devices[i].address, target_address))
                     out->devices[i].flags = ASTER_PLAYER_F_CONNECTED;
     }
     portEXIT_CRITICAL(&discovery_lock);
-    out->state = source ? atomic_load(&discovery_state) : ASTER_PLAYER_BT_IDLE;
+    out->state = active || source ? atomic_load(&discovery_state) : ASTER_PLAYER_BT_IDLE;
     if (active && atomic_load(&stop_requested))
         out->state = ASTER_PLAYER_BT_STOPPING;
-    out->error = source ? atomic_load(&last_error) : 0;
-    out->output_rate = active && atomic_load(&codec_ready) ? atomic_load(&rate) : 0;
+    out->error = active ? atomic_load(&discovery_error) : source ? atomic_load(&last_error) : 0;
+    out->output_rate = active && source && atomic_load(&codec_ready) ? atomic_load(&rate) : 0;
     out->queued_bytes = aster_bt_tx_queued();
     return 0;
 }

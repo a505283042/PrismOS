@@ -54,6 +54,8 @@ int main(int argc,char **argv){
  wait_state(ASTER_MEDIA_PLAYING);assert(!aster_media_pause());
  aster_media_snapshot_t paused=wait_state(ASTER_MEDIA_PAUSED),s;
  delay_ms(25);assert(!aster_media_snapshot(&s));assert(s.frame==paused.frame && !opened);
+ assert(!aster_media_stop_output(ASTER_AUDIO_OUTPUT_BLUETOOTH));
+ assert(!aster_media_snapshot(&s) && s.state==ASTER_MEDIA_PAUSED);
  assert(!aster_media_seek(100));delay_ms(25);assert(!aster_media_snapshot(&s));assert(s.frame==4800);
  assert(!aster_media_resume());wait_state(ASTER_MEDIA_PLAYING);
  wait_state(ASTER_MEDIA_ENDED);delay_ms(5);assert(!aster_media_snapshot(&s));assert(!allocations && !opened && s.frame==12000 && !s.decoder_bytes);
@@ -63,7 +65,7 @@ int main(int argc,char **argv){
  wait_state(ASTER_MEDIA_ENDED);delay_ms(5);assert(!aster_media_snapshot(&s));
  assert(s.frame==12000 && !allocations && !opened);
 
- assert(!aster_media_play(argv[1],1));wait_state(ASTER_MEDIA_PLAYING);assert(!aster_media_stop());
+ assert(!aster_media_play(argv[1],1));wait_state(ASTER_MEDIA_PLAYING);assert(!aster_media_stop_output(ASTER_AUDIO_OUTPUT_WIRED));
  wait_state(ASTER_MEDIA_IDLE);delay_ms(5);assert(!aster_media_snapshot(&s));assert(!allocations && !opened);
  assert(!aster_media_play("/nonexistent-aster-test-file",1));wait_state(ASTER_MEDIA_ERROR);
  delay_ms(5);assert(!aster_media_snapshot(&s));assert(s.error==-ENOENT && !allocations && !opened);
