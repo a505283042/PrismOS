@@ -19,6 +19,7 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/stream_buffer.h"
@@ -54,6 +55,69 @@ static StaticStreamBuffer_t pcm_stream_record;
 static atomic_bool dirty;
 static esp_bd_addr_t peer;
 static portMUX_TYPE peer_lock = portMUX_INITIALIZER_UNLOCKED;
+
+/* Only a successful receiver connection identifies a phone. A paired output
+ * speaker must never be selected as the input on the next receiver start. */
+struct phone_session {
+    esp_bd_addr_t last;
+    int64_t reconnect_at;
+    bool observed;
+};
+
+static void load_phone(struct phone_session *session)
+{
+    nvs_handle_t handle;
+    if (nvs_open("asterbt", NVS_READONLY, &handle) != ESP_OK)
+        return;
+    size_t length = sizeof(session->last);
+    bool known = nvs_get_blob(handle, "last_input", session->last, &length) == ESP_OK &&
+                 length == sizeof(session->last);
+    nvs_close(handle);
+    if (known)
+        session->reconnect_at = esp_timer_get_time() + 2000000;
+}
+
+static void poll_phone(struct phone_session *session)
+{
+    if (atomic_load(&connected)) {
+        session->reconnect_at = 0;
+        if (session->observed)
+            return;
+        session->observed = true;
+        esp_bd_addr_t current;
+        portENTER_CRITICAL(&peer_lock);
+        memcpy(current, peer, sizeof(current));
+        portEXIT_CRITICAL(&peer_lock);
+        if (!memcmp(session->last, current, sizeof(current)))
+            return;
+        memcpy(session->last, current, sizeof(current));
+        nvs_handle_t handle;
+        if (nvs_open("asterbt", NVS_READWRITE, &handle) == ESP_OK) {
+            if (nvs_set_blob(handle, "last_input", current, sizeof(current)) == ESP_OK)
+                nvs_commit(handle);
+            nvs_close(handle);
+        }
+        return;
+    }
+    session->observed = false;
+    if (!session->reconnect_at || esp_timer_get_time() < session->reconnect_at)
+        return;
+    session->reconnect_at = 0;
+    if (atomic_load(&scanning) || atomic_load(&acl_connected) ||
+        atomic_load(&a2dp_state) != ESP_A2D_CONNECTION_STATE_DISCONNECTED)
+        return;
+    esp_bd_addr_t bonds[16];
+    int count = sizeof(bonds) / sizeof(bonds[0]);
+    if (esp_bt_gap_get_bond_device_list(&count, bonds) != ESP_OK)
+        return;
+    for (int i = 0; i < count; i++) {
+        if (!memcmp(bonds[i], session->last, sizeof(session->last))) {
+            esp_err_t e = esp_a2d_sink_connect(bonds[i]);
+            ESP_LOGI(TAG, "reconnect last paired phone: %s", esp_err_to_name(e));
+            break;
+        }
+    }
+}
 
 static int bt_error(esp_err_t error)
 {
@@ -158,8 +222,10 @@ static void gap_callback(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *p)
         atomic_fetch_add(&acl_attempts, 1);
         atomic_store(&acl_status, p->acl_conn_cmpl_stat.stat);
         atomic_store(&acl_connected, p->acl_conn_cmpl_stat.stat == ESP_BT_STATUS_SUCCESS);
-        ESP_LOGI(TAG, "ACL connected status=%d handle=%u", p->acl_conn_cmpl_stat.stat,
-                 p->acl_conn_cmpl_stat.handle);
+        const uint8_t *addr = p->acl_conn_cmpl_stat.bda;
+        ESP_LOGI(TAG, "ACL connected status=%d handle=%u peer=%02x:%02x:%02x:%02x:%02x:%02x",
+                 p->acl_conn_cmpl_stat.stat, p->acl_conn_cmpl_stat.handle,
+                 addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
     } else if (event == ESP_BT_GAP_ACL_DISCONN_CMPL_STAT_EVT) {
         atomic_store(&acl_connected, false);
         atomic_store(&acl_reason, p->acl_disconn_cmpl_stat.reason);
@@ -506,6 +572,9 @@ static void receiver(void *ctx)
     }
     ESP_LOGI(TAG, "ready: %s (Classic A2DP %s / SBC)", NAME, source ? "source" : "sink");
     bool buffered = false;
+    struct phone_session phone = {0};
+    if (!source)
+        load_phone(&phone);
     int64_t check_at = 0, retry_at = 0, connect_deadline = 0;
     unsigned attempts = 0;
     while (!atomic_load(&stop_requested)) {
@@ -517,8 +586,11 @@ static void receiver(void *ctx)
             vTaskDelay(pdMS_TO_TICKS(5));
             continue;
         }
-        if (avrcp)
+        if (avrcp) {
             aster_bt_avrcp_poll();
+            aster_bt_avrcp_refresh_metadata(atomic_load(&playing));
+        }
+        poll_phone(&phone);
         unsigned hz = atomic_load(&rate), ch = atomic_load(&channels);
         if (atomic_load(&last_error)) {
             r = atomic_load(&last_error);
@@ -769,8 +841,56 @@ bool aster_idf_bt_audio_busy(void)
     return atomic_load(&running);
 }
 
+static bool parse_address(const char *text, esp_bd_addr_t out)
+{
+    if (!text || strlen(text) != 17)
+        return false;
+    const char *hex = "0123456789abcdef";
+    for (unsigned i = 0; i < 6; i++) {
+        char upper = text[3 * i], lower = text[3 * i + 1];
+        if (upper >= 'A' && upper <= 'F')
+            upper += 'a' - 'A';
+        if (lower >= 'A' && lower <= 'F')
+            lower += 'a' - 'A';
+        const char *hi = strchr(hex, upper), *lo = strchr(hex, lower);
+        if (!hi || !lo || (i < 5 && text[3 * i + 2] != ':'))
+            return false;
+        out[i] = (uint8_t)((hi - hex) * 16 + (lo - hex));
+    }
+    return true;
+}
+
 static int command(int argc, char **argv)
 {
+    if ((argc == 2 && !strcmp(argv[1], "peers")) ||
+        (argc == 3 && !strcmp(argv[1], "receive-from"))) {
+        if (!atomic_load(&running) || atomic_load(&stop_requested) ||
+            !atomic_load(&profile_ready) || atomic_load(&source_role))
+            return 1;
+        if (argc == 3) {
+            esp_bd_addr_t address;
+            if (!parse_address(argv[2], address) ||
+                atomic_load(&a2dp_state) != ESP_A2D_CONNECTION_STATE_DISCONNECTED)
+                return 1;
+            /* An explicit console selection may initiate standard SSP pairing
+             * with a discoverable phone even when its old bond has expired. */
+            esp_err_t e = esp_a2d_sink_connect(address);
+            printf("receiver connect request: %s\n", esp_err_to_name(e));
+            return e != ESP_OK;
+        }
+        esp_bd_addr_t peers[16];
+        int count = sizeof(peers) / sizeof(peers[0]);
+        if (esp_bt_gap_get_bond_device_list(&count, peers) != ESP_OK)
+            return 1;
+        for (int i = 0; i < count; i++) {
+            const uint8_t *a = peers[i];
+            char address[18];
+            snprintf(address, sizeof(address), "%02x:%02x:%02x:%02x:%02x:%02x",
+                     a[0], a[1], a[2], a[3], a[4], a[5]);
+            printf("paired %s\n", address);
+        }
+        return 0;
+    }
     if (argc == 3 && !strcmp(argv[1], "connect")) {
         int r = aster_idf_bt_source_request(ASTER_PLAYER_BT_CONNECT, argv[2]);
         printf("connect result=%d\n", r);
@@ -787,7 +907,7 @@ static int command(int argc, char **argv)
     }
     if (argc != 2) {
         puts(
-            "aster-bt on | source | scan | devices | connect ADDRESS | off | status | play | pause | next | previous | volume 0..100");
+            "aster-bt on | peers | receive-from ADDRESS | source | scan | devices | connect ADDRESS | off | status | play | pause | next | previous | volume 0..100");
         return 1;
     }
     if (!strcmp(argv[1], "source") || !strcmp(argv[1], "scan")) {
@@ -946,15 +1066,9 @@ int aster_idf_bt_source_request(uint32_t cmd, const char *address)
         return -EINVAL;
     if (active && source && (atomic_load(&connected) || atomic_load(&connecting)))
         return -EBUSY;
-    unsigned b[6];
-    if (sscanf(address, "%2x:%2x:%2x:%2x:%2x:%2x", &b[0], &b[1], &b[2], &b[3], &b[4], &b[5]) != 6)
-        return -EINVAL;
     esp_bd_addr_t selected;
-    for (unsigned i = 0; i < 6; i++) {
-        if (b[i] > 255)
-            return -EINVAL;
-        selected[i] = (uint8_t)b[i];
-    }
+    if (!parse_address(address, selected))
+        return -EINVAL;
     char canonical[18];
     snprintf(canonical, sizeof(canonical), "%02x:%02x:%02x:%02x:%02x:%02x", selected[0],
              selected[1], selected[2], selected[3], selected[4], selected[5]);

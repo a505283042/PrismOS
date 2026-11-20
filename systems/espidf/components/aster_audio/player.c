@@ -63,6 +63,8 @@ static int control(const aster_player_request_t *request)
         return aster_idf_bt_audio_control(request->command);
     aster_player_info_t bt = {0};
     if (aster_idf_bt_audio_info(&bt)) {
+        if (request->command == ASTER_PLAYER_SEEK)
+            return -ENOTSUP;
         if (request->command == ASTER_PLAYER_PAUSE || request->command == ASTER_PLAYER_RESUME)
             return aster_idf_bt_audio_control(request->command);
         return -EBUSY;

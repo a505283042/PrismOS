@@ -4,6 +4,60 @@ from test_waveshare import ROOT,run_c
 
 
 class Discovery(unittest.TestCase):
+    def test_receiver_reconnects_only_to_last_bonded_input_once(self):
+        source = (ROOT / 'systems/espidf/components/aster_audio/bt_audio.c').read_text()
+        session = source[source.index('struct phone_session {'):source.index('static int bt_error(')]
+        run_c(r'''
+#include <assert.h>
+#include <stdatomic.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
+typedef unsigned char esp_bd_addr_t[6];
+typedef int esp_err_t;
+typedef int nvs_handle_t;
+enum { ESP_OK=0, NVS_READONLY=0, NVS_READWRITE=1, ESP_A2D_CONNECTION_STATE_DISCONNECTED=0 };
+static atomic_bool connected, scanning, acl_connected;
+static atomic_uint a2dp_state;
+static esp_bd_addr_t peer={4}, stored={0}, bonded_phone={4};
+static unsigned attempts, writes;
+static int64_t now;
+#define ESP_LOGI(tag,fmt,arg) ((void)(arg))
+#define esp_err_to_name(e) (e)
+#define portENTER_CRITICAL(ptr) ((void)0)
+#define portEXIT_CRITICAL(ptr) ((void)0)
+static int64_t esp_timer_get_time(void) { return now; }
+static int nvs_open(const char *name,int mode,nvs_handle_t *h) {
+    (void)name;(void)mode;*h=1;return 0;
+}
+static int nvs_get_blob(int h,const char *key,void *out,size_t *size) {
+    (void)h;(void)key;assert(*size==6);memcpy(out,stored,6);return stored[0]?0:1;
+}
+static int nvs_set_blob(int h,const char *key,const void *src,size_t size) {
+    (void)h;(void)key;assert(size==6);memcpy(stored,src,6);writes++;return 0;
+}
+static void nvs_close(int h) {(void)h;}
+static int nvs_commit(int h) {(void)h;return 0;}
+static int esp_bt_gap_get_bond_device_list(int *n,esp_bd_addr_t *out) {
+    assert(*n>=2);memset(out[0],9,6);memcpy(out[1],bonded_phone,6);*n=2;return 0;
+}
+static int esp_a2d_sink_connect(esp_bd_addr_t address) {
+    assert(!memcmp(address,peer,6));attempts++;return 0;
+}
+''' + session + r'''
+int main(void) {
+    struct phone_session first={0}; load_phone(&first); poll_phone(&first);
+    assert(!attempts);
+    connected=true; poll_phone(&first); poll_phone(&first); assert(writes==1);
+    connected=false; now=10000000; poll_phone(&first); assert(!attempts);
+    struct phone_session restart={0};load_phone(&restart);poll_phone(&restart);assert(!attempts);
+    now+=2000000;poll_phone(&restart);poll_phone(&restart);assert(attempts==1);
+    bonded_phone[0]=0;load_phone(&restart);now+=2000000;poll_phone(&restart);assert(attempts==1);
+    bonded_phone[0]=4;load_phone(&restart);scanning=true;now+=2000000;poll_phone(&restart);
+    assert(attempts==1);
+}
+''')
+
     def test_close_waits_for_late_connection_and_acl(self):
         source = (ROOT / 'systems/espidf/components/aster_audio/bt_audio.c').read_text()
         close = source[source.index('static void disconnect_link('):source.index('static void discovery_poll(')]
@@ -47,6 +101,7 @@ int main(void){
     def test_scan_in_receiver_and_retry_after_gap_error(self):
         source = (ROOT / 'systems/espidf/components/aster_audio/bt_audio.c').read_text()
         poll = source[source.index('static void discovery_poll('):source.index('static int source_poll(')]
+        parse = source[source.index('static bool parse_address('):source.index('static int command(')]
         control = source[source.index('int aster_idf_bt_source_request('):source.index('int aster_idf_bt_source_list(')]
         run_c(r'''
 #include <aster/player.h>
@@ -83,8 +138,11 @@ static int start_audio(bool avrcp, bool source, bool connect_first) {
 static int esp_a2d_sink_disconnect(esp_bd_addr_t address) { (void)address; return 0; }
 enum { ASTER_AUDIO_OUTPUT_BLUETOOTH = 2 };
 static void aster_media_stop_output(unsigned endpoint) { (void)endpoint; assert(0); }
-''' + poll + control + r'''
+''' + poll + parse + control + r'''
 int main(void) {
+    esp_bd_addr_t selected;
+    assert(parse_address("aB:eF:00:11:22:33", selected) && selected[0] == 0xab);
+    assert(!parse_address("ab-ef:00:11:22:33", selected));
     running = true;
     connected = true; /* A phone connection and the receiver can stay up during inquiry. */
     assert(aster_idf_bt_source_request(ASTER_PLAYER_BT_SCAN, NULL) == 0);

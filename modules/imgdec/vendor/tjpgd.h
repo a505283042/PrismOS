@@ -87,6 +87,13 @@ struct JDEC {
 
 
 /* TJpgDec API functions */
+/* ESP-IDF supplies ROM symbols with the same names but a different JDEC
+ * layout. Keep the decoder and its callers bound to this build's config. */
+#define jd_prepare    aster_tjpgd_prepare
+#define jd_decomp     aster_tjpgd_decomp
+#define jd_mcu_load   aster_tjpgd_mcu_load
+#define jd_mcu_output aster_tjpgd_mcu_output
+#define jd_restart    aster_tjpgd_restart
 JRESULT jd_prepare(JDEC * jd, size_t (*infunc)(JDEC *, uint8_t *, size_t), void * pool, size_t sz_pool, void * dev);
 
 JRESULT jd_decomp(JDEC * jd, int (*outfunc)(JDEC *, void *, JRECT *), uint8_t scale);

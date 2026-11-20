@@ -4,6 +4,7 @@
 #include "driver/i2c_master.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "aster_power.h"
@@ -27,6 +28,10 @@ enum {
 };
 
 static bool imu_ready;
+static SemaphoreHandle_t imu_lock;
+static TickType_t imu_retry_at;
+static bool imu_retry_pending;
+static unsigned imu_read_errors;
 
 static esp_err_t read_register(i2c_master_dev_handle_t d, uint8_t reg, void *data, size_t size)
 {
@@ -58,6 +63,24 @@ static bool pmu_key_init(void)
     return true;
 }
 
+static int imu_configure(void)
+{
+    uint8_t id;
+    if (read_register(imu, 0, &id, 1) != ESP_OK)
+        return -EIO;
+    if (id != 0x05)
+        return -ENODEV;
+    /* QST QMI8658C Rev A: little endian, auto increment, 4g/512dps at 112Hz.
+  * Synchronous sampling locks the six axes until GZ_H is read. */
+    const uint8_t settings[][2] = {
+        {0x08, 0x00}, {0x02, 0x40}, {0x03, 0x16}, {0x04, 0x56}, {0x08, 0x83}};
+    for (unsigned i = 0; i < sizeof(settings) / sizeof(settings[0]); i++)
+        if (write_register(imu, settings[i][0], settings[i][1]) != ESP_OK)
+            return -EIO;
+    vTaskDelay(pdMS_TO_TICKS(60));
+    return 0;
+}
+
 static void imu_init(i2c_master_bus_handle_t bus)
 {
     i2c_device_config_t cfg = {.dev_addr_length = I2C_ADDR_BIT_LEN_7,
@@ -65,38 +88,47 @@ static void imu_init(i2c_master_bus_handle_t bus)
                                .scl_speed_hz = 400000};
     if (i2c_master_bus_add_device(bus, &cfg, &imu) != ESP_OK)
         return;
-    uint8_t id = 0;
-    if (read_register(imu, 0, &id, 1) != ESP_OK || id != 0x05)
-        return;
-    /* QST QMI8658C Rev A: little endian, auto increment, 4g/512dps at 112Hz.
-  * Synchronous sampling locks the six axes until GZ_H is read. */
-    const uint8_t settings[][2] = {
-        {0x08, 0x00}, {0x02, 0x40}, {0x03, 0x16}, {0x04, 0x56}, {0x08, 0x83}};
-    for (unsigned i = 0; i < sizeof(settings) / sizeof(settings[0]); i++)
-        if (write_register(imu, settings[i][0], settings[i][1]) != ESP_OK)
-            return;
-    vTaskDelay(pdMS_TO_TICKS(60));
-    imu_ready = true;
+    imu_lock = xSemaphoreCreateMutex();
     float ax = 0, ay = 0, az = 0, gx = 0, gy = 0, gz = 0;
     int r = fakepod_imu_read(&ax, &ay, &az, &gx, &gy, &gz);
     ESP_LOGI("fakepod", "QMI8658 sample status=%d accel=%.3f,%.3f,%.3f gyro=%.3f,%.3f,%.3f", r, ax,
              ay, az, gx, gy, gz);
-    if (r)
-        imu_ready = false;
-}
-
-bool fakepod_imu_available(void)
-{
-    return imu_ready;
 }
 
 int fakepod_imu_read(float *ax, float *ay, float *az, float *gx, float *gy, float *gz)
 {
-    if (!imu_ready)
-        return -19;
+    if (!imu || !imu_lock)
+        return -ENODEV;
+    if (xSemaphoreTake(imu_lock, 0) != pdTRUE)
+        return -EAGAIN;
+    if (!imu_ready) {
+        TickType_t now = xTaskGetTickCount();
+        if (imu_retry_pending && (int32_t)(now - imu_retry_at) < 0) {
+            xSemaphoreGive(imu_lock);
+            return -EAGAIN;
+        }
+        int result = imu_configure();
+        if (result) {
+            if (!imu_retry_pending)
+                ESP_LOGW("fakepod", "QMI8658 configuration failed (%d), will retry", result);
+            imu_retry_at = now + pdMS_TO_TICKS(1000);
+            imu_retry_pending = true;
+            xSemaphoreGive(imu_lock);
+            return result;
+        }
+        imu_ready = true;
+        imu_retry_pending = false;
+        imu_read_errors = 0;
+    }
     uint8_t data[12];
-    if (read_register(imu, 0x35, data, sizeof(data)) != ESP_OK)
-        return -5;
+    if (read_register(imu, 0x35, data, sizeof(data)) != ESP_OK) {
+        if (++imu_read_errors >= 3)
+            imu_ready = false;
+        xSemaphoreGive(imu_lock);
+        return -EIO;
+    }
+    imu_read_errors = 0;
+    xSemaphoreGive(imu_lock);
     float values[6];
     for (unsigned i = 0; i < 6; i++) {
         int16_t raw = (int16_t)((uint16_t)data[i * 2] | ((uint16_t)data[i * 2 + 1] << 8));

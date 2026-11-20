@@ -43,7 +43,7 @@ void app_main(void)
     const aster_idf_io_t io = {.width = FP_LCD_WIDTH,
                                .height = FP_LCD_HEIGHT,
                                .present = fakepod_lcd_present,
-                               .imu_read = fakepod_imu_available() ? fakepod_imu_read : NULL,
+                               .imu_read = fakepod_imu_read,
                                .touch = touch == ESP_OK ? fakepod_touch_read : NULL,
                                .max_touch_points = 1,
                                .system_info = &identity,
