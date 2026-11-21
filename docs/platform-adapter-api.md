@@ -1,10 +1,10 @@
 # 平台适配接口 v1
 
-此接口属于固件内部，独立于 APP ABI 4.3。P4/IDF、lckfb/Zephyr 和桌面后端使用同一组 C 契约；外设引脚、厂商驱动和操作系统对象由适配器持有。
+此接口属于固件内部，版本独立于公开 APP ABI。鱼鹰光电 P4C5 和 FAKE POD NANO PRO（ESP-IDF）、立创实战派（Zephyr） 和桌面后端使用同一组 C 契约；外设引脚、厂商驱动和操作系统对象由适配器持有。
 
 ## 四个边界
 
-- `common/port/aster_device.h`：显示、帧缓冲、方向和坐标、触摸与按键、音频、IMU、相机、Wi-Fi。`aster_device_ops.def` 列出全部 112 项已有硬件操作。未提供的状态操作返回不支持，布尔查询返回 false，指针查询返回 NULL；void 通知为空操作，调用可选 void 诊断前查询 `aster_device_has()`。驱动原有返回值保持兼容。
+- `common/port/aster_device.h`：显示、帧缓冲、方向和坐标、触摸与按键、音频、IMU、相机、Wi-Fi。`aster_device_ops.def` 列出已有硬件操作。未提供的状态操作返回不支持，布尔查询返回 false，指针查询返回 NULL；void 通知为空操作，调用可选 void 诊断前查询 `aster_device_has()`。驱动原有返回值保持兼容。
 - `aster_os.h`：内存区域、时钟、睡眠、文件/目录/容量、递归互斥锁、计数信号量、任务启动与等待。公开句柄只含不透明指针；Zephyr、FreeRTOS、VFS 结构体不穿透接口。返回值为负 errno；读取、写入返回实际字节数。超时单位是毫秒，`ASTER_OS_WAIT_FOREVER` 表示无限等待。任务优先级 0 最高，栈大小单位为字节，core=-1 不绑定 CPU；不支持的亲和性必须报错。
 - `aster_services.h`：设备资料和实际能力、应用注册表快照、启动/安装/卸载入口、代码目录、KV、存储状态和日志。注册表返回调用方拥有的快照，避免公共 UI 持有原生注册表中的易失指针。APP 启动/安装入口继续沿用原服务的结果约定。
 - `aster_network.h`：41 项异步 TCP/UDP、HTTP(S)、MQTT、WebSocket 和网络事件操作。接口保留 owner、代际句柄、EAGAIN/EOF、部分读写和关闭归属的原有规则。公共代码不获取 socket/TLS 对象。证书校验必须保留，不能在缺少 TLS 实现时降级为 HTTP。

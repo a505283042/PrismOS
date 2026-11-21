@@ -1,6 +1,6 @@
 # 共享首次开机引导
 
-首次开机基础功能已合入 `main`，GitHub 静态源开发在 `feat/github-static-distribution`。
+鱼鹰光电 P4C5、立创实战派和 FAKE POD NANO PRO 共用此引导。
 源码不内置商城，不内置完整 APP 字体；SD 卡必须存在。
 固定系统界面使用同一组 16/20/24px LVGL 字库，初始化、设置与恢复共用。
 字形来自现有有许可的 cpfont 资源，由 `tools/build_system_fonts.py` 提取界面需要的字符，
@@ -38,12 +38,12 @@ SD 上的 `aster.setup.pending` KV 标记在修改资源前写入，字体、商
 启动检查读取字体头与末记录/文件边界，不在每次启动完整扫描约 92 MiB；下载时做完整摘要校验。
 这不是通用固件 OTA，当前只初始化完整字库与商城依赖。
 
-## 公共 GitHub 源
+## 公共资源源
 
 未配置资源服务器的新卡在 Web 配网中默认使用：
 
 ```text
-https://github.com/hello-myj/aster-releases/releases/latest/download/aster-source.json
+https://aster-releases.obs.cn-south-1.myhuaweicloud.com/aster-source.json
 ```
 
 以 `.json` 结尾的入口采用静态协议，其余地址继续使用本地动态服务器协议。
@@ -62,7 +62,7 @@ GitHub 的跨域重定向保留 Range/If-Range，清除认证、Cookie 等其余
 APP ABI 的 URL/请求头限制没有改变，TCP/HTTP 正文队列也没有扩大。
 增加的是请求存活期间的 PSRAM 上下文容量；没有为此扩大常驻 SRAM 池或线程栈。
 
-发布操作见 SDK `docs/github-distribution.md` 和 `aster-releases` 仓库 Actions。
+下面是 2026-11-10 的 GitHub 镜像验证记录。当前 OBS 发布操作见 [发布仓库](https://github.com/hello-myj/aster-releases)。GitHub 镜像操作见 SDK `docs/github-distribution.md` 和 `aster-releases` 仓库 Actions。
 2026-11-10 首次 Actions 任务 `42832391485` 已完成，公开 Release
 `public-42832391485-1` 含 45 个附件；主机实测字体 Range 数据与本地源一致。
 P4 已通过公网清单校验并下载、安装商城 0.2.0；lckfb 字体下载遇到网络停顿，

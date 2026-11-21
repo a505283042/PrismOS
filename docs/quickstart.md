@@ -1,6 +1,6 @@
 # 从工程到设备
 
-当前 ABI 为 4.0.0。APP 使用 CPU 目标 `xtensa`，可安装到立创和微雪两款 ESP32-S3。屏幕方向写在应用 manifest 里，运行时再查询实际尺寸。
+当前 ABI 为 4.5.0。立创 ESP32-S3 实战派与微雪 S3 使用 `xtensa`；鱼鹰光电 P4C5 和 FAKE POD NANO PRO 使用 `riscv`。下例为立创板构建一个 AOT 包，同时用其中的 WASM 在主机做首帧检查。跨架构部署时应为目标架构重新构建。
 
 准备 Python 3.12、SDK 附带的工具链，以及 Node 22。三个仓库放在同一父目录时：
 

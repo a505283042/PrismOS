@@ -1,6 +1,6 @@
 # 许可与第三方组件清单
 
-ASTER 自研代码采用 **MIT License**（见仓库根 [LICENSE](../LICENSE)，
+ASTER 自研代码采用 **MIT License**（见仓库根 [LICENSE](../../LICENSE)，
 Copyright (c) 2026 mjgame）。所有自研源文件头部带
 `SPDX-License-Identifier: MIT`。本文件说明**随仓库携带的第三方（vendored）
 组件保持各自上游许可**，以及使用/再分发时的注意事项。

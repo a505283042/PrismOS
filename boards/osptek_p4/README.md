@@ -1,9 +1,6 @@
 # OSPTEK ESP32-P4 + C5 / ST7102 480×480
 
-状态：实验性接入；2026-10-31 已完成首轮 P4 v3.2 实机启动检查，未完成整板验收。
-固件分支 `feat/osptek-p4-st7102-idf`，配套 SDK 使用 `main`。
-RGB666 验证另存于固件 `feat/osptek-p4-rgb666-validation` 和 SDK `feat/p4-rgb888-rendering`。
-此描述符位于 `boards/`，不把它发布为已验证的 `hardware/` 设备。
+鱼鹰光电 P4C5 的设备标识为 `osptek-p4-st7102`，应用目标为 `riscv`。主线采用 RGB565。桌面、五点触摸、SD、外接 C5 联网、商城安装及 AOT 游戏已有实机验证。固件的 `feat/osptek-p4-rgb666-validation` 和 SDK 的 `feat/p4-rgb888-rendering` 保存颜色实验。
 
 采用 ESP-IDF 6.0：现有 ST7102/ST7123 例程、P4 MIPI-DSI 和 C5 ESP-Hosted
 驱动均可直接复用。Zephyr 保留原 S3 目标；共享的应用、文件、图形和音频逻辑
@@ -228,14 +225,7 @@ python -m unittest discover -s tests
 并输出 PNG；显示、触摸、音频和无线硬件是测试替身。截图不是实机照片。
 RISC-V AOT 另已完成上述 P4 v3.2 实机检查，仍不代表全部应用与硬件功能验收通过。
 
-需要接板确认：供电/复位、屏幕 ID/时序/颜色/撕裂、触摸方向、SD 稳定性、
-C5 链路/联网/TLS、扬声器和麦克风、实际内存余量与性能。
-
-软件限制：当前单个 RGB565 surface；PANEL_CANVAS 提示回退到普通 guest 缓冲；
-帧事务控制返回 ENOTSUP，由 SDK 走已有批次协议。方向固定，未实现旋转。
-单 scanout 缓冲不保证无撕裂。摄像头、IMU、键盘、蓝牙未启用，能力查询为 false；
-对应可选设备接口返回 ENODEV/空结果，不伪造传感器或采集数据。
-这些限制尚未解除前，不应对外宣称完整、已验收的 Aster 硬件目标。
+显示提交、网络和存储性能见下方按日期记录的实测。长期 SD 稳定性和具体应用的性能需要按固件、存储卡及负载分别测量。应用通过设备能力接口判断音频、传感器等外设是否可用。
 
 ## Wiring and panel settings
 

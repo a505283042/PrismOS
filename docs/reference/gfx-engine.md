@@ -26,7 +26,7 @@ cpfont/tiny_ttf 与 imgdec 基础设施。
 无论哪种，命令都只对 `ASTER_PIXEL_RGB565` 生效。
 
 **ABI 3.0 起没有第二套 UI**：`aster/ui.h` 控件运行时、`ui.bin`、`ASTER_EVENT_UI`
-全部删除，app 界面一律在这条路径上自己画（见 [ui-runtime.md](ui-runtime.md) 墓碑页）。
+全部删除，app 界面一律在这条路径上自己画（见[已移除的控件运行时](abi-v1.md#removed-widget-runtime)）。
 阅读器 / 播放器界面后续同样基于本引擎重做。
 
 规范头（单一事实源）：`abi/include/aster/gfx.h`；

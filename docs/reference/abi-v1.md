@@ -1,6 +1,8 @@
 # ASTER ABI Specification
 
-Status: **3.4 is the current release**. 3.4 adds preloaded PCM effect mixing and
+Historical ABI 3.4 specification. The [current public headers](../../contract/include/aster) and [architecture guide](../architecture.md) describe the supported ABI.
+
+3.4 adds preloaded PCM effect mixing and
 extends the reference board's volume range to +6 dB at 100. 3.3 renames the
 fixed-width container and wire markers to their Aster spellings (ASTP packages,
 ASTI icons, ASTR asset blobs, ASTERFS transfer). That break is at the byte level,
@@ -81,7 +83,7 @@ require a major bump. The changelog below stays for history; symbols removed in
 > 桌面 + 字体池 + screenshot」）。删除的示例 app：`clock.ui` / `reader.ui` /
 > `filer.ui` / `flush.ui` / `music`（阅读器与播放器界面将用绘图引擎重做）。
 > 安装门禁按 major 相等放行：**1.x / 2.x 包在 3.0 设备上被 `ASTER_EABI` 拒绝**。
-> 详见 [ui-runtime.md](ui-runtime.md)（墓碑页）。
+> 详见[已移除的控件运行时](#removed-widget-runtime)。
 
 > **2.0（破坏性，2026-09）**：移除 6 个冗余 import，不留兼容桩：
 > `aster_audio_get_info`（格式固定为编译期宏 `ASTER_AUDIO_*`）、`aster_audio_play` /
@@ -100,7 +102,7 @@ require a major bump. The changelog below stays for history; symbols removed in
 > 包继续链接运行；`aster_ui_set_value` 对 `font_src=sd` label 仍是换阅读字号
 > （落到 14/16/18/20），与字体来源无关。包内 MJXF 子集、SD `reader_<px>.bin`、
 > rodata 烤字、动态 sysfont 四条旧路径全部移除，App 不再打任何字体资源。
-> 见 [ui-runtime.md](ui-runtime.md)。
+> 见[已移除的控件运行时](#removed-widget-runtime)。
 >
 > **2.2（增量）**：GFX 命令引擎 —— app 端把绘制意图编码成定长 24B 命令环，
 > 一帧一次 `aster_gfx_exec` 提交，固件光栅器直接画进 app 的 RGB565 surface
@@ -141,7 +143,7 @@ require a major bump. The changelog below stays for history; symbols removed in
 > **1.5（增量）**：Native UI Runtime —— `aster/ui.h`（`page_show` / `set_text` /
 > `set_visible` / `set_value` / `bind_click` / `commit` / `list_*` / `theme`）
 > 与 `ASTER_EVENT_UI`。界面由包内 `ui.bin` 描述、固件 LVGL 渲染；wasm 禁止再
-> 链接 LVGL。用到这些符号的包需 `abi_min="1.5"`。见 [ui-runtime.md](ui-runtime.md)。
+> 链接 LVGL。用到这些符号的包需 `abi_min="1.5"`。见[已移除的控件运行时](#removed-widget-runtime)。
 >
 > **1.6（增量）**：录音/播放拉取面 —— `aster/audio.h`（`aster_audio_get_info` /
 > `aster_audio_play` / `aster_audio_record`）。V1 固定 **16 kHz / 16-bit / 立体声
@@ -169,12 +171,12 @@ require a major bump. The changelog below stays for history; symbols removed in
 > `"font_src": "sd"` 的 label；没有这份位图时才 TinyTTF 流式读 `reader.ttf`。
 > 空路径 = `/sd/aster/fonts/reader_16.bin`。需 manifest `fs` + `sd`。
 > `aster_ui_set_value(id, px)` 换字号（固件落到 14/16/18/20），不另增符号。
-> 用到该符号的包需 `abi_min="1.10"`。见 [ui-runtime.md](ui-runtime.md)。
+> 用到该符号的包需 `abi_min="1.10"`。见[已移除的控件运行时](#removed-widget-runtime)。
 > *（历史：2.1 起 MJXF 装载路径移除，`font_open` 变 no-op，见顶部 2.1 条目。）*
 >
 > **1.11（增量）**：`aster_ui_set_file` 由固件按 label 宽高排一页文本、识别 UTF-8/GB2312、
 > 可选去掉 LRC 时间戳，再 `set_text`。上划/下划在固件翻页。把 17 KB 码表和大缓冲留在宿主，避免 wasm/AOT
-> 栈溢出。用到该符号的包需 `abi_min="1.11"`。见 [ui-runtime.md](ui-runtime.md)。
+> 栈溢出。用到该符号的包需 `abi_min="1.11"`。见[已移除的控件运行时](#removed-widget-runtime)。
 >
 > **1.13（增量）**：`aster_audio_seek(msec)` 跳转后台播放会话；`get_state` v2
 > 增加 `msec_done` / `msec_total`。`aster_audio_get_lyrics` 返回 UTF-8 歌词
@@ -325,7 +327,7 @@ be app-writable.
 ### ui **[1.5]** — **removed in 3.0**
 Host-side LVGL renders `ui.bin`. Apps must not link LVGL. Clicks are queued as
 `ASTER_EVENT_UI` (`u.ui.id`, `u.ui.kind` = `ASTER_UI_CLICK` / `ASTER_UI_VALUE` / `ASTER_UI_LONGPRESS`).
-Packages that import these symbols need `abi_min="1.5"`. See [ui-runtime.md](ui-runtime.md).
+Packages that import these symbols need `abi_min="1.5"`. See [Removed widget runtime](#removed-widget-runtime).
 
 > **3.0**: every symbol below, `ui.bin`, `ASTER_EVENT_UI` and `u.ui` are gone. Use
 > the gfx engine instead — see [gfx-engine.md](gfx-engine.md).
@@ -622,3 +624,7 @@ app exits ("return home", crash included). The UI's own exit is final —
 no restart loop. Empty setting = headless (shell-only). Kconfig 抽象默认是
 关；**参考 ESP32-S3 板 conf 打开桌面**（固件内置原生 launcher，`CONFIG_ASTER_LAUNCHER_NATIVE=y`；
 guest-app 桌面 `aster.launcher.desktop` 已下沉进固件，仅留 `ASTER_SYSTEM_UI_CUSTOM` 作自定义皮肤回退）。
+
+## Removed widget runtime
+
+ABI 3.0 removed the guest widget runtime. The earlier examples in this specification describe historical packages. Current apps draw through the graphics API.

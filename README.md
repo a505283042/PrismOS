@@ -1,10 +1,17 @@
 # Aster Firmware
 
-立创 ESP32-S3 实战派（`lckfb-s3`）和微雪 ESP32-S3-Touch-LCD-3.5B（`waveshare-35b`）的设备固件。当前 ABI 为 4.2.0。桌面固定竖屏；APP 可以声明横屏或竖屏。
+Aster 提供 Launcher、首次联网设置、应用安装和 WAMR AOT 运行时。当前 ABI 为 4.5.0。设备固件按开发板构建，应用按 CPU 架构构建。
 
-## 构建和烧录
+## 选择开发板
 
-需要 Python 3.12、west 和 Zephyr SDK。`west.yml` 锁定 Zephyr v4.4.2。
+- **立创 ESP32-S3 实战派**。Zephyr，240×320，应用目标 `xtensa`，设备标识 `aster.esp32s3.lckfb`。使用下方默认配置。
+- **鱼鹰光电 P4C5**。ESP-IDF 6.0，ST7102 480×480，外接 C5 提供 Wi-Fi。应用目标 `riscv`，设备标识 `osptek-p4-st7102`。[接线、构建与烧录](boards/osptek_p4/README.md)
+- **FAKE POD NANO PRO**。ESP32-S31，ESP-IDF 6.1，460×460，应用目标 `riscv`，设备标识 `fakepod-s31`。板上可使用本地播放器、经典蓝牙音频和 USB 读卡器。[板级说明](boards/fakepod_s31/README.md)
+- **微雪 ESP32-S3-Touch-LCD-3.5B**。Zephyr 实验性配置，应用目标 `xtensa`。使用 `boards/waveshare_35b/selection.conf` 单独构建。[板级说明](boards/waveshare_35b/README.md)
+
+## 构建与烧录
+
+Zephyr 使用 Python 3.12、west 和 Zephyr SDK。新工作区先按 `west.yml` 初始化依赖并应用驱动补丁。以下命令在固件仓库根目录运行。[工作区补丁](patches/README.md)
 
 ```bash
 python tools/firmware.py menuconfig
@@ -12,23 +19,16 @@ python tools/firmware.py build
 python tools/firmware.py flash
 ```
 
-固件命令没有 `--target`。板型和功能保存在 `config/aster.conf`，首次使用时从 `config/default.conf` 加载。产物在 `build/firmware/`。
+两块 ESP-IDF 板各自使用对应版本的 IDF 环境和独立构建目录，命令见上方板级说明。已发布的预编译镜像及适用板型见 [固件 Release](https://github.com/hello-myj/aster-firmware/releases)。
 
-微雪板使用独立配置和构建目录：
+## 首次开机与应用安装
 
-```bash
-python tools/firmware.py build --config boards/waveshare_35b/selection.conf --build-dir build/waveshare-35b
-python tools/firmware.py flash --config boards/waveshare_35b/selection.conf --build-dir build/waveshare-35b
-```
+在已发布初始化资源的板上插好 SD 卡，首次开机按屏幕提示用手机连接设备热点，在网页填写 Wi-Fi。设备从默认 OBS 源下载并校验系统字体和本机商城，完成后进入桌面。已有完整资源的卡可离线启动。自建服务或更换证书见 [首次开机](docs/first-boot-setup.md) 和 [下载源配置](docs/distribution-config.md)。
 
-接线、引脚和 USB 调试配置见 [boards/waveshare_35b/README.md](boards/waveshare_35b/README.md)。新工作区用 `west init -l /path/to/aster-firmware` 和 `west update` 初始化，驱动补丁见 [patches/README.md](patches/README.md)。
+开发者可从 SDK 通过串口安装 AOT 包。以下以 RISC-V 为例，立创板使用 `xtensa`。固件在安装时核对架构、ABI 和包完整性，在启动时核对清单中的 `supported_boards` 和 `requires`。
 
-## 安装应用
-
-设备先刷入本固件，并把 `dist/sdcard/` 复制到 SD 卡根目录。应用包由 SDK 用 `--target xtensa` 构建，ABI 最低为 4.0。3.x 包在安装和启动时被拒绝，需要用当前 SDK 重新编译。
-
-```bash
-aster deploy dist/xtensa/<应用>.ast --target xtensa --port <串口> --run
+```text
+aster deploy dist/riscv/<应用>.ast --target riscv --port <串口> --run
 ```
 
 ## 显示和 Wi-Fi
@@ -70,7 +70,7 @@ systems/zephyr/           设备服务和桌面
 python tools/resources.py
 ```
 
-字库需与固件一同更新到 SD 卡；仅烧录固件不会替换卡上的旧字形。字体与光带的像素对齐、资源重建及验证说明见 [桌面显示清晰度](docs/ui-display-clarity.md)。
+首次开机引导负责准备 SD 字库。自行重建字体后需重新分发资源；烧录镜像不会改写卡上的字形。字体与光带的像素对齐、资源重建及验证说明见 [桌面显示清晰度](docs/ui-display-clarity.md)。
 
 ## 检查
 
@@ -83,6 +83,6 @@ python -m unittest discover -s tests -v
 
 架构见 [docs/architecture.md](docs/architecture.md)。从工程到设备的步骤见 [快速入门](docs/quickstart.md)。许可见 [NOTICE.md](NOTICE.md)。
 
-## P4 实验性移植
+## 新板适配
 
-鱼鹰 ESP32-P4+C5 / ST7102 MIPI 480×480 的独立 ESP-IDF 移植见 [板级说明](boards/osptek_p4/README.md)。已接入桌面、应用管理、图形/存储、网络、音频及 RISC-V AOT；当前没有实机验证，仍有说明中列出的限制，不属于正式支持的设备。构建使用 `tools/bringup.py`。
+同架构、同 AOT 配置的新板可以沿用现有 SDK。固件通过板型 ID 和运行时能力描述设备。ESP-IDF 的音频编解码器、外接 C5 和板上接线由各板注册。实现入口及可选服务见 [平台适配接口](docs/platform-adapter-api.md)。

@@ -14,7 +14,7 @@
 
 包解析的 `aster_pkg_policy_t` 由后端提供目标架构、ABI、分配器和日志回调。因此相同解析器既可检查 P4 的 RISC-V 包，也可检查 lckfb 的 Xtensa 包。APP ABI 和安装布局保持不变。
 
-提取正在分阶段进行：安装事务、版本/注册表、网络服务状态机及 UI 中仍有两边复用但位于 `systems/zephyr` 的实现。它们尚未全部变成独立公共模块；下一步应先定义文件系统、同步、时钟和显示提交端口，再迁移相应逻辑。具体边界见 `common/README.md`。
+公共文件系统、时钟、同步、设备和网络接口位于 `common/port/`。首次开机和配网界面由 `systems/shared/setup/` 复用。部分安装事务、注册表和 UI 源码仍位于 `systems/zephyr/`，ESP-IDF 通过适配层使用这些实现。[公共模块](../common/README.md)
 
 ## 内部动态内存与运行时
 
@@ -28,7 +28,7 @@
 - `lckfb-s3`：立创开发板 ESP32-S3 实战派。
 - `waveshare-35b`：微雪 ESP32-S3-Touch-LCD-3.5B，实验性板级支持。
 - `osptek-p4`：鱼鹰光电 P4C5 开发板（ST7102，480×480），ESP-IDF。
-- `fakepod-s31`：FAKE POD NANO PRO，ESP-IDF，Hi-Fi 功能开发中。
+- `fakepod-s31`：FAKE POD NANO PRO，ESP-IDF，460×460，支持可选系统播放器和经典蓝牙音频。
 <!-- hardware-models:end -->
 
 S3 硬件使用 `--target xtensa`，P4/S31 使用 `--target riscv`。硬件型号由固件配置选择，SDK 不接受板卡名作为编译目标。
@@ -52,13 +52,11 @@ Zephyr 的项目 menuconfig 独立运行，配置先于设备树与 Kconfig 处�
 
 无屏模式关闭显示输出与触摸能力，保持 shell、存储、网络和非图形应用服务。显示能力根据运行期状态报告，不能只看编译选项。没有可用显示设备时，启动路径仍初始化输入和其余服务。
 
-当前硬件的公开描述给出硬件支持的能力上限；固件通过配置可以裁减服务，并通过运行模式暂时关闭显示能力。SDK 构建检查 CPU 平台契约和能力名称；具体板卡是否具备所需能力由部署握手、固件安装和 APP 启动检查 `requires`，APP 运行时查询实际能力。
+当前硬件的公开描述给出硬件支持的能力上限；固件通过配置可以裁减服务，并通过运行模式暂时关闭显示能力。SDK 构建检查 CPU 平台契约和能力名称；具体板卡是否具备所需能力由固件在启动 APP 时检查 `supported_boards` 和 `requires`，APP 运行时查询实际能力。
 
 ## 新增硬件或系统
 
-新增实体硬件时，添加 menuconfig 的硬件选项及 `hardware/` 映射；需要新驱动时增加 `platform/<port>/` 和其 Kconfig/CMake，实现同一个 HAL。相同硬件的屏幕工作模式不得添加成硬件型号。
-
-新增实际运行系统时，增加对应构建适配和 `systems/<system>/` 的服务/ABI 实现。当前 lckfb 等 S3 板走根目录 Zephyr 构建；P4 使用 `boards/osptek_p4/idf` 独立 IDF 工程及 `tools/bringup.py osptek-p4 build` 入口，尚未纳入统一 menuconfig 硬件清单。两者通过公共 ABI 和核心逻辑保持应用语义一致。
+同架构的新板沿用现有应用包格式和 SDK。Zephyr 板通过设备树、硬件选择和 Kconfig 注册。ESP-IDF 板在独立 IDF 工程的 `aster_board.cmake` 里选择已有适配器，在板目录提供接线与可选服务。需要新器件时实现相应接口。商店分发该板的初始化资源时，还需发布匹配其设备 ID、架构和屏幕的配置。[适配示例](platform-adapter-api.md)
 
 `systems/posix/` 只是用于在 Linux x86_64 上验证核心 ABI 和 APP 生命周期的开发工具，不列入硬件清单，不是第二款固件，也不宣称完整硬件模拟。
 
