@@ -52,6 +52,14 @@ aster_error_t aster_imgdec_render(const char *path, uint8_t *out,
 			   uint32_t cap_w, uint32_t cap_h,
 			   uint32_t *out_w, uint32_t *out_h, bool nearest);
 
+/* Called after a block of PNG scanline data has been decoded. Returning
+ * false cancels the render and releases the decoder's file and buffers. */
+typedef bool (*aster_imgdec_progress_fn)(void *context);
+aster_error_t aster_imgdec_render_monitored(const char *path, uint8_t *out, uint32_t cap_w,
+                                            uint32_t cap_h, uint32_t *out_w, uint32_t *out_h,
+                                            bool nearest, aster_imgdec_progress_fn progress,
+                                            void *context);
+
 /* Convenience for the CLI: probe + render into a PSRAM canvas, then blit
  * centered on the display (black backdrop). Blocks until drawn. */
 aster_error_t aster_imgdec_show(const char *path, bool nearest);

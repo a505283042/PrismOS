@@ -103,6 +103,10 @@ static atomic_bool stop_requested;
 static atomic_bool pause_requested;
 static atomic_int stop_reason;
 static atomic_uint callback_deadline;
+/* Owned by the VM task. Only verified decoder progress can spend this
+ * allowance. Repeated native calls share it until the guest returns. */
+enum { IMAGE_WORK_BUDGET_MS = 10000 };
+static uint32_t image_work_left;
 static wasm_module_inst_t active_instance;
 #ifdef ESP_PLATFORM
 #include <zephyr/kernel.h>
@@ -176,6 +180,25 @@ void aster_idf_check_watchdog(void)
         wasm_runtime_terminate(active_instance);
     }
     instance_unlock();
+}
+
+bool aster_idf_image_progress(void *context)
+{
+    uint32_t *previous_ms = context;
+    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+    uint32_t elapsed = now - *previous_ms;
+    *previous_ms = now;
+    instance_lock();
+    uint32_t deadline = atomic_load(&callback_deadline);
+    bool allowed = deadline && (int32_t)(deadline - now) > 0 &&
+                   !atomic_load(&stop_requested) && elapsed <= image_work_left;
+    if (allowed) {
+        image_work_left -= elapsed;
+        deadline += elapsed;
+        atomic_store(&callback_deadline, deadline ? deadline : 1);
+    }
+    instance_unlock();
+    return allowed;
 }
 
 void aster_idf_request_stop(void)
@@ -316,6 +339,7 @@ static int call(wasm_module_inst_t instance, wasm_exec_env_t env, const char *na
 #define CONFIG_ASTER_APP_WATCHDOG_MS 2000
 #endif
     uint32_t deadline = (uint32_t)(esp_timer_get_time() / 1000) + CONFIG_ASTER_APP_WATCHDOG_MS;
+    image_work_left = IMAGE_WORK_BUDGET_MS;
     atomic_store(&callback_deadline, deadline ? deadline : 1);
     bool success = wasm_runtime_call_wasm(env, function, count, args);
     atomic_store(&callback_deadline, 0);

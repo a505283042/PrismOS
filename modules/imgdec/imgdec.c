@@ -458,6 +458,15 @@ aster_error_t aster_imgdec_probe(const char *path, aster_imgdec_info_t *info, ui
 aster_error_t aster_imgdec_render(const char *path, uint8_t *out, uint32_t cap_w, uint32_t cap_h,
                                   uint32_t *out_w, uint32_t *out_h, bool nearest)
 {
+	return aster_imgdec_render_monitored(path, out, cap_w, cap_h, out_w, out_h, nearest,
+	                                     NULL, NULL);
+}
+
+aster_error_t aster_imgdec_render_monitored(const char *path, uint8_t *out, uint32_t cap_w,
+                                            uint32_t cap_h, uint32_t *out_w, uint32_t *out_h,
+                                            bool nearest, aster_imgdec_progress_fn progress,
+                                            void *context)
+{
 	uint8_t sig[2];
 	struct fs_file_t f;
 	fs_file_t_init(&f);
@@ -472,7 +481,8 @@ aster_error_t aster_imgdec_render(const char *path, uint8_t *out, uint32_t cap_w
 	if (sig[0] == 0xFF && sig[1] == 0xD8)
 		return aster_jpg_render(path, out, cap_w, cap_h, out_w, out_h, nearest);
 	if (sig[0] == 0x89 && sig[1] == 'P')
-		return aster_png_render(path, out, cap_w, cap_h, out_w, out_h, nearest);
+		return aster_png_render(path, out, cap_w, cap_h, out_w, out_h, nearest, progress,
+		                        context);
 	return ASTER_ENOTSUP;
 }
 

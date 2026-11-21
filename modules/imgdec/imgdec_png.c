@@ -282,10 +282,15 @@ static int png_row(pngc_t *c)
 /* returns 0 = fine, 1 = whole raster consumed, -1 = corrupt */
 static int png_feed(pngc_t *c, const uint8_t *p, size_t n)
 {
-	while (n--) {
+	while (n) {
 		if (c->sy >= c->h)
 			return 1; /* trailing junk after raster */
-		c->rowA[c->fill++] = *p++;
+		size_t available = c->row_total - c->fill;
+		size_t take = n < available ? n : available;
+		memcpy(c->rowA + c->fill, p, take);
+		c->fill += take;
+		p += take;
+		n -= take;
 		if (c->fill == c->row_total) {
 			if (png_row(c) != 0)
 				return -1;
@@ -367,7 +372,8 @@ aster_error_t aster_png_probe(const char *path, aster_imgdec_info_t *info, uint3
 }
 
 aster_error_t aster_png_render(const char *path, uint8_t *out, uint32_t cap_w, uint32_t cap_h,
-                               uint32_t *out_w, uint32_t *out_h, bool nearest)
+                               uint32_t *out_w, uint32_t *out_h, bool nearest,
+                               aster_imgdec_progress_fn progress, void *context)
 {
 	aster_error_t err = ASTER_ECORRUPT;
 	struct fs_file_t f;
@@ -518,6 +524,10 @@ aster_error_t aster_png_render(const char *path, uint8_t *out, uint32_t cap_w, u
 			dict_ofs = (dict_ofs + out_used) & (TINFL_LZ_DICT_SIZE - 1);
 			if (fr < 0)
 				goto free_all;
+			if (progress && !progress(context)) {
+				err = ASTER_ETIMEDOUT;
+				goto free_all;
+			}
 			if (fr == 1)
 				break; /* raster complete */
 		}

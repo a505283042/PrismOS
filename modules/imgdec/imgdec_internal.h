@@ -60,7 +60,8 @@ static inline aster_error_t aster_jpg_render(const char *path, uint8_t *out, uin
 aster_error_t aster_png_probe(const char *path, aster_imgdec_info_t *info, uint32_t cap_w,
                               uint32_t cap_h);
 aster_error_t aster_png_render(const char *path, uint8_t *out, uint32_t cap_w, uint32_t cap_h,
-                               uint32_t *out_w, uint32_t *out_h, bool nearest);
+                               uint32_t *out_w, uint32_t *out_h, bool nearest,
+                               aster_imgdec_progress_fn progress, void *context);
 #else
 static inline aster_error_t aster_png_probe(const char *path, aster_imgdec_info_t *info,
                                             uint32_t cap_w, uint32_t cap_h)
@@ -75,7 +76,8 @@ static inline aster_error_t aster_png_probe(const char *path, aster_imgdec_info_
 }
 
 static inline aster_error_t aster_png_render(const char *path, uint8_t *out, uint32_t cap_w,
-                                             uint32_t cap_h, uint32_t *ow, uint32_t *oh, bool nn)
+                                             uint32_t cap_h, uint32_t *ow, uint32_t *oh, bool nn,
+                                             aster_imgdec_progress_fn progress, void *context)
 {
 	ARG_UNUSED(path);
 	ARG_UNUSED(out);
@@ -84,6 +86,8 @@ static inline aster_error_t aster_png_render(const char *path, uint8_t *out, uin
 	ARG_UNUSED(ow);
 	ARG_UNUSED(oh);
 	ARG_UNUSED(nn);
+	ARG_UNUSED(progress);
+	ARG_UNUSED(context);
 	return ASTER_ENOTSUP;
 }
 #endif

@@ -115,6 +115,10 @@
 */
 #pragma once
 
+/* ESP ROM also exports tinfl_decompress, with a different decompressor
+ * layout. Keep the PNG caller and the bundled implementation bound together. */
+#define tinfl_decompress aster_miniz_tinfl_decompress
+
 
 
 /* Defines to completely disable specific portions of miniz.c: 

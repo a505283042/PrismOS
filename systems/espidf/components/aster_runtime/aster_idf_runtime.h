@@ -45,6 +45,7 @@ bool aster_idf_is_running(void);
 uint32_t aster_idf_touch_capacity(void);
 bool aster_idf_stop_is_requested(void);
 void aster_idf_check_watchdog(void);
+bool aster_idf_image_progress(void *previous_ms);
 void aster_idf_exit_current(int code);
 bool aster_idf_take_handoff(char out[64]);
 

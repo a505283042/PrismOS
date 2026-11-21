@@ -15,9 +15,11 @@ class BluetoothCover(unittest.TestCase):
             (work / "rom.c").write_text(
                 "void jd_prepare(void) {}\nvoid jd_decomp(void) {}\n"
                 "void jd_restart(void) {}\nvoid jd_mcu_load(void) {}\nvoid jd_mcu_output(void) {}\n"
+                "void tinfl_decompress(void) {}\n"
             )
             (work / "caller.c").write_text(r'''
 #include "tjpgd.h"
+#include "miniz.h"
 #include <assert.h>
 static size_t empty(JDEC *d, uint8_t *out, size_t size) {
     (void)d; (void)out; (void)size; return 0;
@@ -26,11 +28,23 @@ int main(void) {
     JDEC decoder;
     uint32_t pool[3072];
     assert(jd_prepare(&decoder, empty, pool, sizeof(pool), NULL) == JDR_INP);
+    /* Last DEFLATE block, two uncompressed bytes. The ROM symbol above must
+     * never handle the bundled library's state. */
+    static const mz_uint8 block[] = {1, 2, 0, 0xfd, 0xff, 'O', 'K'};
+    mz_uint8 output[2];
+    size_t in_bytes = sizeof(block), out_bytes = sizeof(output);
+    tinfl_decompressor inflate;
+    tinfl_init(&inflate);
+    assert(tinfl_decompress(&inflate, block, &in_bytes, output, output, &out_bytes,
+                            TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF) == TINFL_STATUS_DONE);
+    assert(out_bytes == 2 && output[0] == 'O' && output[1] == 'K');
 }
 ''')
             exe = work / "link-check"
             subprocess.run(["cc", "-std=c11", "-I", str(vendor), str(work / "caller.c"),
-                            str(vendor / "tjpgd.c"), str(work / "rom.c"), "-o", str(exe)],
+                            "-DMINIZ_NO_ARCHIVE_APIS", "-DMINIZ_NO_STDIO", "-DMINIZ_NO_TIME",
+                            str(vendor / "tjpgd.c"), str(vendor / "miniz.c"),
+                            str(work / "rom.c"), "-o", str(exe)],
                            check=True)
             subprocess.run([str(exe)], check=True)
 
