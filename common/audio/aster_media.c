@@ -11,6 +11,8 @@ static aster_os_mutex_t lock;
 static aster_os_task_t worker;
 static aster_media_snapshot_t status;
 static bool active, paused;
+static uint32_t default_output = ASTER_AUDIO_OUTPUT_WIRED;
+static bool follows_output, switch_pending;
 static uint64_t seek_ms = UINT64_MAX;
 static atomic_bool stopping;
 
@@ -44,6 +46,30 @@ int aster_media_init(void)
     return r;
 }
 
+static int switch_output(uint32_t *current, bool *opened, uint32_t target,
+                         const aster_audio_format_t *format)
+{
+    int close_error = 0;
+    /* Open first. If the speaker disappears, the decoder and wired stream
+     * can continue at exactly the same sample. */
+    if (!aster_audio_output_open(target, format)) {
+        if (*opened) {
+            (void)aster_audio_output_drain(*current);
+            close_error = aster_audio_output_close(*current);
+        }
+        if (!close_error) {
+            *current = target;
+            *opened = true;
+            return 0;
+        }
+        (void)aster_audio_output_close(target);
+    }
+    take();
+    status.endpoint = *current;
+    give();
+    return close_error;
+}
+
 static void media_worker(void *ctx)
 {
     (void)ctx;
@@ -57,7 +83,9 @@ static void media_worker(void *ctx)
                                    .flags = ASTER_AUDIO_OUTPUT_EXCLUSIVE};
     aster_audio_decoder_info_t info = {0};
     uint64_t position = 0;
-    /* path/endpoint cannot be replaced until active is cleared. */
+    /* The path is fixed for this decoder. Only this worker changes the
+     * current endpoint or performs output I/O. */
+    uint32_t endpoint = status.endpoint;
     int r = aster_audio_decoder_open(status.path, cancelled, NULL, &decoder);
     if (!r) {
         aster_audio_decoder_info(decoder, &info);
@@ -83,10 +111,23 @@ static void media_worker(void *ctx)
         bool pause = paused;
         uint64_t seek = seek_ms;
         seek_ms = UINT64_MAX;
+        uint32_t target = endpoint;
+        if (switch_pending && !pause && seek == UINT64_MAX) {
+            target = default_output;
+            switch_pending = false;
+            /* Reserve the destination so Bluetooth shutdown waits for an
+             * in-flight open before releasing its audio queue. */
+            status.endpoint = target;
+        }
         give();
+        if (target != endpoint) {
+            r = switch_output(&endpoint, &opened, target, &format);
+            if (r)
+                break;
+        }
         if (seek != UINT64_MAX) {
             if (opened) {
-                r = aster_audio_output_close(status.endpoint);
+                r = aster_audio_output_close(endpoint);
                 opened = false;
                 if (r)
                     break;
@@ -104,8 +145,8 @@ static void media_worker(void *ctx)
         }
         if (pause) {
             if (opened) {
-                r = aster_audio_output_drain(status.endpoint);
-                int closed = aster_audio_output_close(status.endpoint);
+                r = aster_audio_output_drain(endpoint);
+                int closed = aster_audio_output_close(endpoint);
                 opened = false;
                 if (!r)
                     r = closed;
@@ -120,7 +161,7 @@ static void media_worker(void *ctx)
             continue;
         }
         if (!opened) {
-            r = aster_audio_output_open(status.endpoint, &format);
+            r = aster_audio_output_open(endpoint, &format);
             if (r)
                 break;
             opened = true;
@@ -146,7 +187,7 @@ static void media_worker(void *ctx)
         unsigned sent = 0;
         while (sent < (unsigned)n && !atomic_load(&stopping)) {
             int accepted =
-                aster_audio_output_write(status.endpoint, pcm + sent * 2, (unsigned)n - sent);
+                aster_audio_output_write(endpoint, pcm + sent * 2, (unsigned)n - sent);
             if (accepted == -EAGAIN) {
                 aster_os_sleep_ms(1);
                 continue;
@@ -167,11 +208,11 @@ static void media_worker(void *ctx)
     }
     if (opened) {
         if (ended && !r) {
-            int drained = aster_audio_output_drain(status.endpoint);
+            int drained = aster_audio_output_drain(endpoint);
             if (drained)
                 r = drained;
         }
-        int closed = aster_audio_output_close(status.endpoint);
+        int closed = aster_audio_output_close(endpoint);
         if (!r)
             r = closed;
     }
@@ -203,6 +244,10 @@ static int start_locked(const char *path, uint32_t endpoint, uint64_t initial_se
         if (r)
             return -EBUSY;
     }
+    follows_output = endpoint == ASTER_MEDIA_OUTPUT_SYSTEM;
+    switch_pending = false;
+    if (follows_output)
+        endpoint = default_output;
     status = (aster_media_snapshot_t){
         .size = sizeof(status), .version = 1, .state = ASTER_MEDIA_OPENING, .endpoint = endpoint};
     memcpy(status.path, path, strlen(path) + 1);
@@ -227,14 +272,27 @@ int aster_media_play(const char *path, uint32_t endpoint)
         return -ENOTSUP;
     if (!path || !*path || strlen(path) >= ASTER_MEDIA_PATH_MAX)
         return -EINVAL;
-    aster_audio_output_caps_t caps;
-    int r = aster_audio_output_caps(endpoint, &caps);
-    if (r)
-        return r;
     take();
-    r = start_locked(path, endpoint, UINT64_MAX);
+    aster_audio_output_caps_t caps;
+    int r = aster_audio_output_caps(endpoint ? endpoint : default_output, &caps);
+    if (!r)
+        r = start_locked(path, endpoint, UINT64_MAX);
     give();
     return r;
+}
+
+void aster_media_set_default_output(uint32_t endpoint)
+{
+    if (!lock.handle || !endpoint || endpoint >= ASTER_AUDIO_OUTPUT_COUNT)
+        return;
+    take();
+    if (default_output != endpoint) {
+        default_output = endpoint;
+        /* Disconnect retains the existing stop-on-speaker-loss behaviour. */
+        switch_pending = active && follows_output && !atomic_load(&stopping) &&
+                         endpoint != ASTER_AUDIO_OUTPUT_WIRED && endpoint != status.endpoint;
+    }
+    give();
 }
 
 int aster_media_snapshot(aster_media_snapshot_t *out)
@@ -306,7 +364,7 @@ int aster_media_seek(uint32_t milliseconds)
    * seek request; the UI caller never performs decoder/SD work here. */
         char path[ASTER_MEDIA_PATH_MAX];
         memcpy(path, status.path, sizeof(path));
-        uint32_t endpoint = status.endpoint;
+        uint32_t endpoint = follows_output ? ASTER_MEDIA_OUTPUT_SYSTEM : status.endpoint;
         r = start_locked(path, endpoint, milliseconds);
     }
     give();

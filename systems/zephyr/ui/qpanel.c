@@ -674,7 +674,8 @@ static void bt_tick(void)
 		} else if (info.state != ASTER_PLAYER_STOPPING &&
 		           list.state != ASTER_PLAYER_BT_STOPPING) {
 			int error;
-			if (bt_pending != ASTER_PLAYER_BT_ON && info.mode == ASTER_PLAYER_LOCAL &&
+			if (!(info.capabilities & ASTER_PLAYER_CAP_SYSTEM_OUTPUT) &&
+			    bt_pending != ASTER_PLAYER_BT_ON && info.mode == ASTER_PLAYER_LOCAL &&
 			    (info.state == ASTER_PLAYER_OPENING || info.state == ASTER_PLAYER_PLAYING ||
 			     info.state == ASTER_PLAYER_PAUSED)) {
 				error = bt_command(ASTER_PLAYER_STOP, NULL);

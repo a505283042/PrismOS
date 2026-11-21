@@ -42,6 +42,11 @@ bool aster_bt_tx_active(void)
     return atomic_load(&active);
 }
 
+bool aster_bt_tx_ready(void)
+{
+    return atomic_load(&linked) && atomic_load(&streaming);
+}
+
 uint32_t aster_bt_tx_queued(void)
 {
     return atomic_load(&queued);
@@ -87,7 +92,7 @@ static int caps(void *ctx, aster_audio_output_caps_t *out)
 static int open_output(void *ctx, const aster_audio_format_t *format)
 {
     (void)ctx;
-    if (!atomic_load(&linked) || !atomic_load(&streaming))
+    if (!aster_bt_tx_ready())
         return -ENOTCONN;
     if (converter || converted)
         return -EBUSY;
@@ -122,7 +127,7 @@ static int open_output(void *ctx, const aster_audio_format_t *format)
 static int write_output(void *ctx, const void *pcm, uint32_t frames)
 {
     (void)ctx;
-    if (!atomic_load(&linked) || !atomic_load(&streaming))
+    if (!aster_bt_tx_ready())
         return -ENOTCONN;
     if (!converter || !atomic_load(&active))
         return -EBADF;

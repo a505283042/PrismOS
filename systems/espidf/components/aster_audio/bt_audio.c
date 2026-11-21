@@ -469,6 +469,12 @@ static int source_poll(int64_t *check_at, int64_t *retry_at, int64_t *connect_de
     return atomic_load(&last_error);
 }
 
+static bool speaker_ready(void)
+{
+    return atomic_load(&source_role) && atomic_load(&codec_ready) && aster_bt_tx_ready() &&
+           !atomic_load(&stop_requested);
+}
+
 static void receiver(void *ctx)
 {
     (void)ctx;
@@ -572,6 +578,7 @@ static void receiver(void *ctx)
     }
     ESP_LOGI(TAG, "ready: %s (Classic A2DP %s / SBC)", NAME, source ? "source" : "sink");
     bool buffered = false;
+    bool speaker_selected = false;
     struct phone_session phone = {0};
     if (!source)
         load_phone(&phone);
@@ -583,6 +590,12 @@ static void receiver(void *ctx)
             r = source_poll(&check_at, &retry_at, &connect_deadline, &attempts);
             if (r)
                 break;
+            bool ready = speaker_ready();
+            if (ready != speaker_selected) {
+                aster_media_set_default_output(ready ? ASTER_AUDIO_OUTPUT_BLUETOOTH
+                                                     : ASTER_AUDIO_OUTPUT_WIRED);
+                speaker_selected = ready;
+            }
             vTaskDelay(pdMS_TO_TICKS(5));
             continue;
         }
@@ -673,6 +686,7 @@ done:
     atomic_store(&want_connection, false);
     bool media_safe = true;
     if (source) {
+        aster_media_set_default_output(ASTER_AUDIO_OUTPUT_WIRED);
         aster_bt_tx_link(false, false, atomic_load(&rate));
         aster_media_stop_output(ASTER_AUDIO_OUTPUT_BLUETOOTH);
         int64_t end = esp_timer_get_time() + 3000000;
@@ -755,7 +769,7 @@ done:
 static int start_audio_impl(bool enable_avrcp, bool source, bool connect_first)
 {
     aster_media_snapshot_t media;
-    if (source && !aster_media_snapshot(&media) &&
+    if (source && !aster_media_snapshot(&media) && media.endpoint == ASTER_AUDIO_OUTPUT_BLUETOOTH &&
         (media.state == ASTER_MEDIA_OPENING || media.state == ASTER_MEDIA_PLAYING ||
          media.state == ASTER_MEDIA_PAUSED || media.state == ASTER_MEDIA_STOPPING)) {
         puts("media session busy");
@@ -1116,7 +1130,7 @@ int aster_idf_bt_source_list(aster_player_bt_list_t *out)
     if (active && atomic_load(&stop_requested))
         out->state = ASTER_PLAYER_BT_STOPPING;
     out->error = active ? atomic_load(&discovery_error) : source ? atomic_load(&last_error) : 0;
-    out->output_rate = active && source && atomic_load(&codec_ready) ? atomic_load(&rate) : 0;
+    out->output_rate = active && speaker_ready() ? atomic_load(&rate) : 0;
     out->queued_bytes = aster_bt_tx_queued();
     return 0;
 }

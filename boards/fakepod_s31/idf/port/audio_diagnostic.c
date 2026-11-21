@@ -122,10 +122,12 @@ static int media_command(int argc, char **argv)
         if (!r)
             printf(
                 "MEDIA state=%lu error=%ld rate=%lu bits=%lu channels=%lu codec=%lu frame=%" PRIu64
-                "/%" PRIu64 " decoder=%u peak=%u path=%s\n",
+                "/%" PRIu64 " decoder=%u peak=%u output=%s path=%s\n",
                 (unsigned long)s.state, (long)s.error, (unsigned long)s.rate, (unsigned long)s.bits,
                 (unsigned long)s.channels, (unsigned long)s.codec, s.frame, s.total_frames,
-                (unsigned)s.decoder_bytes, (unsigned)s.decoder_peak, s.path);
+                (unsigned)s.decoder_bytes, (unsigned)s.decoder_peak,
+                s.endpoint == ASTER_AUDIO_OUTPUT_BLUETOOTH ? "bluetooth" :
+                s.endpoint == ASTER_AUDIO_OUTPUT_WIRED ? "wired" : "none", s.path);
 #ifdef ASTER_AUDIO_SPECTRUM_ENABLED
         if (!r) {
             uint32_t levels[2];

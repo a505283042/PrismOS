@@ -39,6 +39,16 @@ static int open_output(void *ctx,const aster_audio_format_t *f){(void)ctx;assert
 static int write_output(void *ctx,const void *pcm,uint32_t n){(void)ctx;(void)pcm;assert(opened);delay_ms(10);return (int)n;}
 static int drain_output(void *ctx){(void)ctx;assert(opened);return 0;}
 static int close_output(void *ctx){(void)ctx;assert(opened);opened=false;return 0;}
+static atomic_uint speaker_frames, speaker_opens;
+static atomic_bool reject_speaker;
+static int open_speaker(void *ctx,const aster_audio_format_t *format){
+    (void)ctx;assert(format->rate == 48000);atomic_fetch_add(&speaker_opens,1);
+    return atomic_load(&reject_speaker) ? -ENOTCONN : 0;
+}
+static int write_speaker(void *ctx,const void *pcm,uint32_t frames){
+    (void)ctx;(void)pcm;delay_ms(5);atomic_fetch_add(&speaker_frames,frames);return (int)frames;
+}
+static int speaker_done(void *ctx){(void)ctx;return 0;}
 static aster_media_snapshot_t wait_state(uint32_t state){
  aster_media_snapshot_t s;
  for(unsigned i=0;i<300;i++){assert(!aster_media_snapshot(&s));if(s.state==state)return s;delay_ms(2);}
@@ -49,7 +59,10 @@ int main(int argc,char **argv){
  assert(aster_media_play(argv[1],1)==-ENOTSUP);
  static const aster_audio_output_ops_t ops={.size=sizeof(ops),.version=1,.name="host",
  .caps=caps,.open=open_output,.write=write_output,.drain=drain_output,.close=close_output};
- assert(!aster_audio_output_bind(1,&ops,NULL));assert(!aster_media_init());
+ static const aster_audio_output_ops_t speaker={.size=sizeof(speaker),.version=1,.name="speaker",
+ .caps=caps,.open=open_speaker,.write=write_speaker,.drain=speaker_done,.close=speaker_done};
+ assert(!aster_audio_output_bind(1,&ops,NULL));
+ assert(!aster_audio_output_bind(2,&speaker,NULL));assert(!aster_media_init());
  assert(!aster_media_play(argv[1],1));assert(aster_media_play(argv[1],1)==-EBUSY);
  wait_state(ASTER_MEDIA_PLAYING);assert(!aster_media_pause());
  aster_media_snapshot_t paused=wait_state(ASTER_MEDIA_PAUSED),s;
@@ -71,6 +84,40 @@ int main(int argc,char **argv){
  delay_ms(5);assert(!aster_media_snapshot(&s));assert(s.error==-ENOENT && !allocations && !opened);
  assert(!aster_media_play(argv[1],1));wait_state(ASTER_MEDIA_PLAYING);assert(!aster_media_stop());
  wait_state(ASTER_MEDIA_IDLE);delay_ms(5);assert(!aster_media_snapshot(&s));assert(!allocations);
+ /* The first block is in flight on the wired endpoint when the speaker becomes ready. */
+ assert(!aster_media_play(argv[1],ASTER_MEDIA_OUTPUT_SYSTEM));
+ wait_state(ASTER_MEDIA_PLAYING);
+ aster_media_set_default_output(ASTER_AUDIO_OUTPUT_BLUETOOTH);
+ s=wait_state(ASTER_MEDIA_ENDED);
+ assert(s.endpoint==ASTER_AUDIO_OUTPUT_BLUETOOTH && s.frame==12000);
+ assert(speaker_frames>0 && speaker_frames<12000 && !opened);
+ delay_ms(5);
+
+ aster_media_set_default_output(ASTER_AUDIO_OUTPUT_WIRED);
+ assert(!aster_media_play(argv[1],ASTER_MEDIA_OUTPUT_SYSTEM));
+ wait_state(ASTER_MEDIA_PLAYING);assert(!aster_media_pause());
+ paused=wait_state(ASTER_MEDIA_PAUSED);
+ unsigned before=speaker_frames;
+ aster_media_set_default_output(ASTER_AUDIO_OUTPUT_BLUETOOTH);delay_ms(30);
+ assert(!aster_media_snapshot(&s) && s.frame==paused.frame && s.state==ASTER_MEDIA_PAUSED);
+ assert(speaker_frames==before);
+ assert(!aster_media_resume());s=wait_state(ASTER_MEDIA_ENDED);
+ assert(speaker_frames-before==s.total_frames-paused.frame);
+ delay_ms(5);
+
+ /* A failed handoff keeps playing the same wired stream; an explicit wired
+  * session ignores later system route changes. */
+ aster_media_set_default_output(ASTER_AUDIO_OUTPUT_WIRED);
+ reject_speaker=true;
+ assert(!aster_media_play(argv[1],ASTER_MEDIA_OUTPUT_SYSTEM));wait_state(ASTER_MEDIA_PLAYING);
+ aster_media_set_default_output(ASTER_AUDIO_OUTPUT_BLUETOOTH);
+ s=wait_state(ASTER_MEDIA_ENDED);assert(!s.error && s.endpoint==ASTER_AUDIO_OUTPUT_WIRED && s.frame==12000);
+ unsigned attempts=speaker_opens;
+ aster_media_set_default_output(ASTER_AUDIO_OUTPUT_WIRED);delay_ms(5);
+ assert(!aster_media_play(argv[1],ASTER_AUDIO_OUTPUT_WIRED));wait_state(ASTER_MEDIA_PLAYING);
+ aster_media_set_default_output(ASTER_AUDIO_OUTPUT_BLUETOOTH);
+ s=wait_state(ASTER_MEDIA_ENDED);assert(s.endpoint==ASTER_AUDIO_OUTPUT_WIRED && speaker_opens==attempts);
+ delay_ms(5);assert(!aster_media_snapshot(&s) && !allocations);
  pthread_mutex_destroy(lock.handle);
  return 0;
 }

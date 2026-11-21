@@ -19,8 +19,8 @@ static int info(aster_player_info_t *out)
     out->capabilities |= ASTER_PLAYER_CAP_SPECTRUM;
 #endif
 #if CONFIG_BT_ENABLED && CONFIG_BT_CLASSIC_ENABLED
-    out->capabilities |=
-        ASTER_PLAYER_CAP_BT_SINK | ASTER_PLAYER_CAP_REMOTE | ASTER_PLAYER_CAP_BT_SOURCE;
+    out->capabilities |= ASTER_PLAYER_CAP_BT_SINK | ASTER_PLAYER_CAP_REMOTE |
+                         ASTER_PLAYER_CAP_BT_SOURCE | ASTER_PLAYER_CAP_SYSTEM_OUTPUT;
 #endif
     if (aster_idf_bt_audio_info(out)) {
 #ifdef ASTER_AUDIO_SPECTRUM_ENABLED
@@ -71,6 +71,13 @@ static int control(const aster_player_request_t *request)
     }
     switch (request->command) {
     case ASTER_PLAYER_PLAY_FILE:
+        if (request->value == ASTER_PLAYER_OUTPUT_SYSTEM) {
+#if CONFIG_BT_ENABLED && CONFIG_BT_CLASSIC_ENABLED
+            return aster_media_play(request->path, ASTER_MEDIA_OUTPUT_SYSTEM);
+#else
+            return -ENOTSUP;
+#endif
+        }
         if (request->value > ASTER_AUDIO_OUTPUT_BLUETOOTH)
             return -EINVAL;
         if (request->value == ASTER_AUDIO_OUTPUT_BLUETOOTH) {
@@ -81,8 +88,7 @@ static int control(const aster_player_request_t *request)
             if (list.state != ASTER_PLAYER_BT_CONNECTED || !list.output_rate)
                 return -ENOTCONN;
         }
-        return aster_media_play(request->path,
-                                request->value ? request->value : ASTER_AUDIO_OUTPUT_WIRED);
+        return aster_media_play(request->path, request->value ? request->value : ASTER_AUDIO_OUTPUT_WIRED);
     case ASTER_PLAYER_PAUSE:
         return aster_media_pause();
     case ASTER_PLAYER_RESUME:

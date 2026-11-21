@@ -21,6 +21,21 @@
 #include "dr_mp3.h"
 #define DECODER_BUDGET (768u * 1024u)
 
+enum { MP3_POINTS = 768, MP3_PREROLL = DRMP3_SEEK_LEADING_MP3_FRAMES };
+_Static_assert(MP3_PREROLL > 0 && !(MP3_PREROLL & (MP3_PREROLL - 1)),
+               "MP3 index stride must be a power of two");
+typedef struct {
+    uint64_t offsets[MP3_POINTS];
+    uint64_t preceding[MP3_PREROLL];
+    uint64_t next_header, end, pcm, frame_number, reader_offset;
+    uint32_t count, samples_per_frame, header_bytes;
+    uint64_t stride;
+    uint8_t header[4];
+    bool finished;
+    aster_os_file_t reader;
+    uint8_t block[16384];
+} mp3_index_t;
+
 struct aster_audio_decoder {
     aster_os_file_t file;
     uint64_t length, cursor, decoded;
@@ -31,6 +46,7 @@ struct aster_audio_decoder {
     drwav *wav;
     drflac *flac;
     drmp3 *mp3;
+    mp3_index_t *index;
 
     /* Newlib's int32_t can be long while dr_libs uses int. Do not alias the
   * caller's int32_t buffer through an incompatible int pointer. */
@@ -102,6 +118,61 @@ static bool cancelled(aster_audio_decoder_t *d)
     return false;
 }
 
+/* Consume only contiguous MPEG Layer III headers. Each offset comes from the
+ * actual frame size, including VBR and padding. A gap or unsupported frame
+ * leaves the remaining stream to dr_mp3's normal seek path. */
+static void index_headers(aster_audio_decoder_t *d, uint64_t offset, const uint8_t *data, size_t n)
+{
+    mp3_index_t *idx = d->index;
+    while (!idx->finished) {
+        uint64_t at = idx->next_header + idx->header_bytes;
+        if (at < offset || at - offset >= n)
+            break;
+        size_t pos = (size_t)(at - offset);
+        size_t take = sizeof(idx->header) - idx->header_bytes;
+        if (take > n - pos)
+            take = n - pos;
+        memcpy(idx->header + idx->header_bytes, data + pos, take);
+        idx->header_bytes += take;
+        if (idx->header_bytes < sizeof(idx->header))
+            break;
+
+        const uint8_t *h = idx->header;
+        if (!drmp3_hdr_valid(h) || DRMP3_HDR_GET_LAYER(h) != 1 || DRMP3_HDR_IS_FREE_FORMAT(h) ||
+            drmp3_hdr_sample_rate_hz(h) != d->info.rate) {
+            idx->finished = true;
+            break;
+        }
+        unsigned bytes = drmp3_hdr_frame_bytes(h, 0) + drmp3_hdr_padding(h);
+        unsigned samples = drmp3_hdr_frame_samples(h);
+        if (bytes > idx->end - idx->next_header ||
+            (idx->samples_per_frame && samples != idx->samples_per_frame)) {
+            idx->finished = true;
+            break;
+        }
+        uint64_t frame = idx->frame_number;
+        unsigned slot = frame % MP3_PREROLL;
+        if (frame && !(frame & (idx->stride - 1))) {
+            if (idx->count == MP3_POINTS) {
+                /* Keep even multiples of the old stride on long recordings. */
+                for (unsigned i = 0; i < MP3_POINTS / 2; i++)
+                    idx->offsets[i] = idx->offsets[2 * i + 1];
+                idx->count /= 2;
+                idx->stride *= 2;
+            }
+            if (!(frame & (idx->stride - 1)))
+                idx->offsets[idx->count++] = idx->preceding[slot];
+        }
+        idx->preceding[slot] = idx->next_header;
+        idx->frame_number++;
+        idx->samples_per_frame = samples;
+        idx->pcm += samples;
+        idx->next_header += bytes;
+        idx->header_bytes = 0;
+        idx->finished = idx->end - idx->next_header < sizeof(idx->header);
+    }
+}
+
 static size_t read_file(void *ctx, void *buffer, size_t bytes)
 {
     aster_audio_decoder_t *d = ctx;
@@ -128,6 +199,8 @@ static size_t read_file(void *ctx, void *buffer, size_t bytes)
             d->io_error = -EIO;
             break;
         }
+        if (d->index && !d->index->finished)
+            index_headers(d, d->cursor, (const uint8_t *)buffer + done, (size_t)n);
         done += (size_t)n;
         d->cursor += (unsigned)n;
     }
@@ -210,7 +283,38 @@ static bool mp3_path(const char *path)
            ext[3] == '3';
 }
 
-static int open_mp3(aster_audio_decoder_t *d)
+/* During playback, read at most one block ahead per PCM block. On a cold
+ * seek, extend only as far as the requested frame. The second cursor never
+ * disturbs dr_mp3's buffered audio or holds a file open after indexing. */
+static void extend_index(aster_audio_decoder_t *d, uint64_t target, bool one_block)
+{
+    mp3_index_t *idx = d->index;
+    if (!idx || !idx->reader.handle)
+        return;
+    while (!idx->finished && idx->pcm <= target && !cancelled(d)) {
+        uint64_t at = idx->next_header + idx->header_bytes;
+        if (at < idx->reader_offset || at - idx->reader_offset >= sizeof(idx->block)) {
+            if (aster_os_file_seek(&idx->reader, (int64_t)at, ASTER_OS_SEEK_SET))
+                break;
+            idx->reader_offset = at;
+        }
+        uint64_t left = idx->end - idx->reader_offset;
+        size_t n = left < sizeof(idx->block) ? (size_t)left : sizeof(idx->block);
+        int got = aster_os_file_read(&idx->reader, idx->block, n);
+        if (got <= 0 || (size_t)got > n)
+            break;
+        index_headers(d, idx->reader_offset, idx->block, (size_t)got);
+        idx->reader_offset += (unsigned)got;
+        if (one_block && !idx->finished)
+            return;
+    }
+    if (idx->finished || idx->pcm <= target) {
+        aster_os_file_close(&idx->reader);
+        idx->reader.handle = NULL;
+    }
+}
+
+static int open_mp3(aster_audio_decoder_t *d, const char *path)
 {
     drmp3_allocation_callbacks alloc = {d, decoder_alloc, decoder_realloc, decoder_free};
     drmp3 *mp3 = decoder_alloc(sizeof(*mp3), d);
@@ -227,9 +331,25 @@ static int open_mp3(aster_audio_decoder_t *d)
     d->info.codec = ASTER_AUDIO_CODEC_MP3;
     if (!aster_audio_rate_bit(d->info.rate) || !d->info.channels || d->info.channels > 2)
         return -ENOTSUP;
+    /* Untagged streams already traverse the file to count samples. Collect
+     * the index on those reads. Tagged streams keep their short open path. */
+    if (!d->io_error) {
+        d->index = decoder_alloc(sizeof(*d->index), d);
+        if (d->index) {
+            memset(d->index, 0, sizeof(*d->index));
+            d->index->stride = MP3_PREROLL;
+            d->index->end = mp3->streamLength < d->length ? mp3->streamLength : d->length;
+            d->index->next_header = mp3->streamStartOffset;
+            d->index->finished = d->index->next_header >= d->index->end;
+        } else {
+            d->io_error = 0; /* The index is optional under memory pressure. */
+        }
+    }
     d->info.frames = drmp3_get_pcm_frame_count(mp3);
     if (d->io_error)
         return d->io_error;
+    if (d->index && !d->index->finished)
+        (void)aster_os_file_open(&d->index->reader, path, ASTER_OS_READ);
     return d->info.frames ? 0 : -EINVAL;
 }
 
@@ -246,6 +366,11 @@ int aster_audio_decoder_close(aster_audio_decoder_t *d)
     if (d->mp3) {
         drmp3_uninit(d->mp3);
         decoder_free(d->mp3, d);
+    }
+    if (d->index) {
+        if (d->index->reader.handle)
+            aster_os_file_close(&d->index->reader);
+        decoder_free(d->index, d);
     }
     int r = d->file.handle ? aster_os_file_close(&d->file) : 0;
     aster_os_free_external(d);
@@ -334,7 +459,7 @@ int aster_audio_decoder_open(const char *path, bool (*cancel)(void *), void *ctx
             goto fail;
         }
     } else if (mp3_path(path)) {
-        r = open_mp3(d);
+        r = open_mp3(d, path);
         if (r)
             goto fail;
     } else {
@@ -372,9 +497,11 @@ int aster_audio_decoder_read(aster_audio_decoder_t *d, int32_t *pcm, uint32_t fr
     if (d->io_error)
         return d->io_error;
     uint64_t n;
-    if (d->mp3)
+    if (d->mp3) {
+        if (d->decoded >= 2048)
+            extend_index(d, UINT64_MAX, true);
         n = drmp3_read_pcm_frames_s16(d->mp3, frames, d->samples.mp3);
-    else if (d->flac)
+    } else if (d->flac)
         n = drflac_read_pcm_frames_s32(d->flac, frames, d->samples.flac);
     else
         n = drwav_read_pcm_frames_s32(d->wav, frames, d->samples.wav);
@@ -401,9 +528,31 @@ int aster_audio_decoder_seek(aster_audio_decoder_t *d, uint64_t frame)
     if (cancelled(d))
         return -ECANCELED;
     d->io_error = 0;
+    /* All indexed headers have the same samples per frame. Store just the
+     * byte offset and reconstruct the nearest dr_mp3 point for this seek. */
+    drmp3_seek_point point;
+    if (d->index && frame) {
+        mp3_index_t *idx = d->index;
+        uint64_t raw = frame + d->mp3->delayInPCMFrames;
+        extend_index(d, raw, false);
+        if (idx->count) {
+            uint64_t interval = idx->stride * idx->samples_per_frame;
+            uint64_t i = raw / interval;
+            if (i > idx->count)
+                i = idx->count;
+            if (i) {
+                point = (drmp3_seek_point){.seekPosInBytes = idx->offsets[i - 1],
+                                           .pcmFrameIndex = i * interval,
+                                           .mp3FramesToDiscard = MP3_PREROLL};
+                drmp3_bind_seek_table(d->mp3, 1, &point);
+            }
+        }
+    }
     bool ok = d->mp3    ? drmp3_seek_to_pcm_frame(d->mp3, frame)
               : d->flac ? drflac_seek_to_pcm_frame(d->flac, frame)
                         : drwav_seek_to_pcm_frame(d->wav, frame);
+    if (d->mp3)
+        drmp3_bind_seek_table(d->mp3, 0, NULL);
     if (d->io_error)
         return d->io_error;
     if (!ok)

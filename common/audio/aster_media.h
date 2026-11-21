@@ -3,6 +3,7 @@
 #define ASTER_MEDIA_H
 #include <stdint.h>
 #include <stddef.h>
+#define ASTER_MEDIA_OUTPUT_SYSTEM 0u
 #define ASTER_MEDIA_IDLE 0u
 #define ASTER_MEDIA_OPENING 1u
 #define ASTER_MEDIA_PLAYING 2u
@@ -22,7 +23,10 @@ typedef struct {
  * and creates no task. Start/control never perform file I/O on the caller.
  * Native negative errno, not public APP ABI. */
 int aster_media_init(void);
+/* Endpoint zero follows the system output. A newly available output takes
+ * over at a PCM block boundary. Explicitly addressed sessions stay pinned. */
 int aster_media_play(const char *path,uint32_t endpoint);
+void aster_media_set_default_output(uint32_t endpoint);
 int aster_media_pause(void);
 int aster_media_resume(void);
 int aster_media_seek(uint32_t milliseconds);
