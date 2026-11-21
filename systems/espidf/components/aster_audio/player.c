@@ -18,7 +18,7 @@ static int info(aster_player_info_t *out)
 #ifdef ASTER_AUDIO_SPECTRUM_ENABLED
     out->capabilities |= ASTER_PLAYER_CAP_SPECTRUM;
 #endif
-#if CONFIG_BT_ENABLED && CONFIG_BT_CLASSIC_ENABLED
+#ifdef ASTER_IDF_BT_AUDIO
     out->capabilities |= ASTER_PLAYER_CAP_BT_SINK | ASTER_PLAYER_CAP_REMOTE |
                          ASTER_PLAYER_CAP_BT_SOURCE | ASTER_PLAYER_CAP_SYSTEM_OUTPUT;
 #endif
@@ -72,7 +72,7 @@ static int control(const aster_player_request_t *request)
     switch (request->command) {
     case ASTER_PLAYER_PLAY_FILE:
         if (request->value == ASTER_PLAYER_OUTPUT_SYSTEM) {
-#if CONFIG_BT_ENABLED && CONFIG_BT_CLASSIC_ENABLED
+#ifdef ASTER_IDF_BT_AUDIO
             return aster_media_play(request->path, ASTER_MEDIA_OUTPUT_SYSTEM);
 #else
             return -ENOTSUP;
@@ -106,5 +106,11 @@ int aster_idf_player_register(void)
 {
     static const aster_player_ops_t ops = {
         .info = info, .control = control, .bt_list = aster_idf_bt_source_list};
-    return aster_player_service_register(&ops);
+#ifdef ASTER_IDF_BT_AUDIO
+    int err = aster_bt_tx_register();
+    if (err)
+        return err;
+#endif
+    int media = aster_media_init();
+    return media ? media : aster_player_service_register(&ops);
 }

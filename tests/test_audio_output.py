@@ -40,7 +40,7 @@ int main(void)
 ''')
 
     def test_native_session_blocks_legacy_teardown(self):
-        source = (ROOT / 'boards/fakepod_s31/idf/port/audio.c').read_text(encoding='utf-8')
+        source = (ROOT / 'systems/espidf/adapters/cs43131_i2s_pdm/port.c').read_text(encoding='utf-8')
         wrappers = source[source.index('/* Legacy entry points'):source.index('static int native_caps(')]
         run_c(r'''
 #include <stdbool.h>
@@ -82,7 +82,7 @@ int main(void){
 ''')
 
     def test_legacy_lock_has_bounded_race_wait(self):
-        source = (ROOT / 'boards/fakepod_s31/idf/port/audio.c').read_text(encoding='utf-8')
+        source = (ROOT / 'systems/espidf/adapters/cs43131_i2s_pdm/port.c').read_text(encoding='utf-8')
         locking = source[source.index('static atomic_uint volume_pending;'):source.index('static int error(')]
         run_c(r'''
 #include <assert.h>
@@ -113,8 +113,8 @@ int main(void){
 ''')
 
     def test_volume_request_never_waits_for_dma(self):
-        source = (ROOT / 'boards/fakepod_s31/idf/port/audio.c').read_text(encoding='utf-8')
-        setter = source[source.index('int aster_idf_codec_volume('):source.index('int aster_idf_codec_init(')]
+        source = (ROOT / 'systems/espidf/adapters/cs43131_i2s_pdm/port.c').read_text(encoding='utf-8')
+        setter = source[source.index('static int cs43131_volume('):source.index('static int cs43131_init(')]
         run_c(r'''
 #include <assert.h>
 #include <stdint.h>
@@ -125,11 +125,11 @@ static bool ready;
 static atomic_uint volume_pending;
 ''' + setter + r'''
 int main(void){
- assert(aster_idf_codec_volume(60)==-ENODEV && !atomic_load(&volume_pending));
+ assert(cs43131_volume(60)==-ENODEV && !atomic_load(&volume_pending));
  ready=true;
- assert(!aster_idf_codec_volume(60) && atomic_load(&volume_pending)==61);
- assert(!aster_idf_codec_volume(42) && atomic_load(&volume_pending)==43);
- assert(!aster_idf_codec_volume(0) && atomic_load(&volume_pending)==1);
+ assert(!cs43131_volume(60) && atomic_load(&volume_pending)==61);
+ assert(!cs43131_volume(42) && atomic_load(&volume_pending)==43);
+ assert(!cs43131_volume(0) && atomic_load(&volume_pending)==1);
  return 0;
 }
 ''')

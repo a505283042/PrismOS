@@ -93,6 +93,14 @@ config ASTER_AXS15231B_RAW_DIAG
 	  30-report lost-UP fixture at the driver report boundary; it does not
 	  generate physical contacts. Keep disabled for normal use.
 
+config ASTER_AUDIO_CODEC_SOURCE
+	string "Board audio codec implementation"
+	depends on ASTER_AUDIO
+	default "platform/esp32s3/audio_codec_es83xx.c"
+	help
+	  Firmware-root-relative source defining the aster_audio_codec operations.
+	  Boards using the ES8311 DAC can use the default driver.
+
 config ASTER_AUDIO_ADC_ES8311
 	bool "Use ES8311 internal ADC instead of ES7210"
 	depends on ASTER_AUDIO

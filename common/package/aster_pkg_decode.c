@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MIT */
 #include "aster_pkg_format.h"
 #include "aster_bytes.h"
+#include <aster/system.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,7 +35,7 @@ int aster_pkg_decode(const aster_pkg_policy_t *policy, const uint8_t *img, size_
                      const uint8_t **aot, size_t *aot_len, uint32_t *aot_target)
 {
 	if (!policy || !policy->target_id || !policy->alloc || !policy->release ||
-	    !policy->has_feature || !img || !m)
+	    !img || !m)
 		return ASTER_EINVAL;
 	if (size < ASTER_PKG_HDRSIZE) {
 		return ASTER_ECORRUPT;
@@ -132,7 +133,14 @@ int aster_pkg_decode(const aster_pkg_policy_t *policy, const uint8_t *img, size_
 			m->mem_heap = v;
 	}
 
-	m->requires_n = aster_json_str_array(jbuf, "requires", m->requires, 8);
+	int required = aster_pkg_read_requires(jbuf, m->requires);
+	int boards = aster_pkg_read_boards(jbuf, m->supported_boards);
+	if (required < 0 || boards < 0) {
+		policy->release(jbuf);
+		return ASTER_ECORRUPT;
+	}
+	m->requires_n = (uint32_t)required;
+	m->supported_boards_n = (uint32_t)boards;
 	m->optional_n = aster_json_str_array(jbuf, "optional", m->optional, 8);
 	m->permissions_n = aster_json_str_array(jbuf, "permissions", m->permissions, 8);
 	{
@@ -194,14 +202,6 @@ int aster_pkg_decode(const aster_pkg_policy_t *policy, const uint8_t *img, size_
 		report(policy, true, "abi mismatch: 需用新 SDK 重编 (device %u.%u app min %u.%u)",
 		       dev >> 16, (dev >> 8) & 0xFFu, appmajor, appminor);
 		return ASTER_EABI;
-	}
-
-	/* requires capability check */
-	for (uint32_t i = 0; i < m->requires_n; i++) {
-		if (!policy->has_feature(m->requires[i])) {
-			report(policy, true, "missing required capability: %s", m->requires[i]);
-			return ASTER_ENOTSUP;
-		}
 	}
 
 	if (wasm) {
@@ -423,4 +423,121 @@ int aster_json_str_array(const char *json, const char *key, char arr[][24], int 
 		n++;
 	}
 	return n;
+}
+
+/* The package stores up to eight capability names. Refuse an invalid or
+ * oversized list before normalizing it to disk so no mandatory entry is lost. */
+static int read_id_list(const char *json, const char *key, char *names, size_t stride)
+{
+	const char *p = find_key(json, key);
+	if (!p)
+		return 0;
+	p += strspn(p, " \t\r\n");
+	if (*p++ != '[')
+		return -1;
+	p += strspn(p, " \t\r\n");
+	if (*p == ']')
+		return 0;
+	int count = 0;
+	for (;;) {
+		if (count == 8 || *p++ != '"')
+			return -1;
+		size_t length = strspn(p, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-");
+		if (!length || length >= stride || p[length] != '"')
+			return -1;
+		memcpy(names, p, length);
+		names[length] = '\0';
+		names += stride;
+		count++;
+		p += length + 1;
+		p += strspn(p, " \t\r\n");
+		if (*p == ']')
+			return count;
+		if (*p++ != ',')
+			return -1;
+		p += strspn(p, " \t\r\n");
+	}
+}
+
+int aster_pkg_read_requires(const char *json, char names[8][24])
+{
+	return read_id_list(json, "requires", (char *)names, sizeof(names[0]));
+}
+
+int aster_pkg_read_boards(const char *json, char boards[8][40])
+{
+	return read_id_list(json, "supported_boards", (char *)boards, sizeof(boards[0]));
+}
+
+bool aster_pkg_board_allowed(char boards[][40], int count, const char *board_id)
+{
+	if (count == 0)
+		return true;
+	if (count < 0 || count > 8 || !board_id)
+		return false;
+	for (int i = 0; i < count; i++)
+		if (!strcmp(board_id, boards[i]))
+			return true;
+	return false;
+}
+
+static const char *const feature_names[] = {
+	[ASTER_FEATURE_MEDIA_PLAYER] = "media-player",
+	[ASTER_FEATURE_DISPLAY] = "display",
+	[ASTER_FEATURE_TOUCH] = "touch",
+	[ASTER_FEATURE_MOUSE] = "mouse",
+	[ASTER_FEATURE_KEYBOARD] = "keyboard",
+	[ASTER_FEATURE_CAMERA] = "camera",
+	[ASTER_FEATURE_AUDIO_INPUT] = "audio-in",
+	[ASTER_FEATURE_AUDIO_OUTPUT] = "audio-out",
+	[ASTER_FEATURE_WIFI] = "wifi",
+	[ASTER_FEATURE_NETWORK] = "network",
+	[ASTER_FEATURE_HTTP] = "http",
+	[ASTER_FEATURE_MQTT] = "mqtt",
+	[ASTER_FEATURE_WEBSOCKET] = "websocket",
+	[ASTER_FEATURE_TLS] = "tls",
+	[ASTER_FEATURE_AUDIO_STREAM] = "audio-stream",
+	[ASTER_FEATURE_AUDIO_EFFECTS] = "audio-effects",
+	[ASTER_FEATURE_AUDIO_EFFECTS_MEMORY] = "audio-effects-memory",
+	[ASTER_FEATURE_BLUETOOTH] = "bluetooth",
+	[ASTER_FEATURE_ACCELEROMETER] = "accelerometer",
+	[ASTER_FEATURE_GYROSCOPE] = "gyroscope",
+	[ASTER_FEATURE_FILESYSTEM] = "filesystem",
+	[ASTER_FEATURE_RTC] = "rtc",
+	[ASTER_FEATURE_PSRAM] = "psram",
+	[ASTER_FEATURE_FRAMEBUFFER] = "framebuffer",
+};
+
+#define UNKNOWN_REQUIREMENT (UINT64_C(1) << 63)
+_Static_assert(sizeof(feature_names) / sizeof(feature_names[0]) <= 63,
+               "reserve one bit for unknown requirements");
+
+uint64_t aster_pkg_required_mask(char names[][24], int count)
+{
+	uint64_t mask = 0;
+	if (count < 0 || count > 8)
+		return UNKNOWN_REQUIREMENT;
+	for (int i = 0; i < count; i++) {
+		const char *name = !strcmp(names[i], "storage.app") ? "filesystem" : names[i];
+		uint64_t bit = UNKNOWN_REQUIREMENT;
+		for (size_t j = 0; j < sizeof(feature_names) / sizeof(feature_names[0]); j++) {
+			if (feature_names[j] && !strcmp(name, feature_names[j])) {
+				bit = UINT64_C(1) << j;
+				break;
+			}
+		}
+		mask |= bit;
+	}
+	return mask;
+}
+
+const char *aster_pkg_missing_requirement(uint64_t mask, bool (*available)(uint32_t))
+{
+	if (mask & UNKNOWN_REQUIREMENT)
+		return "unknown capability";
+	for (size_t i = 0; i < sizeof(feature_names) / sizeof(feature_names[0]); i++) {
+		if ((mask & (UINT64_C(1) << i)) && !available(i))
+			return feature_names[i];
+	}
+	return NULL;
 }

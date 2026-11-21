@@ -23,9 +23,9 @@ static int ping(int argc, char **argv)
         if (aster_sysinfo_has_feature(bit))
             caps |= 1ULL << bit;
     printf(
-        "\nPONG sd=%d product=aster target=riscv abi=%u.%u caps=%llx serial=shared transfer=packages\n",
+        "\nPONG sd=%d product=aster target=riscv abi=%u.%u caps=%llx serial=shared transfer=packages board=%s\n",
         aster_storage_mounted() ? 1 : 0, ASTER_ABI_MAJOR, ASTER_ABI_MINOR,
-        (unsigned long long)caps);
+        (unsigned long long)caps, CONFIG_ASTER_BOARD_ID);
     fflush(stdout);
     return 0;
 }

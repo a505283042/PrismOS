@@ -2,12 +2,13 @@
 /* CS43131 register programming follows Cirrus DS1155F2 sections 4.13/5.7/7.
  * Public PCM stays s16le stereo/16 kHz. The port converts low rates to a
  * supported DAC clock; PDM input is independently clocked at the ABI rate. */
-#include "../main/board_pins.h"
+#include "cs43131_wiring.h"
 #include "driver/i2s_std.h"
 #include "driver/i2s_pdm.h"
 #include "driver/i2c_master.h"
 #include "driver/gpio.h"
 #include "audio_port.h"
+#include "audio_codec.h"
 #include "aster_platform.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -16,6 +17,7 @@
 #include <stdatomic.h>
 #include <string.h>
 const struct device aster_idf_gpio_device = {.role = 3};
+const struct gpio_dt_spec aster_idf_audio_pa = {0};
 static const struct device control = {.role = 1}, stream = {.role = 2};
 static i2c_master_dev_handle_t codec;
 static i2s_chan_handle_t tx, rx;
@@ -103,22 +105,22 @@ static int reg_write(uint32_t reg, uint8_t value)
     return error(i2c_master_transmit(codec, bytes, sizeof(bytes), 200));
 }
 
-const struct device *aster_idf_audio_i2c(void)
+static const struct device *open_control_bus(void)
 {
     if (codec)
         return &control;
-    gpio_config_t pin = {.pin_bit_mask = 1ULL << FP_DAC_RESET, .mode = GPIO_MODE_OUTPUT};
+    gpio_config_t pin = {.pin_bit_mask = 1ULL << aster_cs43131_wiring.reset, .mode = GPIO_MODE_OUTPUT};
     if (gpio_config(&pin) != ESP_OK)
         return NULL;
-    gpio_set_level(FP_DAC_RESET, 0);
+    gpio_set_level(aster_cs43131_wiring.reset, 0);
     k_msleep(2);
-    gpio_set_level(FP_DAC_RESET, 1);
+    gpio_set_level(aster_cs43131_wiring.reset, 1);
     k_msleep(20);
     i2c_master_bus_handle_t bus;
-    if (i2c_master_get_bus_handle(1, &bus) != ESP_OK) {
-        i2c_master_bus_config_t config = {.i2c_port = 1,
-                                          .sda_io_num = FP_DAC_SDA,
-                                          .scl_io_num = FP_DAC_SCL,
+    if (i2c_master_get_bus_handle(aster_cs43131_wiring.i2c_port, &bus) != ESP_OK) {
+        i2c_master_bus_config_t config = {.i2c_port = aster_cs43131_wiring.i2c_port,
+                                          .sda_io_num = aster_cs43131_wiring.sda,
+                                          .scl_io_num = aster_cs43131_wiring.scl,
                                           .clk_source = I2C_CLK_SRC_DEFAULT,
                                           .glitch_ignore_cnt = 7,
                                           .flags.enable_internal_pullup = true};
@@ -126,7 +128,7 @@ const struct device *aster_idf_audio_i2c(void)
             return NULL;
     }
     i2c_device_config_t config = {.dev_addr_length = I2C_ADDR_BIT_LEN_7,
-                                  .device_address = FP_DAC_ADDRESS,
+                                  .device_address = aster_cs43131_wiring.dac_address,
                                   .scl_speed_hz = 400000};
     if (i2c_master_bus_add_device(bus, &config, &codec) != ESP_OK)
         return NULL;
@@ -162,25 +164,6 @@ int gpio_pin_set_dt(const struct gpio_dt_spec *p, int value)
     return -ENOTSUP;
 }
 
-/* Legacy 8-bit-register codecs are deliberately unavailable on this port. */
-int i2c_reg_write_byte(const struct device *d, uint8_t a, uint8_t r, uint8_t v)
-{
-    (void)d;
-    (void)a;
-    (void)r;
-    (void)v;
-    return -ENODEV;
-}
-
-int i2c_reg_read_byte(const struct device *d, uint8_t a, uint8_t r, uint8_t *v)
-{
-    (void)d;
-    (void)a;
-    (void)r;
-    (void)v;
-    return -ENODEV;
-}
-
 static int codec_volume_locked(uint8_t percent)
 {
     if (!ready)
@@ -195,7 +178,7 @@ static int codec_volume_locked(uint8_t percent)
     return reg_write(0x90003, percent ? 0xec : 0xef);
 }
 
-int aster_idf_codec_volume(uint8_t percent)
+static int cs43131_volume(uint8_t percent)
 {
     if (!ready)
         return -ENODEV;
@@ -207,11 +190,11 @@ int aster_idf_codec_volume(uint8_t percent)
     return 0;
 }
 
-int aster_idf_codec_init(void)
+static int cs43131_init(uint8_t volume)
 {
     if (ready)
         return 0;
-    if (!aster_idf_audio_i2c())
+    if (!open_control_bus())
         return -ENODEV;
     uint8_t id[3];
     for (unsigned i = 0; i < 3; i++) {
@@ -261,7 +244,7 @@ int aster_idf_codec_init(void)
     ready = true;
     physical_rate = 48000;
     ESP_LOGI("cs43131", "verified device 43:13:10; 24.576 MHz XTAL, I2S slave");
-    return aster_idf_codec_volume(70);
+    return cs43131_volume(volume);
 }
 
 static int codec_enable_locked(void)
@@ -287,8 +270,9 @@ static int codec_enable_locked(void)
     return reg_write(0x10010, 0);
 }
 
-int aster_idf_codec_enable(void)
+static int cs43131_enable(uint8_t volume)
 {
+    (void)volume;
     int acquired = lock_legacy_hardware();
     if (acquired)
         return acquired;
@@ -296,6 +280,21 @@ int aster_idf_codec_enable(void)
     unlock_hardware();
     return r;
 }
+
+static void cs43131_identify(int error, uint8_t *dac, uint8_t *adc)
+{
+    if (dac)
+        *dac = error ? 0 : 0x31;
+    if (adc)
+        *adc = 0; /* The PDM microphone has no I2C identity register. */
+}
+
+const aster_audio_codec_ops_t aster_audio_codec = {
+    .init = cs43131_init,
+    .enable = cs43131_enable,
+    .set_volume = cs43131_volume,
+    .identify = cs43131_identify,
+};
 
 void aster_idf_audio_cancel_record(bool v)
 {
@@ -357,7 +356,7 @@ static int legacy_configure_locked(const struct device *d, enum i2s_dir dir,
     if (config->word_size != 16 || config->channels != 2 || !config->mem_slab ||
         !config->block_size)
         return -EINVAL;
-    if (dir == I2S_DIR_TX) {
+    if (dir == ASTER_I2S_TX) {
         shutdown();
         unsigned rate = config->frame_clk_freq;
         ratio = 1;
@@ -415,7 +414,7 @@ static int legacy_configure_locked(const struct device *d, enum i2s_dir dir,
         converted = heap_caps_malloc(converted_capacity, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         if (!converted)
             return -ENOMEM;
-        i2s_chan_config_t channel = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_1, I2S_ROLE_MASTER);
+        i2s_chan_config_t channel = I2S_CHANNEL_DEFAULT_CONFIG(aster_cs43131_wiring.tx_port, I2S_ROLE_MASTER);
         channel.dma_desc_num = 8;
         channel.dma_frame_num = 128;
         channel.auto_clear_after_cb = true;
@@ -424,13 +423,11 @@ static int legacy_configure_locked(const struct device *d, enum i2s_dir dir,
                                      .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(
                                          I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_STEREO),
                                      .gpio_cfg = {.mclk = I2S_GPIO_UNUSED,
-                                                  .bclk = FP_DAC_BCLK,
-                                                  .ws = FP_DAC_WS,
-                                                  .dout = FP_DAC_DOUT,
+                                                  .bclk = aster_cs43131_wiring.bclk,
+                                                  .ws = aster_cs43131_wiring.ws,
+                                                  .dout = aster_cs43131_wiring.dout,
                                                   .din = I2S_GPIO_UNUSED}};
-        /* S31 defaults to XTAL, which rejects 88.2/96 kHz with 256x MCLK.
-   * APLL also provides an audio-rate reference for 44.1 kHz families. */
-        standard.clk_cfg.clk_src = I2S_CLK_SRC_APLL;
+        standard.clk_cfg.clk_src = aster_cs43131_wiring.tx_clock;
         if (status == ESP_OK)
             status = i2s_channel_init_std_mode(tx, &standard);
         if (status != ESP_OK) {
@@ -440,7 +437,7 @@ static int legacy_configure_locked(const struct device *d, enum i2s_dir dir,
         tx_config = *config;
         return codec_enable_locked();
     }
-    if (dir != I2S_DIR_RX)
+    if (dir != ASTER_I2S_RX)
         return -EINVAL;
     if (rx_on) {
         i2s_channel_disable(rx);
@@ -449,14 +446,14 @@ static int legacy_configure_locked(const struct device *d, enum i2s_dir dir,
     if (rx)
         i2s_del_channel(rx);
     rx = NULL;
-    i2s_chan_config_t channel = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
+    i2s_chan_config_t channel = I2S_CHANNEL_DEFAULT_CONFIG(aster_cs43131_wiring.rx_port, I2S_ROLE_MASTER);
     channel.dma_desc_num = 6;
     channel.dma_frame_num = 128;
     esp_err_t status = i2s_new_channel(&channel, NULL, &rx);
     i2s_pdm_rx_config_t pdm = {
         .clk_cfg = I2S_PDM_RX_CLK_DEFAULT_CONFIG(config->frame_clk_freq),
         .slot_cfg = I2S_PDM_RX_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO),
-        .gpio_cfg = {.clk = FP_MIC_CLOCK, .din = FP_MIC_DATA}};
+        .gpio_cfg = {.clk = aster_cs43131_wiring.mic_clock, .din = aster_cs43131_wiring.mic_data}};
     if (status == ESP_OK)
         status = i2s_channel_init_pdm_rx_mode(rx, &pdm);
     if (status != ESP_OK) {
@@ -478,11 +475,11 @@ static int legacy_trigger_locked(const struct device *d, enum i2s_dir dir, int t
         return 0;
     }
     if (trigger == I2S_TRIGGER_DROP || trigger == I2S_TRIGGER_PREPARE) {
-        if ((dir & I2S_DIR_TX) && tx_on) {
+        if ((dir & ASTER_I2S_TX) && tx_on) {
             i2s_channel_disable(tx);
             tx_on = false;
         }
-        if ((dir & I2S_DIR_RX) && rx_on) {
+        if ((dir & ASTER_I2S_RX) && rx_on) {
             i2s_channel_disable(rx);
             rx_on = false;
         }
@@ -491,12 +488,12 @@ static int legacy_trigger_locked(const struct device *d, enum i2s_dir dir, int t
     if (trigger != I2S_TRIGGER_START)
         return -EINVAL;
     esp_err_t status = ESP_OK;
-    if ((dir & I2S_DIR_TX) && !tx_on) {
+    if ((dir & ASTER_I2S_TX) && !tx_on) {
         status = tx ? i2s_channel_enable(tx) : ESP_ERR_INVALID_STATE;
         if (status == ESP_OK)
             tx_on = true;
     }
-    if (status == ESP_OK && (dir & I2S_DIR_RX) && !rx_on) {
+    if (status == ESP_OK && (dir & ASTER_I2S_RX) && !rx_on) {
         status = rx ? i2s_channel_enable(rx) : ESP_ERR_INVALID_STATE;
         if (status == ESP_OK)
             rx_on = true;
@@ -676,7 +673,7 @@ static int native_open(void *ctx, const aster_audio_format_t *format)
                 r = -ENOMEM;
         }
         if (!r) {
-            i2s_chan_config_t channel = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_1, I2S_ROLE_MASTER);
+            i2s_chan_config_t channel = I2S_CHANNEL_DEFAULT_CONFIG(aster_cs43131_wiring.tx_port, I2S_ROLE_MASTER);
             channel.dma_desc_num = 8;
             channel.dma_frame_num = 128;
             channel.auto_clear_after_cb = true;
@@ -685,13 +682,11 @@ static int native_open(void *ctx, const aster_audio_format_t *format)
                                          .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(
                                              I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_STEREO),
                                          .gpio_cfg = {.mclk = I2S_GPIO_UNUSED,
-                                                      .bclk = FP_DAC_BCLK,
-                                                      .ws = FP_DAC_WS,
-                                                      .dout = FP_DAC_DOUT,
+                                                      .bclk = aster_cs43131_wiring.bclk,
+                                                      .ws = aster_cs43131_wiring.ws,
+                                                      .dout = aster_cs43131_wiring.dout,
                                                       .din = I2S_GPIO_UNUSED}};
-            /* S31 defaults to XTAL, which rejects 88.2/96 kHz with 256x MCLK.
-   * APLL also provides an audio-rate reference for 44.1 kHz families. */
-            standard.clk_cfg.clk_src = I2S_CLK_SRC_APLL;
+            standard.clk_cfg.clk_src = aster_cs43131_wiring.tx_clock;
             if (status == ESP_OK)
                 status = i2s_channel_init_std_mode(tx, &standard);
             r = error(status);

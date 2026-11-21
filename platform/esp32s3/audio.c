@@ -1,9 +1,7 @@
+/* SPDX-License-Identifier: MIT */
+/* Board-independent I2S playback, effects and recording. */
 #include "audio_format.h"
-/* SPDX-License-Identifier: MIT
- * ES8311 DAC + ES7210 ADC over I2S0 (LCKFB ESP32-S3).
- * PCM play/record is 16 kHz / 16-bit / stereo s16le. MP3 is decoded here
- * to that native PCM before I2S (same play/start entry points).
- */
+#include "audio_codec.h"
 #include "aster_platform.h"
 #include "aster_bytes.h"
 #include "aster_mem.h"
@@ -15,10 +13,12 @@
 #include <string.h>
 #ifdef ASTER_SYSTEM_ESP_IDF
 #include "audio_port.h"
+#define I2S_DIR_TX ASTER_I2S_TX
+#define I2S_DIR_RX ASTER_I2S_RX
+#define I2S_DIR_BOTH ASTER_I2S_BOTH
 #else
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
-#include <zephyr/drivers/i2c.h>
 #include <zephyr/drivers/i2s.h>
 #endif
 #include <zephyr/fs/fs.h>
@@ -35,9 +35,6 @@
 #include <minimp3.h>
 
 LOG_MODULE_REGISTER(aster_audio, LOG_LEVEL_INF);
-
-#define DAC_ADDR 0x18 /* ES8311 */
-#define ADC_ADDR 0x41 /* ES7210 (AD0 high); 0x40 tried as fallback */
 
 #define AUDIO_BLOCK 512
 #define AUDIO_TX_MAX 1536
@@ -56,30 +53,18 @@ LOG_MODULE_REGISTER(aster_audio, LOG_LEVEL_INF);
  * board that listed its control pins in a different order would drive the
  * camera's power-down line from here -- silently, while looking correct at
  * both ends. See the zephyr,user block in the board overlay. */
-static const struct gpio_dt_spec pa_en =
-#if defined(CONFIG_ASTER_AUDIO_CS43131) && CONFIG_ASTER_AUDIO_CS43131
-        {0};
-#elif defined(ASTER_SYSTEM_ESP_IDF)
-        {.port = &aster_idf_gpio_device, .pin = 53};
+#ifdef ASTER_SYSTEM_ESP_IDF
+#define pa_en aster_idf_audio_pa
 #else
+static const struct gpio_dt_spec pa_en =
         GPIO_DT_SPEC_GET_OR(DT_PATH(zephyr_user), pa_en_gpios, {0});
 #endif
 
-/* The buses are bound by ROLE, not by node label (see the chosen block in the
- * board overlay). Without this the mismatch is invisible: DT_CHOSEN() on a
- * missing role yields an invalid node, DEVICE_DT_GET_OR_NULL() yields NULL,
- * and bring-up returns -ENODEV -- which on the bench looks exactly like a
- * codec that failed to probe. */
-#if IS_ENABLED(CONFIG_ASTER_AUDIO) && !defined(ASTER_SYSTEM_ESP_IDF)
-BUILD_ASSERT(DT_HAS_CHOSEN(aster_audio_i2c) && DT_HAS_CHOSEN(aster_audio_i2s),
-             "the board conf claims an audio codec, but the board overlay has no "
-             "`chosen { aster,audio-i2c = &<bus>; aster,audio-i2s = &<i2s>; }` -- "
-             "codec bring-up would return -ENODEV forever");
+#ifndef ASTER_SYSTEM_ESP_IDF
+BUILD_ASSERT(DT_HAS_CHOSEN(aster_audio_i2s), "select aster,audio-i2s in the board overlay");
 #endif
 
-static const struct device *i2c_dev;
 static const struct device *i2s_dev;
-static uint8_t adc_addr = ADC_ADDR;
 static bool codecs_ready;
 static bool pa_on;
 static enum i2s_dir active_dir;
@@ -172,225 +157,6 @@ static const int16_t sine64[64] = {
         -12368, -11314, -10150, -8889,  -7542,  -6123,  -4645,  -3121,  -1568,
 };
 
-static int codec_wr(uint8_t addr, uint8_t reg, uint8_t val)
-{
-	return i2c_reg_write_byte(i2c_dev, addr, reg, val);
-}
-
-static int codec_rd(uint8_t addr, uint8_t reg, uint8_t *val)
-{
-	return i2c_reg_read_byte(i2c_dev, addr, reg, val);
-}
-
-static uint8_t vol_to_reg(uint8_t percent)
-{
-	/* REG32 is linear in dB: 0x00 = -95.5 dB, 0xBF = 0 dB, 0xFF = +32 dB.
-	 * Preserve the old mapping through 80 (80 = -8 dB), then extend the top
-	 * of the 0..100 ABI scale to +6 dB. Hot mastered tracks can distort at
-	 * the high end; no software gain is applied to the PCM samples. */
-	int db10;
-	int reg;
-
-	if (percent == 0) {
-		return 0;
-	}
-	db10 = percent <= 80 ? -400 + (int)percent * 4 : -80 + ((int)percent - 80) * 7;
-	reg = (db10 * 2) / 10 + 191;
-	if (reg < 1) {
-		reg = 1;
-	}
-	if (reg > 0xCB) {
-		reg = 0xCB;
-	}
-	return (uint8_t)reg;
-}
-
-static int es8311_apply_vol(void)
-{
-#if defined(CONFIG_ASTER_AUDIO_CS43131) && CONFIG_ASTER_AUDIO_CS43131
-	return aster_idf_codec_volume(g_vol);
-#else
-	int err = codec_wr(DAC_ADDR, 0x32, vol_to_reg(g_vol));
-	if (err) {
-		return err;
-	}
-	return codec_wr(DAC_ADDR, 0x31, g_vol == 0 ? 0x60 : 0x00);
-#endif
-}
-
-/* Official 05-audio_es8311 open + start, clocks for 16 kHz @ MCLK=256*fs. */
-static int es8311_dac_on(void)
-{
-#if defined(CONFIG_ASTER_AUDIO_CS43131) && CONFIG_ASTER_AUDIO_CS43131
-	return aster_idf_codec_enable();
-#else
-	static const uint8_t tbl[][2] = {
-	        {0x00, 0x80}, /* slave, analog on, MCLK from pin */
-	        {0x01, 0x3F}, /* clocks on, MCLK pin */
-	        {0x09, 0x0C}, /* DAC SDP 16-bit I2S, port enabled */
-	        {0x0A, 0x0C},
-	        {0x0D, 0x01},
-	        {0x0E, 0x02},
-	        {0x12, 0x00}, /* DAC analog on */
-	        {0x14, 0x1A},
-	        {0x15, 0x40},
-	        {0x17, IS_ENABLED(CONFIG_ASTER_AUDIO_ADC_ES8311) ? 0xC8 : 0xBF},
-	        {0x37, 0x08},
-	        {0x45, 0x00},
-	};
-	int err = 0;
-
-	for (size_t i = 0; i < ARRAY_SIZE(tbl); i++) {
-		err = codec_wr(DAC_ADDR, tbl[i][0], tbl[i][1]);
-		if (err) {
-			return err;
-		}
-	}
-	return es8311_apply_vol();
-#endif
-}
-
-static int es8311_init(void)
-{
-#if defined(CONFIG_ASTER_AUDIO_CS43131) && CONFIG_ASTER_AUDIO_CS43131
-	return aster_idf_codec_init();
-#else
-	uint8_t id = 0;
-	int err = codec_rd(DAC_ADDR, 0xFD, &id);
-
-	if (err) {
-		LOG_ERR("es8311 probe %d", err);
-		return err;
-	}
-	if (id != 0x83) {
-		LOG_WRN("es8311 id 0x%02x (expected 0x83)", id);
-	}
-
-	(void)codec_wr(DAC_ADDR, 0x00, 0x1F);
-	k_msleep(10);
-	(void)codec_wr(DAC_ADDR, 0x00, 0x00);
-	(void)codec_wr(DAC_ADDR, 0x44, 0x08);
-	(void)codec_wr(DAC_ADDR, 0x44, 0x08);
-
-	static const uint8_t tbl[][2] = {
-	        {0x01, 0x30},
-	        {0x02, 0x00},
-	        {0x03, 0x10},
-	        {0x04, 0x10},
-	        {0x05, 0x00},
-	        {0x0B, 0x00},
-	        {0x0C, 0x00},
-	        {0x10, 0x1F}, /* analog / VMID up (0x03 left the DAC cold) */
-	        {0x11, 0x7F},
-	        {0x00, 0x80},
-	        {0x01, 0x3F},
-	        /* 16 kHz, MCLK = 256 * fs = 4.096 MHz (Zephyr i2s_esp32) */
-	        {0x02, 0x00},
-	        {0x05, 0x00},
-	        {0x03, 0x10},
-	        {0x04, 0x20},
-	        {0x07, 0x00},
-	        {0x08, 0xFF},
-	        {0x06, 0x03},
-	        {0x13, 0x10},
-	        {0x16, 0x24},
-	        {0x1B, 0x0A},
-	        {0x1C, 0x6A},
-	        {0x44, 0x08},
-	};
-	for (size_t i = 0; i < ARRAY_SIZE(tbl); i++) {
-		err = codec_wr(DAC_ADDR, tbl[i][0], tbl[i][1]);
-		if (err) {
-			return err;
-		}
-	}
-	err = es8311_dac_on();
-	if (err) {
-		return err;
-	}
-	LOG_INF("es8311 ready id=0x%02x", id);
-	return 0;
-#endif
-}
-
-static int es7210_init(void)
-{
-	uint8_t id = 0;
-	uint8_t try_addr[2] = {ADC_ADDR, 0x40};
-	int err = -ENODEV;
-
-	for (int a = 0; a < 2; a++) {
-		err = codec_rd(try_addr[a], 0x3D, &id);
-		if (err == 0) {
-			adc_addr = try_addr[a];
-			break;
-		}
-	}
-	if (err) {
-		LOG_ERR("es7210 probe %d", err);
-		return err;
-	}
-	if (id != 0x72) {
-		LOG_WRN("es7210 id 0x%02x (expected 0x72) @0x%02x", id, adc_addr);
-	}
-
-	(void)codec_wr(adc_addr, 0x00, 0xFF);
-	k_msleep(10);
-
-	/*
-	 * Register sequence from espressif/es7210 es7210_config_codec
-	 * (LCKFB 04-audio_es7210). TDM is left off: Zephyr i2s_esp32 is
-	 * STD Philips stereo, so MIC1/MIC2 map to L/R.
-	 */
-	static const uint8_t tbl[][2] = {
-	        {0x00, 0x32},
-	        {0x09, 0x30}, /* power-up timing */
-	        {0x0A, 0x30},
-	        {0x23, 0x2A}, /* ADC12 HPF */
-	        {0x22, 0x0A},
-	        {0x21, 0x2A}, /* ADC34 HPF */
-	        {0x20, 0x0A},
-	        {0x11, 0x60}, /* 16-bit I2S */
-	        {0x12, 0x00}, /* STD, not 1xFS TDM */
-	        {0x40, 0xC3}, /* analog / VMID */
-	        {0x41, 0x70}, /* MIC12 bias 2.87 V */
-	        {0x42, 0x70},
-	        {0x43, 0x1A}, /* PGA on + 30 dB */
-	        {0x44, 0x1A},
-	        {0x45, 0x1A},
-	        {0x46, 0x1A},
-	        {0x47, 0x08}, /* MIC1-4 analog on */
-	        {0x48, 0x08},
-	        {0x49, 0x08},
-	        {0x4A, 0x08},
-	        /* 16 kHz, MCLK = 256 * fs = 4.096 MHz */
-	        {0x07, 0x20},
-	        {0x02, 0xC1},
-	        {0x04, 0x01},
-	        {0x05, 0x00},
-	        {0x06, 0x04}, /* DLL off */
-	        {0x4B, 0x0F}, /* MIC12 bias / ADC / PGA on */
-	        {0x4C, 0x0F},
-	        {0x13, 0x00},
-	        {0x14, 0x00}, /* unmute */
-	        {0x15, 0x00},
-	        {0x1B, 0xBF}, /* 0 dB digital volume */
-	        {0x1C, 0xBF},
-	        {0x1D, 0xBF},
-	        {0x1E, 0xBF},
-	        {0x00, 0x71},
-	        {0x00, 0x41},
-	};
-	for (size_t i = 0; i < ARRAY_SIZE(tbl); i++) {
-		err = codec_wr(adc_addr, tbl[i][0], tbl[i][1]);
-		if (err) {
-			return err;
-		}
-	}
-	LOG_INF("es7210 ready id=0x%02x addr=0x%02x", id, adc_addr);
-	return 0;
-}
-
 static void pa_set(bool on)
 {
 	/* A board with no optional PA GPIO uses its codec/PMIC power path. */
@@ -434,31 +200,20 @@ static int codecs_init(void)
 		return 0;
 	}
 #ifdef ASTER_SYSTEM_ESP_IDF
-	i2c_dev = aster_idf_audio_i2c();
 	i2s_dev = aster_idf_audio_i2s();
 #else
-	i2c_dev = DEVICE_DT_GET_OR_NULL(DT_CHOSEN(aster_audio_i2c));
 	i2s_dev = DEVICE_DT_GET_OR_NULL(DT_CHOSEN(aster_audio_i2s));
 #endif
-	if (!i2c_dev || !device_is_ready(i2c_dev) || !i2s_dev || !device_is_ready(i2s_dev)) {
+	if (!i2s_dev || !device_is_ready(i2s_dev)) {
 		return -ENODEV;
 	}
 	if (gpio_is_ready_dt(&pa_en)) {
 		(void)gpio_pin_configure_dt(&pa_en, GPIO_OUTPUT_INACTIVE);
 		pa_on = false;
 	}
-	err = es8311_init();
-	if (err) {
+	err = aster_audio_codec.init(g_vol);
+	if (err)
 		return err;
-	}
-#if defined(CONFIG_ASTER_AUDIO_CS43131) && CONFIG_ASTER_AUDIO_CS43131
-	err = 0;
-#else
-	err = IS_ENABLED(CONFIG_ASTER_AUDIO_ADC_ES8311) ? 0 : es7210_init();
-#endif
-	if (err) {
-		LOG_WRN("es7210 init %d (playback still available)", err);
-	}
 	codecs_ready = true;
 	return 0;
 }
@@ -498,19 +253,13 @@ static int i2s_apply(enum i2s_dir dir, struct k_mem_slab *slab)
 	return err;
 }
 
-/* ES8311 MCLK=256fs clock ratios, matching Espressif's coefficient table.
- * 22.05..48k DAC OSR is 0x10; 8..16k uses 0x20. I2S supplies MCLK/BCLK. */
 static int i2s_setup_rate(enum i2s_dir dir, uint32_t rate)
 {
 	if (active_dir)
 		i2s_shutdown();
 	output_rate = rate;
 	output_block = audio_rate_block(rate);
-#if defined(CONFIG_ASTER_AUDIO_CS43131) && CONFIG_ASTER_AUDIO_CS43131
-	int err = 0;
-#else
-	int err = codec_wr(DAC_ADDR, 0x04, rate > 16000 ? 0x10 : 0x20);
-#endif
+	int err = aster_audio_codec.set_rate ? aster_audio_codec.set_rate(rate) : 0;
 	if (err)
 		return err;
 	err = i2s_apply(dir, dir == I2S_DIR_TX ? &tx_slab : &rx_slab);
@@ -1328,7 +1077,7 @@ static void player_loop(void *a, void *b, void *c)
 			err = codecs_init();
 		}
 		if (err == 0) {
-			err = es8311_dac_on();
+			err = aster_audio_codec.enable(g_vol);
 		}
 		if (err == 0) {
 			pa_set(true);
@@ -1415,7 +1164,7 @@ static void player_loop(void *a, void *b, void *c)
 					continue;
 				}
 				k_mutex_lock(&audio_lock, K_FOREVER);
-				(void)es8311_dac_on();
+				(void)aster_audio_codec.enable(g_vol);
 				pa_set(true);
 				(void)i2s_setup_rate(I2S_DIR_TX, output_rate);
 				k_mutex_unlock(&audio_lock);
@@ -1618,7 +1367,7 @@ static int wake_player(void)
 
 static int play_blocks(const uint8_t *pcm, size_t size)
 {
-	int err = es8311_dac_on();
+	int err = aster_audio_codec.enable(g_vol);
 	if (err) {
 		return err;
 	}
@@ -1675,7 +1424,7 @@ static int play_mp3_blocks(const uint8_t *buf, size_t size)
 	int err;
 
 	mp3_reset();
-	err = es8311_dac_on();
+	err = aster_audio_codec.enable(g_vol);
 	if (err) {
 		return err;
 	}
@@ -1821,28 +1570,7 @@ int aster_plat_audio_probe(uint8_t *dac_id, uint8_t *adc_id_out)
 {
 	k_mutex_lock(&audio_lock, K_FOREVER);
 	int err = codecs_init();
-#if defined(CONFIG_ASTER_AUDIO_CS43131) && CONFIG_ASTER_AUDIO_CS43131
-	if (dac_id)
-		*dac_id = err ? 0 : 0x31;
-	if (adc_id_out)
-		*adc_id_out = 0; /* PDM has no I2C identity register. */
-#else
-	if (dac_id) {
-		*dac_id = 0;
-		if (i2c_dev && device_is_ready(i2c_dev)) {
-			(void)codec_rd(DAC_ADDR, 0xFD, dac_id);
-		}
-	}
-	if (adc_id_out) {
-		*adc_id_out = 0;
-		if (i2c_dev && device_is_ready(i2c_dev)) {
-			(void)codec_rd(IS_ENABLED(CONFIG_ASTER_AUDIO_ADC_ES8311) ? DAC_ADDR
-			                                                         : adc_addr,
-			               IS_ENABLED(CONFIG_ASTER_AUDIO_ADC_ES8311) ? 0xFD : 0x3D,
-			               adc_id_out);
-		}
-	}
-#endif
+	aster_audio_codec.identify(err, dac_id, adc_id_out);
 	k_mutex_unlock(&audio_lock);
 	return err;
 }
@@ -1914,7 +1642,7 @@ int aster_plat_audio_beep(uint32_t duration_ms, uint32_t hz)
 		k_mutex_unlock(&audio_lock);
 		return err;
 	}
-	err = es8311_dac_on();
+	err = aster_audio_codec.enable(g_vol);
 	if (err) {
 		k_mutex_unlock(&audio_lock);
 		return err;
@@ -1992,7 +1720,7 @@ int aster_plat_audio_set_volume(int percent)
 	k_mutex_lock(&audio_lock, K_FOREVER);
 	int err = codecs_init();
 	if (err == 0) {
-		err = es8311_apply_vol();
+		err = aster_audio_codec.set_volume(g_vol);
 	}
 	k_mutex_unlock(&audio_lock);
 	return err;

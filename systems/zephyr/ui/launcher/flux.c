@@ -10,6 +10,7 @@
  */
 #include <lvgl.h>
 #include <aster/icon.h>
+#include <aster/error.h>
 #include <aster/event.h>
 #include <stdio.h>
 #include <string.h>
@@ -1428,7 +1429,7 @@ static void open_current(void)
     if (err) {
         launching = false;
         pull = 0;
-        notify("应用启动失败，请查看日志。 ");
+        notify(err == ASTER_ENOTSUP ? "应用不支持当前设备，请查看日志。" : "应用启动失败，请查看日志。");
         redraw();
     }
 }

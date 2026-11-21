@@ -16,7 +16,7 @@ class CommonPackage(unittest.TestCase):
             for target in ("xtensa", "riscv"):
                 manifest = json.dumps({"product": "aster", "target_id": target,
                     "id": "test.shared", "name": "Shared", "version": "1.0.0",
-                    "abi": {"min": "4.3"}, "requires": ["display"],
+                    "abi": {"min": "4.3"}, "requires": ["display"], "supported_boards": ["test.one", "test.two"],
                     "orientation": "landscape"}).encode()
                 wasm = (64 + len(manifest) + 3) & ~3
                 image = bytearray(wasm + 8)
@@ -36,20 +36,34 @@ class CommonPackage(unittest.TestCase):
 static int live,oom;static bool supported=true;
 static void *allocate(size_t n){if(oom)return NULL;void *p=malloc(n);if(p)live++;return p;}
 static void release(void *p){if(p)live--;free(p);}
-static bool feature(const char *name){assert(!strcmp(name,"display"));return supported;}
+static bool feature(uint32_t bit){assert(bit == 0);return supported;}
 int main(int argc,char **argv){
  assert(argc==3);
  const char *targets[]={"xtensa","riscv"};
  for(int i=0;i<2;i++){
   FILE *f=fopen(argv[i+1],"rb");assert(f);uint8_t image[2048];size_t n=fread(image,1,sizeof(image),f);fclose(f);
-  aster_pkg_policy_t p={.target_id=targets[i],.abi_version=0x040300,.alloc=allocate,.release=release,.has_feature=feature};
+  aster_pkg_policy_t p={.target_id=targets[i],.abi_version=0x040300,.alloc=allocate,.release=release};
   aster_manifest_t m;const uint8_t *wasm=NULL;size_t length=0;
   assert(!aster_pkg_decode(&p,image,n,&m,&wasm,&length,NULL,NULL,NULL));
   assert(!strcmp(m.id,"test.shared") && m.orientation==ASTER_ORIENT_LANDSCAPE);
+  assert(m.supported_boards_n==2);
+  assert(aster_pkg_board_allowed(m.supported_boards,2,"test.two"));
+  assert(!aster_pkg_board_allowed(m.supported_boards,2,"test"));
+  assert(aster_pkg_board_allowed(m.supported_boards,0,"unregistered-board"));
+  assert(aster_pkg_read_boards("{\"supported_boards\":42}",m.supported_boards)<0);
+  assert(!aster_pkg_board_allowed(m.supported_boards,-1,"test.two"));
   assert(length==8 && !memcmp(wasm,"\0asm",4) && live==0);
   p.target_id=targets[1-i];assert(aster_pkg_decode(&p,image,n,&m,0,0,0,0,0)==ASTER_EABI);assert(!live);
   p.target_id=targets[i];p.abi_version=0x040200;assert(aster_pkg_decode(&p,image,n,&m,0,0,0,0,0)==ASTER_EABI);
-  p.abi_version=0x040300;supported=false;assert(aster_pkg_decode(&p,image,n,&m,0,0,0,0,0)==ASTER_ENOTSUP);assert(!live);
+  p.abi_version=0x040300;supported=false;
+  assert(!aster_pkg_decode(&p,image,n,&m,0,0,0,0,0) && !live);
+  uint64_t required=aster_pkg_required_mask(m.requires,m.requires_n);
+  assert(!strcmp(aster_pkg_missing_requirement(required,feature),"display"));
+  supported=true;assert(!aster_pkg_missing_requirement(required,feature));
+  assert(!aster_pkg_missing_requirement(0,feature));
+  char names[8][24]={"future-cap"};
+  assert(aster_pkg_missing_requirement(aster_pkg_required_mask(names,1),feature));
+  assert(aster_pkg_read_requires("{\"requires\":[\"a\",\"b\",\"c\",\"d\",\"e\",\"f\",\"g\",\"h\",\"i\"]}",names)<0);
   supported=true;oom=1;assert(aster_pkg_decode(&p,image,n,&m,0,0,0,0,0)==ASTER_ENOMEM);assert(!live);oom=0;
   assert(aster_pkg_decode(&p,image,63,&m,0,0,0,0,0)==ASTER_ECORRUPT);
   assert(aster_pkg_decode(NULL,image,n,&m,0,0,0,0,0)==ASTER_EINVAL);

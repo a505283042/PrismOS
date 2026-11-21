@@ -24,6 +24,7 @@
 	if(CONFIG_ASTER_AUDIO)
 		target_sources(app PRIVATE
 			audio.c
+			"${ASTER_ROOT}/${CONFIG_ASTER_AUDIO_CODEC_SOURCE}"
 			audio_file_reader.c
 			audio_effect_engine.c
 			audio_lyrics.c

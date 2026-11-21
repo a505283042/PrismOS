@@ -446,9 +446,9 @@ static int cmd_ping(const struct shell *sh, size_t argc, char **argv)
 	ARG_UNUSED(argv);
 	aster_system_info_t info;
 	aster_sysinfo_get(&info);
-	shell_print(sh, "PONG sd=%d product=aster target=%s abi=%u.%u caps=%llx serial=shared",
+	shell_print(sh, "PONG sd=%d product=aster target=%s abi=%u.%u caps=%llx serial=shared board=%s",
 	            aster_storage_mounted() ? 1 : 0, CONFIG_ASTER_TARGET_ID, ASTER_ABI_MAJOR,
-	            ASTER_ABI_MINOR, (unsigned long long)info.feature_flags);
+	            ASTER_ABI_MINOR, (unsigned long long)info.feature_flags, info.board);
 	return 0;
 }
 
@@ -529,10 +529,10 @@ static void fsvc_fn(void *p1, void *p2, void *p3)
 			aster_system_info_t info;
 
 			aster_sysinfo_get(&info);
-			cdc_reply("PONG sd=%d product=aster target=%s abi=%u.%u caps=%llx",
+			cdc_reply("PONG sd=%d product=aster target=%s abi=%u.%u caps=%llx board=%s",
 			          aster_storage_mounted() ? 1 : 0, CONFIG_ASTER_TARGET_ID,
 			          ASTER_ABI_MAJOR, ASTER_ABI_MINOR,
-			          (unsigned long long)info.feature_flags);
+			          (unsigned long long)info.feature_flags, info.board);
 		} else if (strncmp(line, CMD_PUT, sizeof(CMD_PUT) - 1) == 0) {
 			char path[160];
 			uint32_t len = 0, crc = 0, off = 0;

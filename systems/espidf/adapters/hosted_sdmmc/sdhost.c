@@ -7,6 +7,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include <stdbool.h>
+_Static_assert(ASTER_STORAGE_SLOT >= 0 && ASTER_STORAGE_SLOT < 2 &&
+               ASTER_HOSTED_SLOT >= 0 && ASTER_HOSTED_SLOT < 2 &&
+               ASTER_STORAGE_SLOT != ASTER_HOSTED_SLOT, "SD and Hosted need distinct slots");
 static SemaphoreHandle_t lock;
 static bool ready, owner[2];
 
@@ -54,20 +57,20 @@ static esp_err_t release(int slot)
 
 esp_err_t aster_storage_sdmmc_init(void)
 {
-    return acquire(0);
+    return acquire(ASTER_STORAGE_SLOT);
 }
 
 esp_err_t aster_storage_sdmmc_deinit(int slot)
 {
-    return slot == 0 ? release(0) : ESP_ERR_INVALID_ARG;
+    return slot == ASTER_STORAGE_SLOT ? release(slot) : ESP_ERR_INVALID_ARG;
 }
 
 esp_err_t aster_hosted_sdmmc_init(void)
 {
-    return acquire(1);
+    return acquire(ASTER_HOSTED_SLOT);
 }
 
 esp_err_t aster_hosted_sdmmc_deinit(void)
 {
-    return release(1);
+    return release(ASTER_HOSTED_SLOT);
 }

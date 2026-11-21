@@ -5,6 +5,7 @@
 #include "aster_perms.h"
 #include "aster_storage.h"
 #include "aster_versions.h"
+#include "aster_sysinfo.h"
 #include "aster_kv.h"
 
 #include <errno.h>
@@ -281,9 +282,14 @@ int aster_app_mgr_scan(void)
 			r->aot_skip = v;
 		/* permission mask (ABI 1.2 enforcement); packed at scan so the
 		 * runtime gate never touches the FS at call time */
-		char perms[8][24];
-		int pn = aster_json_str_array(jbuf, "permissions", perms, 8);
-		r->perm_mask = aster_perm_mask(perms, (uint32_t)pn);
+		char boards[8][40];
+		int board_count = aster_pkg_read_boards(jbuf, boards);
+		r->unsupported_board = !aster_pkg_board_allowed(boards, board_count, CONFIG_ASTER_BOARD_ID);
+		char names[8][24];
+		int required = aster_pkg_read_requires(jbuf, names);
+		r->required_features = aster_pkg_required_mask(names, required);
+		int pn = aster_json_str_array(jbuf, "permissions", names, 8);
+		r->perm_mask = aster_perm_mask(names, (uint32_t)pn);
 		if (!r->name[0]) {
 			strncpy(r->name, r->id, sizeof(r->name) - 1);
 		}
@@ -511,6 +517,21 @@ static int power_guarded_uninstall(const char *id)
 	return err;
 }
 
+int aster_app_mgr_check_launch(const aster_app_rec_t *record)
+{
+	if (record->unsupported_board) {
+		LOG_WRN("Cannot start %s: supported_boards excludes %s", record->id, CONFIG_ASTER_BOARD_ID);
+		return ASTER_ENOTSUP;
+	}
+	const char *missing = aster_pkg_missing_requirement(record->required_features,
+	                                                  aster_sysinfo_has_feature);
+	if (missing) {
+		LOG_WRN("Cannot start %s: missing required capability %s", record->id, missing);
+		return ASTER_ENOTSUP;
+	}
+	return ASTER_OK;
+}
+
 int aster_app_mgr_read_manifest(const char *id, aster_manifest_t *m)
 {
 	/* was 512: anything the writer produced between 512 and 831 bytes read
@@ -539,7 +560,12 @@ int aster_app_mgr_read_manifest(const char *id, aster_manifest_t *m)
 		m->mem_stack = v;
 	if (aster_json_u32(jbuf, "mem_heap", &v) == 0)
 		m->mem_heap = v;
-	m->requires_n = aster_json_str_array(jbuf, "requires", m->requires, 8);
+	int boards = aster_pkg_read_boards(jbuf, m->supported_boards);
+	int required = aster_pkg_read_requires(jbuf, m->requires);
+	if (boards < 0 || required < 0)
+		return ASTER_ECORRUPT;
+	m->supported_boards_n = (uint32_t)boards;
+	m->requires_n = (uint32_t)required;
 	m->optional_n = aster_json_str_array(jbuf, "optional", m->optional, 8);
 	m->permissions_n = aster_json_str_array(jbuf, "permissions", m->permissions, 8);
 	{

@@ -72,7 +72,9 @@ static void worker(void *unused)
             aster_app_rec_t rec;
             char path[256], dir[192];
             bool have = aster_app_mgr_find_snapshot(job.id, &rec);
-            if (have && aster_storage_app_code_dir(dir, sizeof(dir), job.id) == 0 &&
+            if (have)
+                result = aster_app_mgr_check_launch(&rec);
+            if (!result && aster_storage_app_code_dir(dir, sizeof(dir), job.id) == 0 &&
                 snprintf(path, sizeof(path), "%s/%s", dir, rec.has_aot ? "app.aot" : "app.wasm") <
                     (int)sizeof(path)) {
                 /* Reserve the record before dropping files_lock; installation
@@ -98,8 +100,11 @@ static void worker(void *unused)
 #endif
                 aster_app_mgr_set_state(
                     job.id, result ? ASTER_APP_STATE_CRASHED : ASTER_APP_STATE_STOPPED, result);
-            } else
+            } else {
+                if (!result)
+                    result = ASTER_ENOENT;
                 aster_app_mgr_files_unlock();
+            }
         }
         ESP_LOGI("aster_apps", "APP %s finished, result=%d", job.diagnostic ? "diagnostic" : job.id,
                  result);
@@ -138,6 +143,15 @@ static int launch(const char *id, bool diagnostic)
     if (busy || aster_power_pending()) {
         xSemaphoreGive(state_lock);
         return ASTER_EBUSY;
+    }
+    if (!diagnostic) {
+        aster_app_rec_t record;
+        int err = aster_app_mgr_find_snapshot(id, &record) ? aster_app_mgr_check_launch(&record)
+                                                           : ASTER_ENOENT;
+        if (err) {
+            xSemaphoreGive(state_lock);
+            return err;
+        }
     }
     job_t job = {.diagnostic = diagnostic};
     if (id)

@@ -80,8 +80,6 @@ static int command(int argc, char **argv)
 
 void aster_idf_network_start(void)
 {
-    /* Board touch reset (GPIO6, shared with C5 boot) has completed before here.
-     * ESP-Hosted resets C5 only via GPIO54. SD card occupies slot 0. */
     esp_err_t r = nvs_flash_init();
     if (r != ESP_OK) {
         ESP_LOGE(TAG, "NVS initialization: %s", esp_err_to_name(r));

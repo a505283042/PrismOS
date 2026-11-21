@@ -63,7 +63,7 @@ int main(void){fresh_root();assert(!aster_pkg_install_bundle_progress("test.ast"
 #define ASTER_EEXIST -9
 #define ASTER_EMSGSIZE -22
 #define ASTER_ENOTSUP -3
-#define ASTER_MANIFEST_MAX 1152
+#define ASTER_MANIFEST_MAX 1536
 #define ASTER_APP_DESCRIPTION_MAX 128
 #define ASTER_INSTALL_MARKER ".installing"
 #define ASTER_ORIENT_ANY -1
@@ -203,6 +203,7 @@ static const char *aster_pkg_orientation_name(int8_t o) {(void)o;return NULL;}
 static int aster_pkg_parse(const uint8_t *img,size_t n,aster_manifest_t *m,
  const uint8_t **wasm,size_t *wlen,const uint8_t **aot,size_t *alen,uint32_t *target) {
  assert(n==256);memset(m,0,sizeof(*m));snprintf(m->id,sizeof(m->id),"%s",package_id);strcpy(m->name,"Test");snprintf(m->version,sizeof(m->version),"%u.0",revision);
+ strcpy(m->supported_boards[0],"test.next");m->supported_boards_n=1;
  strcpy(m->abi_min,"3.7");strcpy(m->abi_target,"3.7.0");m->orientation=ASTER_ORIENT_ANY;
  m->icon_off=16;m->icon_len=8;m->hdr_size=0;m->assets_off=64;m->assets_len=64;
  *wasm=img;*wlen=8;*aot=img+8;*alen=8;*target=1;return 0;
@@ -312,6 +313,7 @@ int main(void) {
    /* A reboot simply reconstructs the registry from these same files. */
    assert(aster_pkg_install_file("retry.ast")==0 && installed==1);
    assert(read_manifest_for("test.app",manifest_buf,sizeof(manifest_buf))==0);
+   assert(strstr(manifest_buf,"\"supported_boards\":[\"test.next\"]"));
    assert(strstr(manifest_buf,"\"installed\":1")&&strstr(manifest_buf,"\"aot\":1"));
    assert(opens==closes && allocated==freed && !lock_depth);assert(!rmrf(root));
   }

@@ -9,7 +9,7 @@
 - `include/`：不对齐输入安全的字节序读取工具。
 - `sources.cmake`：两种构建系统读取的同一份源码及头文件目录清单。
 
-包解析通过 `aster_pkg_policy_t` 接收目标架构、ABI、分配/释放、能力查询以及可选日志回调。系统适配器负责提供这些参数；公共层不判断自己运行在哪个系统。迁移保留了原有分配器与能力校验策略，不改变 APP ABI、包格式及持久化目录。
+包解析通过 `aster_pkg_policy_t` 接收目标架构、ABI、分配/释放以及可选日志回调。系统适配器负责提供这些参数；公共层不判断自己运行在哪个系统。设备启动 APP 时才按已安装清单检查适用板型和必需能力。
 
 Zephyr 在 `systems/zephyr/CMakeLists.txt` 中引入公共头目录，并按服务开关选择源码。IDF 的 runtime/transport/render 组件读取同一清单。公共层不得反向引用 `systems/`；测试 `tests/test_common_package.py` 同时检查依赖边界，并在没有任何后端头文件的情况下编译真实解析器。
 

@@ -82,6 +82,7 @@ def main():
         )
         includes = [
             ROOT / "common/port",
+            ROOT / "common/audio",
             ROOT / "common/include",
             ROOT / "common/package",
             ROOT / "common/net",
@@ -100,7 +101,9 @@ def main():
                 Path(__file__).parent / "port_mock.c",
                 ROOT / "common/port/aster_deploy.c",
                 ROOT / "common/port/aster_os.c",
+                ROOT / "common/port/aster_power.c",
                 ROOT / "common/port/aster_services.c",
+                ROOT / "common/audio/aster_player_service.c",
                 ROOT / "common/package/aster_pkg_decode.c",
                 render_root / "port.c",
             ]
@@ -145,6 +148,7 @@ def main():
             "-DASTER_IDF_HOST_TEST",
             "-DTEST_RENDER",
             "-DCONFIG_ASTER_LAUNCHER_FLUX=1",
+            '-DCONFIG_ASTER_BOARD_ID="idf-host-test"',
             '-DCONFIG_ASTER_TARGET_ID="riscv"',
             '-DCONFIG_ASTER_AOT_TARGET_ID=2',
             "-ffunction-sections",

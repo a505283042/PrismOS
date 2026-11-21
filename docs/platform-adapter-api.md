@@ -50,6 +50,27 @@ if (!error) error = aster_device_bind(&board_ops);
 4. 提供实际屏幕尺寸、内存、CPU/AOT 目标和能力；APP 仍按 CPU 架构构建，新增接口不会让 Xtensa 与 RISC-V AOT 互通。
 5. 运行端口测试、目标构建，再实测字体、Launcher、下拉面板、商城下载安装和 APP 返回。
 
+## 音频与外接 Wi-Fi 的板级配置
+
+ESP-IDF 在发现组件依赖和正式构建时都读取当前板的 `boards/<板>/idf/aster_board.cmake`。在板目录选择适配器、声明源文件和引脚。以采用 ES8311 和原生 Wi-Fi 的新板为例：
+
+```cmake
+set(ASTER_BOARD_AUDIO_ADAPTER "${ASTER_IDF_ADAPTERS}/es8311_i2s/adapter.cmake")
+set(ASTER_BOARD_AUDIO_SOURCES "${CMAKE_CURRENT_LIST_DIR}/port/audio_wiring.c")
+```
+
+在 `audio_wiring.c` 实现 `aster_es8311_wiring` 和功放使能 GPIO；无功放控制脚时后者用零初始化。鱼鹰光电 P4C5 提供了完整接线示例。FAKE POD NANO PRO 选择 `cs43131_i2s_pdm`，由接线表提供 I²C 地址、复位、I²S 端口与时钟、PDM 麦克风引脚。该适配器使用 24.576 MHz DAC 晶振。更换音频芯片时，可提供自己的 `ASTER_BOARD_AUDIO_SOURCES`，按 `audio_codec.h` 实现初始化、启用、音量及探测方法，芯片需要时再实现采样率切换。传输接口由 `audio_port.h` 定义。板级依赖通过 `ASTER_BOARD_AUDIO_REQUIRES` 声明。
+
+系统播放器通过 `ASTER_BOARD_MEDIA_PLAYER` 选择，需由板级驱动绑定有线输出端点。频谱通过 `ASTER_BOARD_AUDIO_SPECTRUM` 选择。经典蓝牙音频另需设备名 `ASTER_BOARD_BT_AUDIO_NAME` 和 IDF 的经典蓝牙配置。Zephyr 音频使用设备树选择 I²S 和功放，可在板级 `.conf` 通过 `CONFIG_ASTER_AUDIO_CODEC_SOURCE` 指向实现同一编解码器接口的源码，默认沿用 ES8311/ES7210。
+
+原生 Wi-Fi 板沿用 IDF 的 `esp_wifi`。外接 ESP-Hosted C5 且 SD 卡与协处理器共享 SDMMC 控制器的板，选择 `ASTER_BOARD_WIFI_ADAPTER` 为 `hosted_sdmmc/adapter.cmake`，在板级配置设置 `ASTER_BOARD_STORAGE_SLOT`，Hosted 槽由驱动的 `CONFIG_ESP_HOSTED_SDIO_SLOT` 提供。两者须使用不同槽位。板级组件依赖、SDIO 引脚和协处理器复位按鱼鹰板示例配置。SD 挂载/卸载使用 `aster_storage_sdmmc_init/deinit`。使用其他传输方式时，可提供适配脚本声明 `ASTER_BOARD_WIFI_SOURCES`、`ASTER_BOARD_WIFI_INCLUDE_DIRS` 和 `ASTER_BOARD_WIFI_REQUIRES`，需要额外配置 IDF 目标时实现 `aster_board_configure_wifi(target)`。
+
+## APP 启动兼容性
+
+设备维护自己的稳定板型 ID。首次定义新板时，固件的 `CONFIG_ASTER_BOARD_ID`、系统信息的 `board` 与产品资料的 `public.board_id` 应取同一个值。已有架构和 AOT 配置可以直接使用相应架构的 APP，SDK 无需登记新板。
+
+安装保留 APP 清单的 `supported_boards` 和 `requires`。打开 APP 时，两套运行时都检查当前设备是否在声明的板型列表内，并查询此时的实际能力。缺省或空板型列表可在任何满足架构、ABI 和必需能力的板上尝试运行。比如 `["fakepod-s31"]` 表示只允许 FAKE POD NANO PRO。`optional` 只供 APP 自行判断。
+
 ## 验证入口
 
 `aster port selftest` 显式检查外部/内部内存、时钟、递归互斥锁、信号量、任务启动和等待、设备资料、显示查询、SD 文件读写/同步/改名/目录/容量。仅创建并删除自己生成的唯一测试文件，不格式化卡，不访问已安装 APP 的资源和存档。先停止活动 APP，再执行。

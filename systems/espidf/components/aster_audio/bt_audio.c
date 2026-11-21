@@ -3,7 +3,7 @@
  * created at boot. Stack callbacks only copy data; one worker owns the DAC. */
 #include "aster_power.h"
 #include "sdkconfig.h"
-#if CONFIG_BT_ENABLED && CONFIG_BT_CLASSIC_ENABLED
+#ifdef ASTER_IDF_BT_AUDIO
 #include "aster_audio_output.h"
 #include "aster_media.h"
 #include "aster_platform.h"
@@ -31,7 +31,7 @@
 #include <inttypes.h>
 #define PCM_CAPACITY 65536u
 static const char *TAG = "bt_audio";
-static const char *NAME = "Aster-S31 Audio";
+static const char *NAME = ASTER_IDF_BT_NAME;
 static atomic_bool running, stop_requested, accept_pcm, connected, playing, profile_ready,
     profile_down;
 static atomic_uint rate, channels, received, dropped, submitted, gaps;

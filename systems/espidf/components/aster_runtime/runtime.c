@@ -25,35 +25,6 @@
 #include "wifi_service.h"
 #include "aster_idf_audio.h"
 #endif
-bool aster_sysinfo_feature_by_name(const char *name)
-{
-    if (!strcmp(name, "media-player"))
-        return aster_player_service_available();
-    if (!strcmp(name, "display"))
-        return aster_idf_feature(ASTER_FEATURE_DISPLAY);
-    if (!strcmp(name, "touch"))
-        return aster_idf_feature(ASTER_FEATURE_TOUCH);
-    if (!strcmp(name, "framebuffer"))
-        return aster_idf_feature(ASTER_FEATURE_FRAMEBUFFER);
-    if (!strcmp(name, "accelerometer"))
-        return aster_idf_feature(ASTER_FEATURE_ACCELEROMETER);
-    if (!strcmp(name, "gyroscope"))
-        return aster_idf_feature(ASTER_FEATURE_GYROSCOPE);
-    if (!strcmp(name, "filesystem") || !strcmp(name, "storage.app"))
-        return aster_storage_mounted();
-#ifndef ASTER_IDF_HOST_TEST
-    if (!strcmp(name, "wifi"))
-        return aster_idf_wifi_available();
-    if (!strcmp(name, "audio-in") || !strcmp(name, "audio-out") || !strcmp(name, "audio-stream") ||
-        !strcmp(name, "audio-effects") || !strcmp(name, "audio-effects-memory"))
-        return aster_idf_audio_available();
-    if (!strcmp(name, "rtc") || !strcmp(name, "psram") || !strcmp(name, "network") ||
-        !strcmp(name, "http") || !strcmp(name, "tls") || !strcmp(name, "mqtt") ||
-        !strcmp(name, "websocket"))
-        return true;
-#endif
-    return false;
-}
 #endif
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
@@ -402,6 +373,22 @@ static int run_wasm(const char *path, const char *id, uint32_t perms, unsigned f
             aster_pkg_parse(bytes, (size_t)size, &manifest, &code, &length, NULL, NULL, NULL);
         if (status == ASTER_OK)
             status = aster_sig_check(bytes, (size_t)size);
+        if (status == ASTER_OK && !aster_pkg_board_allowed(manifest.supported_boards,
+                manifest.supported_boards_n, CONFIG_ASTER_BOARD_ID)) {
+            fprintf(stderr, "Cannot start %s: supported_boards excludes %s\n", manifest.id,
+                    CONFIG_ASTER_BOARD_ID);
+            free(bytes);
+            return ASTER_ENOTSUP;
+        }
+        if (status == ASTER_OK) {
+            uint64_t required = aster_pkg_required_mask(manifest.requires, manifest.requires_n);
+            const char *missing = aster_pkg_missing_requirement(required, aster_sysinfo_has_feature);
+            if (missing) {
+                fprintf(stderr, "Cannot start %s: missing required capability %s\n", manifest.id, missing);
+                free(bytes);
+                return ASTER_ENOTSUP;
+            }
+        }
         if (status != ASTER_OK) {
             fprintf(stderr, "package rejected: %d\n", status ? status : ASTER_ENOTSUP);
             free(bytes);

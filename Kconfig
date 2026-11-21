@@ -500,7 +500,7 @@ config ASTER_HAS_WIFI
 	default n
 
 # MOUSE and BLUETOOTH are the two feature bits that have been in the ABI since
-# 1.0 -- and named in aster_sysinfo_feature_by_name() -- with no Kconfig symbol
+# 1.0 -- and listed in the package capability map -- with no Kconfig symbol
 # to ever set them. An app with `requires = ["mouse"]` was therefore refused on
 # every board that could ever exist, for a capability the ABI advertised. They
 # stay default n until a board actually provides one; the point is that the

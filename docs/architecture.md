@@ -12,7 +12,7 @@
 
 `common/` 是 IDF 与 Zephyr 共用的内部核心，当前包含包/清单解析、HTTP/MQTT/WebSocket 编解码和字节序工具。公共代码仅依赖标准 C、ABI 契约及显式传入的端口回调，不包含 Zephyr、FreeRTOS 或 ESP-IDF 头文件。两个构建系统读取 `common/sources.cmake`，不复制公共实现。
 
-包解析的 `aster_pkg_policy_t` 由后端提供目标架构、ABI、分配器、能力查询和日志回调。因此相同解析器既可检查 P4 的 RISC-V 包，也可检查 lckfb 的 Xtensa 包。APP ABI 和安装布局保持不变。
+包解析的 `aster_pkg_policy_t` 由后端提供目标架构、ABI、分配器和日志回调。因此相同解析器既可检查 P4 的 RISC-V 包，也可检查 lckfb 的 Xtensa 包。APP ABI 和安装布局保持不变。
 
 提取正在分阶段进行：安装事务、版本/注册表、网络服务状态机及 UI 中仍有两边复用但位于 `systems/zephyr` 的实现。它们尚未全部变成独立公共模块；下一步应先定义文件系统、同步、时钟和显示提交端口，再迁移相应逻辑。具体边界见 `common/README.md`。
 

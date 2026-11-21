@@ -30,7 +30,4 @@ static inline const char *aster_arch_name(uint32_t arch)
 	}
 }
 
-/* Capability name from manifest requires/optional -> bit (design doc sec.8) */
-bool aster_sysinfo_feature_by_name(const char *name);
-
 #endif

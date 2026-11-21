@@ -120,7 +120,8 @@ order because `build.py` inserts the conditional ones only when set):
 | `abi` | always | yes | `{min, target}`; `min` is the install gate |
 | `memory` | always | yes | `{initial, stack}`; `max` only if non-zero, `heap` only if set |
 | `entry` | if set | no | `app.wasm` when present |
-| `requires` / `optional` | if non-empty | yes | capability names, checked at install |
+| `requires` / `optional` | if non-empty | yes | required capabilities are checked at launch, optional capabilities are advisory |
+| `supported_boards` | if non-empty | yes | up to 8 case-sensitive board IDs (1–39 ASCII letters, digits, dots, hyphens or underscores). Any matching ID allows launch. Omitted or empty allows any compatible board |
 | `permissions` | if non-empty | yes | `fs` / `kv` / `appmgr` / `sd`（ABI 1.2 起硬执法） |
 | `category` | if set | yes | `game` / `tool` / `system`, copied to the on-disk manifest |
 | `orientation` | if set | yes | `portrait` / `landscape`, copied to the on-disk manifest |
@@ -162,7 +163,7 @@ and `/cache` paths, without embedding physical version-slot paths.
 
 `aster app install <path.ast>` verifies: magic, header consistency
 (offsets + lengths inside file), manifest JSON required keys, ABI compat
-(`min <= device abi <= major`), `requires` capabilities present, wasm magic
+(`min <= device abi <= major`), wasm magic
 `\0asm`, and the **signature** (see below). `pack_mja.py` and the firmware
 parser share this layout.
 

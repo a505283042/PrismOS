@@ -21,7 +21,7 @@
  * turns overflow from an error into a disappearance -- a short scan buffer
  * drops the app from the launcher, a short read_manifest buffer reports an app
  * that IS listed as ASTER_ENOENT. Fix overflow here, never at a call site. */
-#define ASTER_MANIFEST_MAX 1152
+#define ASTER_MANIFEST_MAX 1536
 /* Directories with this durable marker are never treated as installed APPs. */
 #define ASTER_INSTALL_MARKER ".installing"
 /* Optional launcher introduction, at most 127 UTF-8 bytes plus NUL. */
@@ -66,6 +66,8 @@ typedef struct {
 	uint32_t mem_max;
 	uint32_t mem_stack;
 	uint32_t mem_heap;
+	char     supported_boards[8][40]; /* IDs fit aster_system_info_t.board */
+	uint32_t supported_boards_n;
 	char     requires[8][24];
 	uint32_t requires_n;
 	char     optional[8][24];
@@ -105,13 +107,19 @@ const char *aster_pkg_orientation_name(int8_t o);
 /* Overflow-safe section bounds, also used by resource extraction. */
 bool aster_pkg_in_bounds(uint32_t offset, size_t length, size_t total, size_t base);
 
+/* Boot-time registry stores only the required bits. Availability is queried at launch. */
+int aster_pkg_read_requires(const char *json, char names[8][24]);
+int aster_pkg_read_boards(const char *json, char boards[8][40]);
+bool aster_pkg_board_allowed(char boards[][40], int count, const char *board_id);
+uint64_t aster_pkg_required_mask(char names[][24], int count);
+const char *aster_pkg_missing_requirement(uint64_t mask, bool (*available)(uint32_t));
+
 /* Backend policy: no kernel or filesystem types cross this boundary. */
 typedef struct {
     const char *target_id;
     uint32_t abi_version;
     void *(*alloc)(size_t size);
     void (*release)(void *ptr);
-    bool (*has_feature)(const char *name);
     void (*diagnostic)(bool error, const char *message); /* optional */
 } aster_pkg_policy_t;
 int aster_pkg_decode(const aster_pkg_policy_t *policy,

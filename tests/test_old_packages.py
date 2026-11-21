@@ -30,7 +30,6 @@ class OldPackages(unittest.TestCase):
 #define LOG_ERR(...) ((void)fprintf(stderr,__VA_ARGS__))
 #define LOG_WRN(...) ((void)fprintf(stderr,__VA_ARGS__))
 #define CONFIG_ASTER_TARGET_ID "xtensa"
-static bool aster_sysinfo_feature_by_name(const char *name) {(void)name;return true;}
 '''
             + impl
             + r'''

@@ -3,6 +3,8 @@
 #include "driver/i2c_master.h"
 #include "driver/gpio.h"
 #include "audio_port.h"
+#include "es83xx_control.h"
+#include "es8311_i2s_wiring.h"
 #include "aster_idf_audio.h"
 #include "aster_platform.h"
 #include <string.h>
@@ -53,7 +55,7 @@ const struct device *aster_idf_audio_i2c(void)
     if (codec)
         return &i2c_device;
     i2c_master_bus_handle_t bus;
-    if (i2c_master_get_bus_handle(1, &bus) != ESP_OK)
+    if (i2c_master_get_bus_handle(aster_es8311_wiring.i2c_port, &bus) != ESP_OK)
         return NULL;
     i2c_device_config_t config = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7, .device_address = 0x18, .scl_speed_hz = 100000};
@@ -133,16 +135,16 @@ int i2s_configure(const struct device *d, enum i2s_dir dir, const struct i2s_con
     if (config->word_size != 16 || config->channels != 2 || !config->mem_slab ||
         !config->block_size)
         return -EINVAL;
-    if (dir == I2S_DIR_RX) {
+    if (dir == ASTER_I2S_RX) {
         if (!rx || config->frame_clk_freq != tx_config.frame_clk_freq)
             return -EINVAL;
         rx_config = *config;
         return 0;
     }
-    if (dir != I2S_DIR_TX)
+    if (dir != ASTER_I2S_TX)
         return -EINVAL;
     shutdown();
-    i2s_chan_config_t channel = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
+    i2s_chan_config_t channel = I2S_CHANNEL_DEFAULT_CONFIG(aster_es8311_wiring.i2s_port, I2S_ROLE_MASTER);
     channel.dma_desc_num = 6;
     channel.dma_frame_num = 128;
     channel.auto_clear_after_cb = true;
@@ -151,7 +153,7 @@ int i2s_configure(const struct device *d, enum i2s_dir dir, const struct i2s_con
         .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(config->frame_clk_freq),
         .slot_cfg =
             I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
-        .gpio_cfg = {.mclk = 13, .bclk = 12, .ws = 10, .dout = 9, .din = 11},
+        .gpio_cfg = aster_es8311_wiring.pins,
     };
     if (r == ESP_OK)
         r = i2s_channel_init_std_mode(tx, &standard);
@@ -175,11 +177,11 @@ int i2s_trigger(const struct device *d, enum i2s_dir dir, int trigger)
         return 0;
     }
     if (trigger == I2S_TRIGGER_DROP || trigger == I2S_TRIGGER_PREPARE) {
-        if ((dir & I2S_DIR_TX) && tx_on) {
+        if ((dir & ASTER_I2S_TX) && tx_on) {
             i2s_channel_disable(tx);
             tx_on = false;
         }
-        if ((dir & I2S_DIR_RX) && rx_on) {
+        if ((dir & ASTER_I2S_RX) && rx_on) {
             i2s_channel_disable(rx);
             rx_on = false;
         }
@@ -188,12 +190,12 @@ int i2s_trigger(const struct device *d, enum i2s_dir dir, int trigger)
     if (trigger != I2S_TRIGGER_START)
         return -EINVAL;
     esp_err_t r = ESP_OK;
-    if ((dir & I2S_DIR_RX) && !rx_on) {
+    if ((dir & ASTER_I2S_RX) && !rx_on) {
         r = rx ? i2s_channel_enable(rx) : ESP_ERR_INVALID_STATE;
         if (r == ESP_OK)
             rx_on = true;
     }
-    if (r == ESP_OK && (dir & I2S_DIR_TX) && !tx_on) {
+    if (r == ESP_OK && (dir & ASTER_I2S_TX) && !tx_on) {
         r = tx ? i2s_channel_enable(tx) : ESP_ERR_INVALID_STATE;
         if (r == ESP_OK)
             tx_on = true;

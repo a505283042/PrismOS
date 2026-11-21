@@ -1092,20 +1092,11 @@ static int ctx_startup(aster_app_ctx_t *ctx)
 {
 	/* A package can remain installed when the display mode changes. Recheck
      * its requirements on the worker after applying a queued mode change. */
-	aster_manifest_t manifest;
-	int manifest_err = aster_app_mgr_read_manifest(ctx->id, &manifest);
-	if (manifest_err)
-		return manifest_err;
-	for (uint32_t i = 0; i < manifest.requires_n; ++i) {
-		if (!aster_sysinfo_feature_by_name(manifest.requires[i])) {
-			LOG_ERR("start: capability unavailable in current mode: %s",
-			        manifest.requires[i]);
-			return ASTER_ENOTSUP;
-		}
-	}
-	aster_app_rec_t *rec = ctx->rec; /* ctx_load may downgrade has_aot */
-
-	int err = ctx_load(ctx, rec);
+	aster_app_rec_t *rec = ctx->rec;
+	int err = aster_app_mgr_check_launch(rec);
+	if (err)
+		return err;
+	err = ctx_load(ctx, rec);
 	if (err) {
 		/* ctx_load returns with img/module/inst partially acquired on
 		 * every failure path; without this the PSRAM pool bleeds a few
@@ -1352,6 +1343,10 @@ static int app_start_common(const char *id, bool wait_ready)
 		ret = ASTER_EABI;
 		goto out;
 	}
+
+	ret = aster_app_mgr_check_launch(rec);
+	if (ret)
+		goto out;
 
 	aster_app_ctx_t *ctx = k_calloc(1, sizeof(*ctx));
 	if (!ctx) {

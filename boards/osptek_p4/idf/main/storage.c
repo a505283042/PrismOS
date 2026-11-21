@@ -48,7 +48,7 @@ static int format_and_reboot(void)
 void osptek_storage_start(void)
 {
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
-    host.slot = SDMMC_HOST_SLOT_0;
+    host.slot = ASTER_STORAGE_SLOT;
     host.init = aster_storage_sdmmc_init;
     host.flags |= SDMMC_HOST_FLAG_DEINIT_ARG;
     host.deinit_p = aster_storage_sdmmc_deinit;

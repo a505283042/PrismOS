@@ -50,6 +50,8 @@ typedef struct {
 	 * explicitly on every pass, which also means changing the manifest
 	 * takes effect on the next scan rather than at the next boot. */
 	int8_t          want_orientation;
+	bool            unsupported_board;
+	uint64_t        required_features;
 	uint32_t        perm_mask;  /* ASTER_PERM_x (from manifest permissions[]) */
 	aster_app_state_t state;
 	uint32_t        last_error;
@@ -63,6 +65,7 @@ typedef struct {
  * of concurrently running applications (CONFIG_ASTER_APP_MAX). */
 #define ASTER_APP_MAX_RECS 64
 
+int aster_app_mgr_check_launch(const aster_app_rec_t *record);
 int  aster_app_mgr_init(void);
 /* rescan /SD:/aster/apps. The runtime-owned fields (state, start counters) of
  * the app that is currently running survive the rescan: it must not be

@@ -8,6 +8,7 @@
  * https://github.com/osptek
  */
 
+#include "aster_idf_audio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -536,7 +537,6 @@ void app_main(void)
     ESP_LOGI(TAG, "Aster RGB565 display ready; touch=%s",
              io.touch_frame ? "ready (5 points)" : "unavailable");
     osptek_storage_start();
-    extern int aster_idf_audio_start(void);
     int audio = aster_idf_audio_start();
     if (audio)
         ESP_LOGW(TAG, "Audio unavailable: %d", audio);
@@ -544,6 +544,8 @@ void app_main(void)
     if (apps)
         ESP_LOGE(TAG, "Application worker unavailable: %d", apps);
     aster_idf_set_app_command(aster_idf_apps_command);
+    /* Touch reset (GPIO6, shared with C5 boot) must precede Hosted startup.
+     * Hosted controls the companion reset through GPIO54. */
     aster_idf_network_start();
     int transfer = aster_idf_transfer_register();
     if (transfer)

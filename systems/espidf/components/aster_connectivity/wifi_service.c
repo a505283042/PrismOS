@@ -326,7 +326,7 @@ static int connect_ap(request_t *request)
     wifi_config_t config = {0};
     memcpy(config.sta.ssid, request->ssid, strlen(request->ssid));
     memcpy(config.sta.password, request->password, strlen(request->password));
-    /* This ABI selects 2.4 GHz station networks, including on dual-band C5. */
+    /* This ABI selects 2.4 GHz station networks, including on dual-band radios. */
     config.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
     esp_wifi_disconnect();
     xEventGroupClearBits(events, GOT_IP);
@@ -409,7 +409,7 @@ static void worker(void *unused)
         r = esp_wifi_set_mode(WIFI_MODE_STA);
     if (r == ESP_OK)
         r = esp_wifi_start();
-    /* The remote C5 must support this API; do not guess its selected band. */
+    /* Use the same 2.4 GHz station policy for native and remote radios. */
     if (r == ESP_OK)
         r = esp_wifi_set_band_mode(WIFI_BAND_MODE_2G_ONLY);
     nvs_handle_t handle;
@@ -442,7 +442,7 @@ static void worker(void *unused)
     memset(&loaded, 0, sizeof(loaded));
     memset(&loaded_hotspot, 0, sizeof(loaded_hotspot));
     if (r != ESP_OK)
-        ESP_LOGE("aster_wifi", "C5 initialization failed: %s", esp_err_to_name(r));
+        ESP_LOGE("aster_wifi", "Wi-Fi initialization failed: %s", esp_err_to_name(r));
     if (r == ESP_OK)
         aster_idf_wifi_submit(ASTER_WIFI_OP_RECONNECT, NULL, NULL);
     request_t request;

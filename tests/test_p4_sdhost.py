@@ -5,7 +5,7 @@ from test_waveshare import ROOT, run_c
 
 class P4SDHost(unittest.TestCase):
     def test_storage_and_c5_release_only_their_own_slot(self):
-        source=(ROOT/'systems/espidf/components/aster_connectivity/sdhost.c').read_text()
+        source=(ROOT/'systems/espidf/adapters/hosted_sdmmc/sdhost.c').read_text()
         source='\n'.join(line for line in source.splitlines() if not line.startswith('#include'))
         run_c(r'''
 #include <assert.h>
@@ -17,6 +17,8 @@ typedef void *SemaphoreHandle_t;
 #define ESP_ERR_NO_MEM -1
 #define ESP_ERR_INVALID_STATE -2
 #define ESP_ERR_INVALID_ARG -3
+#define ASTER_STORAGE_SLOT 0
+#define ASTER_HOSTED_SLOT 1
 #define portMAX_DELAY 0xffffffffu
 static int depth,mutex,initializations,global_deinitializations,fail_init;
 static bool controller,registered[2];

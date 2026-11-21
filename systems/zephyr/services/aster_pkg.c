@@ -57,7 +57,6 @@ int aster_pkg_parse(const uint8_t *img, size_t size, aster_manifest_t *m, const 
 	        .abi_version = ASTER_ABI_VERSION,
 	        .alloc = k_malloc,
 	        .release = k_free,
-	        .has_feature = aster_sysinfo_feature_by_name,
 	        .diagnostic = package_diagnostic,
 	};
 	return aster_pkg_decode(&policy, img, size, m, wasm, wasm_len, aot, aot_len, aot_target);
@@ -133,7 +132,7 @@ static int json_string_field(char *out, size_t n, const char *key, const char *v
 	return (int)used;
 }
 
-static int json_arr(char *out, size_t n, const char *key, const char arr[][24], uint32_t cnt)
+static int json_arr(char *out, size_t n, const char *key, const char *items, size_t stride, uint32_t cnt)
 {
 	size_t used;
 	int w;
@@ -149,7 +148,7 @@ static int json_arr(char *out, size_t n, const char *key, const char arr[][24], 
 	used = (size_t)w;
 
 	for (uint32_t i = 0; i < cnt; i++) {
-		w = snprintf(out + used, n - used, "%s\"%s\"", i ? "," : "", arr[i]);
+		w = snprintf(out + used, n - used, "%s\"%s\"", i ? "," : "", items + i * stride);
 		if (w < 0 || (size_t)w >= n - used) {
 			return -1;
 		}
@@ -920,20 +919,8 @@ static int pkg_install_locked(const char *src_path, const char *resources, const
 	 * in the log. Overflow is therefore a hard ASTER_ECORRUPT, not a shorter
 	 * manifest.
 	 *
-	 * How much room is there really? Measured against the vocabularies as
-	 * they stand (sdk/tools/build.py VALID_CAPS/VALID_PERMS, the same words
-	 * aster_json_str_array copies 8 at a time): the 8 longest capabilities
-	 * cost 117 B per array, all four permissions cost 40 B, and the fixed
-	 * prefix is 324 B even with id/name/version at the lengths their
-	 * structs can hold -- 646 B for an app that fills every slot it can,
-	 * plus up to 254 B of escaped description against 1152.
-	 * The last real packages sit near 300 B.
-	 *
-	 * So the bound is not tight today, and that is exactly why the check
-	 * below must stay: the ceiling is a property of the vocabularies, not
-	 * of this buffer. One longer capability name moves it, and the failure
-	 * it would cause is silent (see above), which is the whole reason
-	 * overflowing is a hard ASTER_ECORRUPT rather than a shorter manifest. */
+	 * The normalized line can include escaped descriptions and the full list
+	 * of board IDs. Check every append before publishing this generation. */
 	/* Keep nested FS/CRC calls comfortably below the shell's stack budget. */
 	char *line = aster_psram_alloc(ASTER_MANIFEST_MAX);
 	if (!line) {
@@ -961,21 +948,28 @@ static int pkg_install_locked(const char *src_path, const char *resources, const
 	}
 
 	if (r >= 0) {
-		r = json_arr(line + w, ASTER_MANIFEST_MAX - w, "requires", m.requires,
-		             m.requires_n);
+		r = json_arr(line + w, ASTER_MANIFEST_MAX - w, "requires", (const char *)m.requires,
+		             sizeof(m.requires[0]), m.requires_n);
 	}
 	if (r >= 0) {
 		w += r;
-		r = json_arr(line + w, ASTER_MANIFEST_MAX - w, "optional", m.optional,
-		             m.optional_n);
+		r = json_arr(line + w, ASTER_MANIFEST_MAX - w, "optional", (const char *)m.optional,
+		             sizeof(m.optional[0]), m.optional_n);
 	}
 	if (r >= 0) {
 		w += r;
-		r = json_arr(line + w, ASTER_MANIFEST_MAX - w, "permissions", m.permissions,
-		             m.permissions_n);
+		r = json_arr(line + w, ASTER_MANIFEST_MAX - w, "permissions", (const char *)m.permissions,
+		             sizeof(m.permissions[0]), m.permissions_n);
 	}
 	if (r >= 0) {
 		w += r;
+	}
+	if (r >= 0 && m.supported_boards_n) {
+		r = json_arr(line + w, ASTER_MANIFEST_MAX - w, "supported_boards",
+		             (const char *)m.supported_boards, sizeof(m.supported_boards[0]),
+		             m.supported_boards_n);
+		if (r >= 0)
+			w += r;
 	}
 	if (r >= 0 && m.category[0]) {
 		r = snprintf(line + w, ASTER_MANIFEST_MAX - w, ",\"category\":\"%s\"", m.category);

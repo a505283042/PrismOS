@@ -9,6 +9,7 @@
 #include "aster_os.h"
 #include "aster_device.h"
 #include "aster_media.h"
+#include "aster_idf_audio.h"
 #include "esp_system.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
@@ -46,9 +47,7 @@ const aster_power_ops_t aster_idf_power_base = {.size = sizeof(aster_power_ops_t
 static int audio(void *ctx, bool sleeping)
 {
     (void)ctx;
-#if CONFIG_ASTER_BOARD_FAKEPOD_S31
-    extern int aster_idf_bt_audio_shutdown(void);
-    extern bool aster_idf_bt_audio_busy(void);
+#ifdef ASTER_IDF_MEDIA_PLAYER
     aster_media_snapshot_t state = {0};
     int snapshot = aster_media_snapshot(&state);
     bool media =
