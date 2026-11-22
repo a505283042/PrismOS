@@ -3,8 +3,8 @@
 #include "imgdec.h"
 #include "aster_idf_runtime.h"
 #include "esp_timer.h"
+#include "sdkconfig.h" /* target CONFIG_IDF_TARGET_* must precede accelerator header */
 #include "hifi_cover_accel.h"
-#include "sdkconfig.h"
 #include <aster/aster.h>
 #include <string.h>
 
