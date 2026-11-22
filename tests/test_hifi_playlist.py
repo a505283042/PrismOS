@@ -41,7 +41,11 @@ class Playlist(unittest.TestCase):
 
             a, b = root / "hifi_catalog_a.bin", root / "hifi_catalog_b.bin"
             a.write_bytes(catalog_bytes(ROWS, 5))
-            b.write_bytes(b"partial header")
+            # Slot B has a valid newer header but a damaged payload. The
+            # firmware must fall back to verified generation 5 (slot A).
+            damaged = bytearray(catalog_bytes(ROWS, 6))
+            damaged[-1] ^= 0x40
+            b.write_bytes(damaged)
 
             native = C_SOURCE.read_text(encoding="utf-8")
             native = native.replace(
