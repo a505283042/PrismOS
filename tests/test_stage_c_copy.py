@@ -36,6 +36,25 @@ class StageC(unittest.TestCase):
         self.assertIn("PPA_UNIT",FILL)
         self.assertIn("if (!s_out_be && aster_idf_ppa_fill_rgb565(",GFX)
 
+    def test_fill_cpu_vs_ppa_ui_ab_is_diagnostic_and_restored(self):
+        header=(RENDER/"ppa_fill.h").read_text(encoding="utf-8")
+        self.assertIn("aster_idf_ppa_fill_set_bench_cpu_only",header)
+        self.assertIn("static bool bench_cpu_only;",FILL)
+        self.assertIn("if (failed || bench_cpu_only || task->type",FILL)
+        self.assertIn("if (!client || failed || bench_cpu_only",FILL)
+        self.assertIn('!strcmp(argv[2], "bench-cpu")',UI)
+        self.assertIn('!strcmp(argv[2], "bench-ppa")',UI)
+        self.assertIn('request = 200 + (int)seconds;',UI)
+        self.assertIn('request = 300 + (int)seconds;',UI)
+        self.assertIn('ui_bench_cpu_only = request >= 200 && request < 300;',UI)
+        self.assertIn('aster_idf_ppa_fill_set_bench_cpu_only(ui_bench_cpu_only);',UI)
+        self.assertIn('UI BENCH RESULT fill_mode=%s',UI)
+        finish=UI[UI.index('if (now >= bench_end)'):UI.index('if (bench_warm && now >= bench_warm)')]
+        self.assertLess(finish.index("perf_print();"),
+                        finish.index("aster_idf_ppa_fill_set_bench_cpu_only(false);"))
+        self.assertIn("ui_bench_cpu_only = false;",finish)
+        self.assertIn("atomic_store(&ui_bench_reserved,false)",finish)
+
     def test_dma2d_is_diagnostic_only_and_public(self):
         self.assertIn('if(CONFIG_IDF_TARGET_ESP32S31)',CMAKE)
         self.assertIn('"stage_c_bench.c"',CMAKE)
