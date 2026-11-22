@@ -16,6 +16,12 @@
 #include <sys/stat.h>
 #include <stdbool.h>
 #include <stddef.h>
+#ifdef ESP_PLATFORM
+#include "esp_attr.h"
+#define HIFI_QUEUE_PSRAM EXT_RAM_BSS_ATTR
+#else
+#define HIFI_QUEUE_PSRAM
+#endif
 
 enum { HIF_MAGIC = 0x32464948u, HIF_VERSION = 2, HIF_MAX = 16384 };
 static const char *const catalog_paths[2] = {
@@ -34,7 +40,7 @@ typedef struct {
 _Static_assert(sizeof(hif_header_t) == 36, "HIF2 disk header drift");
 _Static_assert(sizeof(hif_row_t) == 160, "HIF2 disk row drift");
 
-static uint16_t shuffled[HIF_MAX];
+static HIFI_QUEUE_PSRAM uint16_t shuffled[HIF_MAX];
 static uint32_t shuffle_count, shuffle_generation;
 static uint32_t shuffle_cursor, prng_state = 0x35793ae1u;
 static bool shuffle_started;
@@ -76,12 +82,13 @@ static bool valid_relative(const char *name)
     if (!name || !name[0] || name[0]=='/' || name[0]=='\\')
         return false;
     if (strchr(name, ':') || strchr(name, '\\'))return false;
+    size_t n=strlen(name);
     if (!strcmp(name,"..") || !strncmp(name,"../",3) ||
-        strstr(name,"/../") || strstr(name,"/..") == name+strlen(name)-3)
+        strstr(name,"/../") || (n>=3 && !strcmp(name+n-3,"/..")))
         return false;
     return true;
 }
-static bool read_header(FILE *file, const char *path, hif_header_t *head)
+static bool read_header(FILE *file, hif_header_t *head)
 {
     struct stat st;
     if (fstat(fileno(file), &st)!=0 ||
@@ -116,7 +123,7 @@ static FILE *open_current(hif_header_t *head)
         FILE *f=fopen(catalog_paths[i],"rb");
         hif_header_t h={0};
         if (!f) continue;
-        if (!read_header(f,catalog_paths[i],&h)) {
+        if (!read_header(f,&h)) {
             fclose(f);
             continue;
         }
