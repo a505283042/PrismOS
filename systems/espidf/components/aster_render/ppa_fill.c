@@ -2,6 +2,7 @@
 /* P4 acceleration for large opaque rectangular fills. Other tasks continue
  * through LVGL SW, including FLUX's arbitrary-angle fused image transform.
  * The IDF PPA driver owns writeback/invalidate of the affected cache lines. */
+#include "sdkconfig.h"
 #include <lvgl.h>
 #include "draw/lv_draw_private.h"
 #include "misc/lv_area_private.h"
