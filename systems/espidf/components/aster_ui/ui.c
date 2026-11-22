@@ -41,6 +41,8 @@ static atomic_int perf_request;
 /* Claim at command acceptance (before the UI worker processes it) so no
  * Stage C DMA/CPU test can overlap the launcher rendering benchmark. */
 static atomic_bool ui_bench_reserved;
+/* Kept on UI worker; restored to PPA after CPU-only measurement. */
+static bool ui_bench_cpu_only;
 #endif
 
 static struct {
@@ -189,12 +191,22 @@ int aster_idf_ui_command(int argc, char **argv)
         request = 1;
     else if (argc == 3 && !strcmp(argv[2], "power-status"))
         request = 2;
-    else if ((argc == 3 || argc == 4) && !strcmp(argv[2], "bench")) {
+    else if ((argc == 3 || argc == 4) &&
+             (!strcmp(argv[2], "bench")
+#if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
+              || !strcmp(argv[2], "bench-cpu")
+              || !strcmp(argv[2], "bench-ppa")
+#endif
+             )) {
         char *end = NULL;
         long seconds = argc == 4 ? strtol(argv[3], &end, 10) : 8;
         if (seconds < 2 || seconds > 20 || (end && *end))
             return ASTER_EINVAL;
         request = 100 + (int)seconds;
+#if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
+        if (!strcmp(argv[2], "bench-cpu")) request = 200 + (int)seconds;
+        if (!strcmp(argv[2], "bench-ppa")) request = 300 + (int)seconds;
+#endif
     } else
         return ASTER_EINVAL;
 #if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
@@ -248,17 +260,34 @@ static void perf_tick(void)
 #endif
             return;
         }
+        int seconds = request - 100;
+#if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
+        if (request >= 300) seconds = request - 300;
+        else if (request >= 200) seconds = request - 200;
+        ui_bench_cpu_only = request >= 200 && request < 300;
+        aster_idf_ppa_fill_set_bench_cpu_only(ui_bench_cpu_only);
+#endif
         aster_launcher_show_page(0);
         bench_step = now;
         bench_warm = now + 2000000;
-        bench_end = bench_warm + (request - 100) * 1000000ULL;
-        printf("UI BENCH warmup=2s measurement=%ds\n", request - 100);
+        bench_end = bench_warm + seconds * 1000000ULL;
+        printf("UI BENCH warmup=2s measurement=%ds\n", seconds);
+#if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
+        printf("UI BENCH FILL mode=%s (diagnostic only)\n",
+               ui_bench_cpu_only ? "CPU" : "PPA");
+#endif
     }
     if (!bench_end)
         return;
     if (now >= bench_end) {
         bench_end = 0;
         perf_print();
+#if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
+        printf("UI BENCH RESULT fill_mode=%s (production PPA restored)\n",
+               ui_bench_cpu_only ? "CPU" : "PPA");
+        aster_idf_ppa_fill_set_bench_cpu_only(false);
+        ui_bench_cpu_only = false;
+#endif
         puts("UI BENCH done");
 #if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
         atomic_store(&ui_bench_reserved,false);
