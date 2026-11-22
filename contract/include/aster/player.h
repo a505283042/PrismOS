@@ -11,6 +11,7 @@
 #define ASTER_PLAYER_CAP_SPECTRUM 32u
 #define ASTER_PLAYER_CAP_SYSTEM_OUTPUT 64u /* PLAY_FILE can follow the system speaker selection. */
 #define ASTER_PLAYER_CAP_AUTO_NEXT 128u /* Firmware owns local music playlist, even after APP exit. */
+#define ASTER_PLAYER_CAP_QUEUE_MODE 256u /* Supports SET_QUEUE_MODE and info.reserved[3] (0..3). */
 #define ASTER_PLAYER_LOCAL 1u
 #define ASTER_PLAYER_BLUETOOTH 2u
 #define ASTER_PLAYER_IDLE 0u
@@ -41,6 +42,13 @@
 #define ASTER_PLAYER_BT_SCAN 11u
 #define ASTER_PLAYER_BT_CONNECT 12u
 #define ASTER_PLAYER_BT_DISCONNECT 13u
+/* Additive ABI 4.5: existing request/info struct layout is unchanged.
+ * Commands >= SOURCE_ON remain Bluetooth-only EXCEPT SET_QUEUE_MODE. */
+#define ASTER_PLAYER_SET_QUEUE_MODE 14u
+#define ASTER_QUEUE_SEQUENCE 0u /* Stop at end of global catalog. */
+#define ASTER_QUEUE_REPEAT_ALL 1u
+#define ASTER_QUEUE_REPEAT_ONE 2u
+#define ASTER_QUEUE_SHUFFLE 3u /* Shuffle the global catalog, not browsing groups. */
 #define ASTER_PLAYER_OUTPUT_WIRED 1u
 #define ASTER_PLAYER_OUTPUT_BLUETOOTH 2u
 #define ASTER_PLAYER_OUTPUT_SYSTEM 3u /* Requires ASTER_PLAYER_CAP_SYSTEM_OUTPUT. */
@@ -52,6 +60,8 @@ typedef struct {
     char title[192], artist[128], album[128], path[256], device[32];
     /* CAP_SPECTRUM: reserved[0] is left and reserved[1] is right. Each holds
   * four unsigned 8-bit levels, lowest band in the least significant byte. */
+    /* CAP_QUEUE_MODE: reserved[3] is current global queue mode (0..3).
+     * reserved[0..2] retain audio spectrum/Bluetooth cover ownership. */
     uint32_t reserved[4];
 } aster_player_info_t;
 
