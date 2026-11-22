@@ -103,8 +103,11 @@ static void local_auto_next_task(void *ctx)
                 manual_generation=atomic_load(&playback_intent);
                 armed[0]=0;
                 ended_since=0;
-                if(media_busy(snapshot.state))
-                    (void)aster_media_stop();
+                if(media_busy(snapshot.state)) {
+                    int rc=aster_media_stop();
+                    if(rc)
+                        ESP_LOGW("hifi_autoplay","manual stop failed: %d",rc);
+                }
             }
         }
         if (manual_direction) {
@@ -123,14 +126,14 @@ static void local_auto_next_task(void *ctx)
                     else
                         ESP_LOGI("hifi_autoplay","manual: %s",next);
                 } else {
-                    /* PREVIOUS at the beginning of a sequential/shuffle
-                     * history restarts this track rather than leaving silence. */
-                    if (manual_direction<0) {
-                        int rc=aster_media_play(manual_path,ASTER_MEDIA_OUTPUT_SYSTEM);
-                        if(rc) ESP_LOGW("hifi_autoplay","restart failed: %d",rc);
-                    } else {
-                        ESP_LOGI("hifi_autoplay","reached end of queue");
-                    }
+                    /* We stopped the old decoder before SD index access.
+                     * A missing/corrupt HIF2 catalog must not turn a manual
+                     * button press into permanent silence. A boundary or
+                     * missing candidate restarts the current track. */
+                    ESP_LOGW("hifi_autoplay","manual step unavailable (mode=%u dir=%d path=%s)",
+                             mode,manual_direction,manual_path);
+                    int rc=aster_media_play(manual_path,ASTER_MEDIA_OUTPUT_SYSTEM);
+                    if(rc) ESP_LOGW("hifi_autoplay","manual fallback restart failed: %d",rc);
                 }
                 manual_direction=0;
             }
@@ -171,7 +174,10 @@ static void local_auto_next_task(void *ctx)
                     else
                         ESP_LOGI("hifi_autoplay","next: %s mode=%u",next,mode);
                 } else {
-                    ESP_LOGI("hifi_autoplay","end of global queue mode=%u path=%s",
+                    /* In SEQUENCE mode the final song legitimately ends;
+                     * otherwise inspect the hifi_playlist warning preceding
+                     * this message to distinguish missing index/file paths. */
+                    ESP_LOGI("hifi_autoplay","no automatic successor mode=%u path=%s",
                              mode,snapshot.path);
                 }
             }
