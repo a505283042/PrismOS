@@ -266,9 +266,15 @@ int aster_hifi_cover_render(const char *path, uint32_t src_offset, uint32_t src_
         size_t capacity = 0;
         decoded = jpeg_alloc_decoder_mem(decoded_bytes, &mem, &capacity);
         if (!decoded || capacity < decoded_bytes) { result = ASTER_ENOMEM; break; }
+        /* The S31 JPEG peripheral uses RGB/BGR selection as its 16-bit
+         * byte-element order. BGR produces the native little-endian RGB565
+         * expected by LVGL, Aster's surface ABI, and PPA. RGB is the
+         * big-endian/wire-order variant and visibly swaps red and blue
+         * when read through uint16_t on RISC-V. Keep this consistent with
+         * FakePod_S31 jpeg_hw_decode_rgb565(..., JPEG_HW_ORDER_LE). */
         jpeg_decode_cfg_t cfg = {
             .output_format = JPEG_DECODE_OUT_FORMAT_RGB565,
-            .rgb_order = JPEG_DEC_RGB_ELEMENT_ORDER_RGB,
+            .rgb_order = JPEG_DEC_RGB_ELEMENT_ORDER_BGR,
             .conv_std = JPEG_YUV_RGB_CONV_STD_BT601
         };
         uint32_t actual = 0;
