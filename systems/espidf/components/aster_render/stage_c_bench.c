@@ -72,17 +72,15 @@ static void benchmark_latency(bench_ctx_t *ctx)
                 ESP_LOGW(TAG,"DMA2D warmup failed edge=%u err=%s",
                          edge,esp_err_to_name(status));
         }
-        if (!cpu_ok || !dma_ok) {
-            printf("STAGEC BENCH edge=%u bytes=%u verdict=%s cpu_ok=%d dma_ok=%d\n",
-                   edge,(unsigned)size,ctx->dma?"FAIL":"DMA_UNAVAILABLE",
-                   cpu_ok?1:0,dma_ok?1:0);
-            if (ctx->dma && !dma_ok) break;
-            continue;
+        if (!cpu_ok || (ctx->dma && !dma_ok)) {
+            printf("STAGEC BENCH edge=%u bytes=%u verdict=FAIL cpu_ok=%d dma_ok=%d\n",
+                   edge,(unsigned)size,cpu_ok?1:0,dma_ok?1:0);
+            break;
         }
         /* Alternate test order across repetitions to reduce systematic
          * thermal and cache-order bias; verification stays outside timers. */
         for(unsigned i=0;i<reps;i++) {
-            if (i&1u) {
+            if ((i&1u) && ctx->dma) {
                 int64_t start=esp_timer_get_time();
                 esp_err_t status=dma_copy(ctx,edge);
                 uint32_t elapsed=(uint32_t)(esp_timer_get_time()-start);
@@ -93,7 +91,7 @@ static void benchmark_latency(bench_ctx_t *ctx)
             memcpy(ctx->dst,ctx->src,size);
             uint32_t elapsed=(uint32_t)(esp_timer_get_time()-start);
             cpu_us+=elapsed;if(elapsed<cpu_min)cpu_min=elapsed;
-            if (!(i&1u)) {
+            if (!(i&1u) && ctx->dma) {
                 start=esp_timer_get_time();
                 esp_err_t status=dma_copy(ctx,edge);
                 elapsed=(uint32_t)(esp_timer_get_time()-start);
@@ -101,13 +99,22 @@ static void benchmark_latency(bench_ctx_t *ctx)
                 dma_us+=elapsed;if(elapsed<dma_min)dma_min=elapsed;
             }
         }
-        if (dma_ok) dma_ok=equal_pixels(ctx,edge);
+        /* Verify both implementations after timing. The last timed call
+         * might be a CPU copy, so it must not mask a bad DMA result. */
+        memcpy(ctx->dst,ctx->src,size);
+        cpu_ok=cpu_ok && equal_pixels(ctx,edge);
+        if (ctx->dma && dma_ok) {
+            memset(ctx->dst,0,size);
+            dma_ok=dma_copy(ctx,edge)==ESP_OK && equal_pixels(ctx,edge);
+        }
         printf("STAGEC BENCH edge=%u bytes=%u reps=%u cpu_avg_us=%" PRIu64
                " dma2d_avg_us=%" PRIu64 " cpu_min_us=%" PRIu32
-               " dma2d_min_us=%" PRIu32 " pixel_match=%d\n",
-               edge,(unsigned)size,reps,cpu_us/reps,dma_us/reps,
-               cpu_min,dma_min,dma_ok?1:0);
-        if (!dma_ok) break;
+               " dma2d_min_us=%" PRIu32 " dma2d_available=%d pixel_match=%d\n",
+               edge,(unsigned)size,reps,cpu_us/reps,
+               ctx->dma?dma_us/reps:0,cpu_min,
+               ctx->dma?dma_min:0,ctx->dma?1:0,
+               cpu_ok && (!ctx->dma || dma_ok)?1:0);
+        if (!cpu_ok || (ctx->dma && !dma_ok)) break;
         vTaskDelay(pdMS_TO_TICKS(25));
     }
     puts("STAGEC BENCH done; production copies remain CPU");
@@ -149,7 +156,7 @@ static void benchmark_power(bench_ctx_t *ctx,int mode)
         } else vTaskDelay(pdMS_TO_TICKS(10));
         completed++;
         /* Low priority worker yields. Keep serial and UI responsive. */
-        if ((completed&31u)==0u) taskYIELD();
+        if ((completed&31u)==0u) vTaskDelay(pdMS_TO_TICKS(1));
     }
     uint64_t elapsed=(uint64_t)(esp_timer_get_time()-start);
     bool correct=(mode==3) || equal_pixels(ctx,edge);
