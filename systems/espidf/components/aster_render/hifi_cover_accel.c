@@ -232,9 +232,15 @@ int aster_hifi_cover_render(const char *path, uint32_t src_offset, uint32_t src_
         if (!compressed) { result = ASTER_ENOMEM; break; }
         size_t got = 0;
         while (got < src_length) {
-            int n = aster_fs_read_safe(&file, compressed + got, src_length - got);
+            /* A single 1-2MB FatFS read would block the audio decoder on
+             * the shared TF card. Read 8KB bursts and yield between bursts. */
+            size_t burst = src_length - got;
+            if (burst > 8192u) burst = 8192u;
+            int n = aster_fs_read_safe(&file, compressed + got, burst);
             if (n <= 0) break;
             got += (size_t)n;
+            if (got < src_length)
+                vTaskDelay(1);
         }
         /* Do not retain an SD handle while JPEG/PPA use shared memory. */
         (void)fs_close(&file);
