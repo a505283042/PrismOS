@@ -102,7 +102,7 @@ int main(void)
     assert(visited==15);
     assert(hifi_playlist_choose(current,HIFI_QUEUE_SHUFFLE,-1,false,out));
     assert(!strcmp(out,history[2]));
-    assert(hifi_playlist_choose(out,HIFI_QUEUE_SHUFFLE,1,false,out));
+    assert(hifi_playlist_choose(history[2],HIFI_QUEUE_SHUFFLE,1,false,out));
     assert(!strcmp(out,history[3]));
     puts("HIF2 global queue OK");
     return 0;
