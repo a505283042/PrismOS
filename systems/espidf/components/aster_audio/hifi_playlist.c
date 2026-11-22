@@ -191,10 +191,16 @@ static bool make_path(FILE *file,uint32_t index,char out[ASTER_MEDIA_PATH_MAX])
 {
     hif_row_t row;
     if(!row_at(file,index,&row))return false;
+    /* The media decoder consumes Zephyr-style /SD:/music paths.
+     * POSIX VFS is mounted at /SD (without the volume colon); check
+     * existence using that real VFS path rather than stat(out). */
     int size=snprintf(out,ASTER_MEDIA_PATH_MAX,"/SD:/music/%s",row.path);
-    if(size<=0 || size>=ASTER_MEDIA_PATH_MAX)return false;
+    char native[ASTER_MEDIA_PATH_MAX];
+    int n=snprintf(native,sizeof(native),"/SD/music/%s",row.path);
+    if(size<=0 || size>=ASTER_MEDIA_PATH_MAX ||
+       n<=0 || n>=sizeof(native))return false;
     struct stat st;
-    return stat(out,&st)==0 && S_ISREG(st.st_mode);
+    return stat(native,&st)==0 && S_ISREG(st.st_mode);
 }
 static void start_shuffle(uint32_t count,uint32_t generation,uint32_t current)
 {
