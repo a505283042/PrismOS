@@ -74,6 +74,10 @@ class StageC(unittest.TestCase):
         self.assertIn("attempt==2u",BENCH)
         self.assertIn("verdict=%s",BENCH)
         self.assertIn('valid?"VALID":"INVALID"',BENCH)
+        self.assertIn("ctx->src[0]=(uint16_t)(ctx->src[0]+1u)",BENCH)
+        self.assertIn("*(volatile uint16_t *)ctx->dst",BENCH)
+        self.assertIn("sample_checksum",BENCH)
+        self.assertIn("pixel_errors",BENCH)
 
 if __name__=="__main__":
     unittest.main()
