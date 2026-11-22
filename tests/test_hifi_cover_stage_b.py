@@ -72,11 +72,11 @@ class StageB(unittest.TestCase):
 
     def test_s31_only_build_and_image_worker(self):
         self.assertIn("if(CONFIG_IDF_TARGET_ESP32S31)", CM)
-        self.assertIn("REQUIRES esp_timer heap log esp_driver_ppa esp_driver_jpeg fatfs", CM)
+        self.assertIn("REQUIRES esp_timer heap log esp_driver_ppa esp_driver_jpeg esp_driver_dma fatfs", CM)
         # Dependency expansion precedes Kconfig, so it must remain outside
         # the S31 target branch even though only that board compiles the C file.
         self.assertNotIn("ASTER_HIFI_COVER_DEPS", CM)
-        self.assertLess(CM.index("endif()"), CM.index("REQUIRES esp_timer heap log esp_driver_ppa esp_driver_jpeg fatfs"))
+        self.assertLess(CM.index("endif()"), CM.index("REQUIRES esp_timer heap log esp_driver_ppa esp_driver_jpeg esp_driver_dma fatfs"))
         self.assertIn("hifi_cover_accel.c", CM)
         self.assertLess(RT.index('#include "sdkconfig.h"'), RT.index('#include "hifi_cover_accel.h"'))
 
