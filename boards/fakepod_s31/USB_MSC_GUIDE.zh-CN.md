@@ -28,12 +28,13 @@ aster deploy HiFiPlayer/dist/riscv/aster.hifi.ast --target riscv --port COM7 --r
 
 ```powershell
 cd D:\ESP32\aster-firmware
+git remote set-branches origin '*'
 git fetch origin
-git switch --track origin/feat/fakepod-s31-usb-msc
+git switch -c feat/fakepod-s31-usb-msc origin/feat/fakepod-s31-usb-msc
 
 # 下列命令必须在已经激活 ESP-IDF 6.1 环境的终端里执行。
 # 选择独立 build 目录，避免以前固件 build 中的 sdkconfig 覆盖 MSC 开关。
-idf.py --preview -C boards/fakepod_s31/idf -B build/fakepod-s31/usb-msc -DIDF_TARGET=esp32s31 build
+idf.py --preview -C boards/fakepod_s31/idf -B D:/ESP32/aster-firmware/build/fakepod-s31/usb-msc -DIDF_TARGET=esp32s31 build
 ```
 
 构建时核查 `build/fakepod-s31/usb-msc/config/sdkconfig.h` 包含：
