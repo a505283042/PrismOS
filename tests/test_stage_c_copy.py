@@ -66,6 +66,14 @@ class StageC(unittest.TestCase):
         self.assertIn("current_ma=EXTERNAL_ONLY",BENCH)
         self.assertIn("vTaskDelay(pdMS_TO_TICKS(1))",BENCH)
         self.assertIn("memcpy(ctx->dst,ctx->src,size);",BENCH)
+        # Blocking wrapper signals its semaphore in ISR before recycling
+        # the DMA2D transaction: a single-entry pool can race the next call.
+        self.assertIn(".backlog=2",BENCH)
+        self.assertIn("status!=ESP_ERR_INVALID_STATE",BENCH)
+        self.assertIn("ctx->dma_retries++",BENCH)
+        self.assertIn("attempt==2u",BENCH)
+        self.assertIn("verdict=%s",BENCH)
+        self.assertIn('valid?"VALID":"INVALID"',BENCH)
 
 if __name__=="__main__":
     unittest.main()
