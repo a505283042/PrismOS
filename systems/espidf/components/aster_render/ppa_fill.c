@@ -16,6 +16,8 @@
 #define PPA_UNIT 81
 static ppa_client_handle_t client;
 static bool failed;
+/* Only altered on the UI owner while no draw task is in flight. */
+static bool bench_cpu_only;
 static uint32_t jobs, errors;
 static uint64_t pixels;
 static uint32_t app_jobs;
@@ -24,7 +26,7 @@ bool aster_idf_ppa_fill_rgb565(uint16_t *data, uint32_t pitch, uint32_t height, 
                                uint32_t y, uint32_t w, uint32_t h, uint16_t color)
 {
     size_t bytes = (size_t)pitch * height * 2;
-    if (!client || failed || !w || !h || (uint64_t)w * h < 4096 || ((uintptr_t)data & 63) ||
+    if (!client || failed || bench_cpu_only || !w || !h || (uint64_t)w * h < 4096 || ((uintptr_t)data & 63) ||
         (bytes & 63) || x > pitch || w > pitch - x || y > height || h > height - y)
         return false;
     /* Expand endpoint bits so the hardware's RGB888 -> RGB565 truncation
@@ -75,7 +77,7 @@ static esp_err_t fill(lv_draw_buf_t *buf, const lv_area_t *area, lv_color_t colo
 static int32_t evaluate(lv_draw_unit_t *unit, lv_draw_task_t *task)
 {
     (void)unit;
-    if (failed || task->type != LV_DRAW_TASK_TYPE_FILL)
+    if (failed || bench_cpu_only || task->type != LV_DRAW_TASK_TYPE_FILL)
         return 0;
     const lv_draw_fill_dsc_t *d = task->draw_dsc;
     lv_draw_buf_t *buf = task->target_layer->draw_buf;
@@ -171,6 +173,15 @@ static bool self_test(void)
     free(large);
 #endif
     return good;
+}
+
+void aster_idf_ppa_fill_set_bench_cpu_only(bool cpu_only)
+{
+#if defined(CONFIG_IDF_TARGET_ESP32S31)
+    bench_cpu_only = cpu_only;
+#else
+    (void)cpu_only;
+#endif
 }
 
 bool aster_idf_ppa_fill_ready(void)
