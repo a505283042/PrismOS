@@ -521,6 +521,20 @@ void aster_idf_ui_before_app(void)
     if (aster_deploy_get(&s))
         aster_deploy_dismiss(s.generation);
     aster_deploy_ui_close();
+#if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
+    /* Opening an APP cancels any in-flight or still-pending UI A/B test.
+     * Without this, a CPU-only test interrupted by an app launch could
+     * permanently leave the launcher PPA accelerator disabled. */
+    int pending=atomic_load(&perf_request);
+    if (pending>100 && pending<1000)
+        (void)atomic_compare_exchange_strong(&perf_request,&pending,0);
+    if (atomic_load(&ui_bench_reserved)) {
+        puts("UI BENCH aborted: application launched; PPA restored");
+        aster_idf_ppa_fill_set_bench_cpu_only(false);
+        ui_bench_cpu_only = false;
+        atomic_store(&ui_bench_reserved,false);
+    }
+#endif
     bench_end = bench_warm = 0;
     app_active = true;
     aster_launcher_hide();
