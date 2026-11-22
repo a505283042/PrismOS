@@ -231,6 +231,11 @@ finish:
     vTaskDelete(NULL);
 }
 
+bool aster_idf_stage_c_running(void)
+{
+    return atomic_load(&running);
+}
+
 int aster_idf_stage_c_start(int mode)
 {
     if (mode<0 || mode>3) return -1;
