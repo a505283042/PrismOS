@@ -17,7 +17,10 @@
 #include <stdbool.h>
 #include <stddef.h>
 #ifdef ESP_PLATFORM
+#include "sdkconfig.h"
 #include "esp_attr.h"
+#endif
+#if defined(CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY) && CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY
 #define HIFI_QUEUE_PSRAM EXT_RAM_BSS_ATTR
 #else
 #define HIFI_QUEUE_PSRAM
