@@ -32,7 +32,8 @@ idf_component_register(
          "${ASTER_PLATFORM_AUDIO}/minimp3_impl.c"
     INCLUDE_DIRS "." "../../../../contract/include" "../../../../common/audio"
                  "${ASTER_PLATFORM_AUDIO}" "../../../../modules/minimp3"
-    PRIV_INCLUDE_DIRS "../../../../third_party/dr_libs" ${ASTER_BOARD_AUDIO_INCLUDE_DIRS}
+    PRIV_INCLUDE_DIRS "../../../../third_party/dr_libs" "../../../../common/port"
+                      ${ASTER_BOARD_AUDIO_INCLUDE_DIRS}
     PRIV_REQUIRES ${media_deps} ${ASTER_BOARD_AUDIO_REQUIRES}
     REQUIRES aster_render esp_driver_i2c esp_driver_i2s esp_driver_gpio freertos)
 
