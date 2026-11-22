@@ -54,6 +54,12 @@ class StageC(unittest.TestCase):
                         finish.index("aster_idf_ppa_fill_set_bench_cpu_only(false);"))
         self.assertIn("ui_bench_cpu_only = false;",finish)
         self.assertIn("atomic_store(&ui_bench_reserved,false)",finish)
+        before_app=UI[UI.index("void aster_idf_ui_before_app(void)"):
+                      UI.index("void aster_idf_ui_after_app(void)")]
+        self.assertIn("int pending=atomic_load(&perf_request);",before_app)
+        self.assertIn("aster_idf_ppa_fill_set_bench_cpu_only(false);",before_app)
+        self.assertIn("atomic_store(&ui_bench_reserved,false)",before_app)
+        self.assertIn("UI BENCH aborted: application launched",before_app)
 
     def test_dma2d_is_diagnostic_only_and_public(self):
         self.assertIn('if(CONFIG_IDF_TARGET_ESP32S31)',CMAKE)
