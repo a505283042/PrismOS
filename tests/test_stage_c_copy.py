@@ -78,6 +78,14 @@ class StageC(unittest.TestCase):
         self.assertIn("*(volatile uint16_t *)ctx->dst",BENCH)
         self.assertIn("sample_checksum",BENCH)
         self.assertIn("pixel_errors",BENCH)
+        self.assertIn("bool aster_idf_stage_c_running(void)",BENCH)
+        self.assertIn("atomic_load(&running)",BENCH)
+        self.assertIn("atomic_load(&ui_bench_reserved)",UI)
+        self.assertIn("aster_idf_stage_c_running()",UI)
+        self.assertIn("atomic_compare_exchange_strong(&ui_bench_reserved",UI)
+        self.assertIn("atomic_store(&ui_bench_reserved,false)",UI)
+        self.assertIn("STAGEC refused: UI BENCH still running",UI)
+        self.assertIn("UI BENCH refused: Stage C CPU/DMA2D worker running",UI)
 
 if __name__=="__main__":
     unittest.main()
