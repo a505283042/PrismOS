@@ -1,6 +1,12 @@
 CONFIG_IDF_TARGET="esp32s31"
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# Experimental MSC build: expose a host-visible USB SD reader from the
+# launcher Power page. This compiles and wires the existing TinyUSB + SDMMC
+# handoff code; USB serial remains the default until the user enters MSC.
+# The regular main branch keeps the USB reader disabled.
+CONFIG_ASTER_FAKEPOD_USB_STORAGE=y
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
