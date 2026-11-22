@@ -149,6 +149,9 @@ static bool self_test(void)
     free(data);
     if (!good) return false;
 
+#if defined(CONFIG_IDF_TARGET_ESP32S31)
+    /* Keep this new diagnostic confined to S31; other IDF targets retain
+     * their original LVGL-only PPA startup test and no extra allocations. */
     /* The small 32x16 check above exercises the LVGL fill path. This
      * second test covers the actual >=4096px APP acceleration threshold,
      * including an untouched blue border surrounding a magenta fill. */
@@ -165,6 +168,7 @@ static bool self_test(void)
         }
     }
     free(large);
+#endif
     return good;
 }
 
@@ -195,7 +199,11 @@ int aster_idf_ppa_fill_init(void)
     unit->name = "ASTER_PPA_FILL";
     unit->evaluate_cb = evaluate;
     unit->dispatch_cb = dispatch;
+#if defined(CONFIG_IDF_TARGET_ESP32S31)
     ESP_LOGI("aster_ppa", "RGB565/cache self-tests passed (LVGL + 4608px APP); fill ready");
+#else
+    ESP_LOGI("aster_ppa", "RGB565/cache self-test passed; large fill acceleration ready");
+#endif
     return 0;
 }
 
