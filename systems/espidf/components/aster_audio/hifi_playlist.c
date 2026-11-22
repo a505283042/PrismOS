@@ -180,7 +180,8 @@ static bool verify_payload(hifi_file_t *file,const hif_header_t *head)
 }
 static bool open_current(hif_header_t *head,hifi_file_t *opened)
 {
-    hifi_file_t files[2]={0};
+    hifi_file_t files[2];
+    memset(files,0,sizeof(files));
     hif_header_t headers[2]={{0},{0}};
     bool valid[2]={false,false};
     for(int i=0;i<2;i++) {
