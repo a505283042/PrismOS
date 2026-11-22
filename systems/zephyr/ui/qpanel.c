@@ -430,8 +430,11 @@ static void on_vol(lv_event_t *e)
 	if (code == LV_EVENT_RELEASED) {
 		uint8_t raw = (uint8_t)v;
 
-		(void)aster_service_kv_set(QPANEL_KV_ID, QPANEL_KV_VOL, &raw, 1);
-		aster_service_logf(3, "qpanel: volume %d saved", v);
+		int result = aster_service_kv_set(QPANEL_KV_ID, QPANEL_KV_VOL, &raw, 1);
+		if (result)
+			aster_service_logf(2, "qpanel: volume save failed %d", result);
+		else
+			aster_service_logf(3, "qpanel: volume %d saved", v);
 	}
 }
 
