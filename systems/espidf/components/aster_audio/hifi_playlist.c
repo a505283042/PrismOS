@@ -126,39 +126,47 @@ static bool verify_payload(FILE *file, const hif_header_t *head)
 }
 static FILE *open_current(hif_header_t *head)
 {
-    FILE *candidate=NULL;
-    hif_header_t chosen={0};
-    int slot=-1;
-    for(int i=0;i<2;i++){
+    FILE *files[2]={NULL,NULL};
+    hif_header_t headers[2]={{0},{0}};
+    for (int i=0;i<2;i++){
         FILE *f=fopen(catalog_paths[i],"rb");
-        hif_header_t h={0};
-        if (!f) continue;
-        if (!read_header(f,&h)) {
+        if(!f)continue;
+        if(!read_header(f,&headers[i])){fclose(f);continue;}
+        files[i]=f;
+    }
+    int first=files[0] && files[1] ?
+              ((int32_t)(headers[0].generation-headers[1].generation)>=0 ? 0:1) :
+              (files[0]?0:1);
+    for (int attempt=0;attempt<2;attempt++){
+        int slot=attempt==0?first:1-first;
+        FILE *f=files[slot];
+        if(!f)continue;
+        const hif_header_t *h=&headers[slot];
+        bool known=verified_slot==slot &&
+                   verified_generation==h->generation &&
+                   verified_count==h->count &&
+                   verified_crc==h->payload_crc;
+        if(!known && !verify_payload(f,h)){
+            /* Power-loss/corrupt latest slot: try the last verified slot,
+             * just as the APP does. Never use an unverified HIF2 payload. */
             fclose(f);
+            files[slot]=NULL;
             continue;
         }
-        if(slot<0||(int32_t)(h.generation-chosen.generation)>0){
-            if(candidate)fclose(candidate);
-            candidate=f;chosen=h;slot=i;
-        } else fclose(f);
-    }
-    if(!candidate)return NULL;
-    if(verified_slot!=slot || verified_generation!=chosen.generation ||
-       verified_count!=chosen.count || verified_crc!=chosen.payload_crc) {
-        if (!verify_payload(candidate,&chosen)) {
-            fclose(candidate);
-            return NULL;
+        if(!known) {
+            verified_slot=slot;
+            verified_generation=h->generation;
+            verified_count=h->count;
+            verified_crc=h->payload_crc;
+            last_index=-1;
+            last_path[0]=0;
+            hifi_playlist_reset_shuffle();
         }
-        verified_slot=slot;
-        verified_generation=chosen.generation;
-        verified_count=chosen.count;
-        verified_crc=chosen.payload_crc;
-        last_index=-1;
-        last_path[0]=0;
-        hifi_playlist_reset_shuffle();
+        *head=*h;
+        if(files[1-slot])fclose(files[1-slot]);
+        return f;
     }
-    *head=chosen;
-    return candidate;
+    return NULL;
 }
 static bool row_at(FILE *file, uint32_t i, hif_row_t *out)
 {
