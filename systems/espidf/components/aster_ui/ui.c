@@ -37,6 +37,11 @@ static uint32_t pointer_x, pointer_y;
 static bool pressed, app_active;
 static int (*launch_callback)(const char *);
 static atomic_int perf_request;
+#if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
+/* Claim at command acceptance (before the UI worker processes it) so no
+ * Stage C DMA/CPU test can overlap the launcher rendering benchmark. */
+static atomic_bool ui_bench_reserved;
+#endif
 
 static struct {
     uint64_t since, render_start, last_frame, render_us, flush_us, bytes, pump_us;
@@ -142,6 +147,10 @@ int aster_idf_ui_command(int argc, char **argv)
         else return ASTER_EINVAL;
     }
     if (stage_c_mode >= 0) {
+        if (atomic_load(&ui_bench_reserved)) {
+            puts("STAGEC refused: UI BENCH still running");
+            return ASTER_EBUSY;
+        }
         if (app_active) {
             puts("STAGEC refused: exit the APP before benchmarking");
             return ASTER_EBUSY;
@@ -188,8 +197,27 @@ int aster_idf_ui_command(int argc, char **argv)
         request = 100 + (int)seconds;
     } else
         return ASTER_EINVAL;
+#if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
+    if (request > 100 && request < 1000) {
+        if (aster_idf_stage_c_running()) {
+            puts("UI BENCH refused: Stage C CPU/DMA2D worker running");
+            return ASTER_EBUSY;
+        }
+        bool free_slot=false;
+        if (!atomic_compare_exchange_strong(&ui_bench_reserved,&free_slot,true)) {
+            puts("UI BENCH refused: another UI benchmark running");
+            return ASTER_EBUSY;
+        }
+    }
+#endif
     int empty = 0;
-    return atomic_compare_exchange_strong(&perf_request, &empty, request) ? 0 : ASTER_EBUSY;
+    if (atomic_compare_exchange_strong(&perf_request, &empty, request))
+        return 0;
+#if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
+    if (request > 100 && request < 1000)
+        atomic_store(&ui_bench_reserved,false);
+#endif
+    return ASTER_EBUSY;
 }
 
 static void perf_tick(void)
@@ -215,6 +243,9 @@ static void perf_tick(void)
     } else if (request > 100) {
         if (app_active) {
             puts("UI BENCH busy: stop the application first");
+#if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
+            atomic_store(&ui_bench_reserved,false);
+#endif
             return;
         }
         aster_launcher_show_page(0);
@@ -229,6 +260,9 @@ static void perf_tick(void)
         bench_end = 0;
         perf_print();
         puts("UI BENCH done");
+#if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
+        atomic_store(&ui_bench_reserved,false);
+#endif
         return;
     }
     if (bench_warm && now >= bench_warm) {
