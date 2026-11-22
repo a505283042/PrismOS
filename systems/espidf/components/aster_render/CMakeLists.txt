@@ -3,13 +3,13 @@ set(ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../..")
 set(UI "${ROOT}/systems/zephyr/ui")
 set(IMG "${ROOT}/modules/imgdec")
 include(${ROOT}/common/setup/assets.cmake)
-# Only the ESP32-S31 has the JPEG peripheral used by the optional V2
-# cover-render ABI. Keep other board builds on the original software path.
+# Only ESP32-S31 compiles the cover JPEG accelerator.
+# Important: IDF discovers REQUIRES before Kconfig CONFIG_IDF_TARGET_* is
+# available; declare esp_driver_jpeg unconditionally in idf_component_register
+# below. Otherwise the source is built without driver/jpeg_decode.h includes.
 set(ASTER_HIFI_COVER_SOURCES "")
-set(ASTER_HIFI_COVER_DEPS "")
 if(CONFIG_IDF_TARGET_ESP32S31)
     set(ASTER_HIFI_COVER_SOURCES "hifi_cover_accel.c")
-    set(ASTER_HIFI_COVER_DEPS esp_driver_jpeg)
 endif()
 file(GLOB_RECURSE LV_SOURCES "${ROOT}/third_party/lvgl/src/*.c")
 list(FILTER LV_SOURCES EXCLUDE REGEX "/(examples|tests|demos|libs)/")
@@ -23,7 +23,7 @@ idf_component_register(SRCS "port.c" "ppa_fill.c" "render_workers.c" ${ASTER_HIF
     INCLUDE_DIRS ${ASTER_COMMON_INCLUDE_DIRS} "." "compat" "${UI}" "${ROOT}/contract/include" "${ROOT}/platform"
       "${ROOT}/systems/zephyr/core" "${ROOT}/systems/zephyr/services"
       "${ROOT}/modules/prettypoly" "${IMG}" "${ROOT}/third_party/lvgl" "${ROOT}/third_party/lvgl/src"
-    REQUIRES esp_timer heap log esp_driver_ppa fatfs ${ASTER_HIFI_COVER_DEPS})
+    REQUIRES esp_timer heap log esp_driver_ppa esp_driver_jpeg fatfs)
 add_dependencies(${COMPONENT_LIB} aster_system_fonts)
 target_compile_definitions(${COMPONENT_LIB} PUBLIC ASTER_SYSTEM_ESP_IDF=1 CONFIG_ASTER_LAUNCHER_FLUX=1 LV_LVGL_H_INCLUDE_SIMPLE
     ASTER_PLAT_MAX_TOUCH=5
