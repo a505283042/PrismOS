@@ -31,6 +31,10 @@ int main(void){
  strcpy(r.path,"/SD:/music/a.flac");assert(!aster_player_service_control(&r) && controls==1);
  r.command=ASTER_PLAYER_PAUSE;assert(aster_player_service_control(&r)==ASTER_ESTATE && controls==2);
  r.command=ASTER_PLAYER_BT_CONNECT;memset(r.path,'x',sizeof(r.path));assert(aster_player_service_control(&r)==ASTER_EINVAL && controls==2);
+ /* Additive 4.5 queue-mode command: accepted with an empty path, no ABI drift. */
+ r.command=ASTER_PLAYER_SET_QUEUE_MODE;r.value=ASTER_QUEUE_SHUFFLE;
+ memset(r.path,0,sizeof(r.path));
+ assert(!aster_player_service_control(&r) && controls==3);
  return 0;
 }
 ''')
