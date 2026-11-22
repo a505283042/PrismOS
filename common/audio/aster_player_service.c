@@ -66,7 +66,7 @@ int aster_player_service_info(aster_player_info_t *out)
 int aster_player_service_control(const aster_player_request_t *request)
 {
     if (!request || request->size < sizeof(*request) || request->version != 1 ||
-        request->command < ASTER_PLAYER_PLAY_FILE || request->command > ASTER_PLAYER_BT_DISCONNECT)
+        request->command < ASTER_PLAYER_PLAY_FILE || request->command > ASTER_PLAYER_SET_QUEUE_MODE)
         return ASTER_EINVAL;
     if ((request->command == ASTER_PLAYER_PLAY_FILE ||
          request->command == ASTER_PLAYER_BT_CONNECT) &&
