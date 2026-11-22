@@ -191,7 +191,7 @@ static uint64_t animation_ms, last_draw, hold_ms, clock_sec = UINT64_MAX;
 static bool animating, launching, visible, initialized, want_show = true, motion = true, quiet;
 static volatile bool dirty;
 static volatile int want_page = -1;
-static int page, prior_page, action, brightness = 90, saved_volume = 60;
+static int page, prior_page, action, brightness = 90;
 static int brightness_pending = -1, volume_pending = -1;
 static bool volume_save;
 static aster_launcher_slider_stats_t slider_stats;
@@ -1235,7 +1235,7 @@ static void build_mixer(void)
     text(body, "DEVICE MIXER", 17, 15, 280, DIM, 16, 128);
     text(body, "调到你的节奏。", 17, 36, 286, FG, 20, 280);
     bool bt = aster_bluetooth_settings_available();
-    const char *names[] = {"Wi-Fi", "蓝牙", "静谧"};
+    const char *names[] = {"Wi-Fi", "蓝牙", "提示静音"};
     int acts[] = {ACT_WIFI, ACT_BT, ACT_QUIET};
     int art[] = {ICON_WIFI, ICON_BT, ICON_MOON};
     for (int i = 0, column = 0; i < 3; i++) {
@@ -1812,9 +1812,11 @@ void aster_launcher_show(void)
     tick_clock();
     aster_qpanel_restore_volume();
     brightness_pending = brightness;
-    saved_volume = aster_device_audio_get_volume();
-    if (quiet)
-        volume_pending = 0;
+    /* APPs and the system background media worker share one master volume.
+     * A persisted FLUX "quiet" preference only silences launcher sound
+     * effects; entering the desktop must never reset the codec volume.
+     * Discard any deferred slider value from the previous launcher view. */
+    volume_pending = -1;
     sound_entry = current() ? (int)(current() - entries) : -1;
     sound_group = group;
     sound_phase = phase;
@@ -2050,16 +2052,15 @@ void aster_launcher_pump_idle(void)
         if (r)
             notify("当前无法执行，请稍后再试。");
     } else if (a == ACT_QUIET) {
+        /* Mute FLUX interaction sounds only. Never touch the shared codec
+         * volume or pause/mute a media session still running after APP exit. */
         quiet = !quiet;
         if (quiet) {
-            saved_volume = aster_device_audio_get_volume();
-            volume_pending = 0;
-        } else
-            volume_pending = saved_volume;
-        if (quiet)
             aster_device_audio_ui_stop();
-        else
+            sound_pending = -1;
+        } else {
             sound_pending = S_TAP;
+        }
         show_page(MIXER);
         save();
     } else if (a == ACT_MOTION) {
