@@ -7,7 +7,7 @@
  * payload CRC32 and header CRC32; two alternating generation slots.
  *
  * Only read/verify the catalog when music has stopped, or when a track ended.
- * Never share a long-lived fopen across USB MSC ownership transitions.
+ * Never retain an SD file handle across USB MSC ownership transitions.
  */
 #include "hifi_playlist.h"
 #include <stdio.h>
@@ -262,9 +262,8 @@ static bool make_path(hifi_file_t *file,uint32_t index,char out[ASTER_MEDIA_PATH
 {
     hif_row_t row;
     if(!row_at(file,index,&row))return false;
-    /* The media decoder consumes Zephyr-style /SD:/music paths.
-     * POSIX VFS is mounted at /SD (without the volume colon); check
-     * existence using that real VFS path rather than stat(out). */
+    /* Both the native decoder and the native SD stat adapter use /SD:.
+     * Keep /SD as a host-test-only alias for the isolated POSIX fixture. */
     int size=snprintf(out,ASTER_MEDIA_PATH_MAX,"/SD:/music/%s",row.path);
     char native[ASTER_MEDIA_PATH_MAX];
 #ifdef HIFI_PLAYLIST_HOST_TEST
