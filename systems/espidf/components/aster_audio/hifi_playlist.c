@@ -13,12 +13,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <stdbool.h>
 #include <stddef.h>
 #ifndef HIFI_PLAYLIST_HOST_TEST
 #include "aster_power.h"
+#include "aster_os.h"
 #else
+#include <sys/stat.h>
 /* Host-only executable uses an isolated temporary SD fixture. */
 static int aster_power_activity_begin(void) { return 0; }
 static void aster_power_activity_end(void) { }
@@ -26,6 +27,53 @@ static void aster_power_activity_end(void) { }
 #ifdef ESP_PLATFORM
 #include "sdkconfig.h"
 #include "esp_attr.h"
+#include "esp_log.h"
+#define HIFI_WARN(...) ESP_LOGW("hifi_playlist", __VA_ARGS__)
+#else
+#define HIFI_WARN(...) ((void)0)
+#endif
+
+/* Use the same mounted SD filesystem adapter as APP storage and the media
+ * decoder. The ESP-IDF POSIX /SD path is not a reliable alias for the
+ * Zephyr-compatible /SD: mount on all supported IDF builds. */
+#ifdef HIFI_PLAYLIST_HOST_TEST
+typedef FILE *hifi_file_t;
+static bool hfile_open(hifi_file_t *f,const char *p) { *f=fopen(p,"rb"); return *f!=NULL; }
+static void hfile_close(hifi_file_t *f) { if(*f)fclose(*f); *f=NULL; }
+static bool hfile_read(hifi_file_t *f,void *p,size_t n) { return fread(p,1,n,*f)==n; }
+static bool hfile_seek(hifi_file_t *f,uint32_t pos) { return fseek(*f,(long)pos,SEEK_SET)==0; }
+static bool hfile_size(const char *p,uint64_t *n) {
+    struct stat st;
+    if(stat(p,&st) || !S_ISREG(st.st_mode))return false;
+    *n=(uint64_t)st.st_size;return true;
+}
+static bool hfile_regular(const char *p) { uint64_t n; return hfile_size(p,&n); }
+#else
+typedef aster_os_file_t hifi_file_t;
+static bool hfile_open(hifi_file_t *f,const char *p) {
+    return aster_os_file_open(f,p,ASTER_OS_READ)==0;
+}
+static void hfile_close(hifi_file_t *f) {
+    if(f->handle)(void)aster_os_file_close(f);
+}
+static bool hfile_read(hifi_file_t *f,void *p,size_t n) {
+    size_t done=0;
+    while(done<n) {
+        int got=aster_os_file_read(f,(uint8_t *)p+done,n-done);
+        if(got<=0)return false;
+        done+=(size_t)got;
+    }
+    return true;
+}
+static bool hfile_seek(hifi_file_t *f,uint32_t pos) {
+    return aster_os_file_seek(f,(int64_t)pos,ASTER_OS_SEEK_SET)==0;
+}
+static bool hfile_size(const char *p,uint64_t *n) {
+    aster_os_entry_t st={0};
+    if(aster_os_stat(p,&st) || st.type!=ASTER_OS_FILE)return false;
+    *n=st.size;return true;
+}
+static bool hfile_regular(const char *p) { uint64_t n; return hfile_size(p,&n); }
 #endif
 #if defined(CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY) && CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY
 #define HIFI_QUEUE_PSRAM EXT_RAM_BSS_ATTR
@@ -34,10 +82,17 @@ static void aster_power_activity_end(void) { }
 #endif
 
 enum { HIF_MAGIC = 0x32464948u, HIF_VERSION = 2, HIF_MAX = 16384 };
+#ifdef HIFI_PLAYLIST_HOST_TEST
 static const char *const catalog_paths[2] = {
     "/SD/aster/apps/aster.hifi/data/hifi_catalog_a.bin",
     "/SD/aster/apps/aster.hifi/data/hifi_catalog_b.bin"
 };
+#else
+static const char *const catalog_paths[2] = {
+    "/SD:/aster/apps/aster.hifi/data/hifi_catalog_a.bin",
+    "/SD:/aster/apps/aster.hifi/data/hifi_catalog_b.bin"
+};
+#endif
 typedef struct {
     uint32_t magic, version, generation, count;
     uint32_t payload_crc, signature_xor, signature_sum, flags;
@@ -98,59 +153,59 @@ static bool valid_relative(const char *name)
         return false;
     return true;
 }
-static bool read_header(FILE *file, hif_header_t *head)
+static bool read_header(hifi_file_t *file,const char *path,hif_header_t *head)
 {
-    struct stat st;
-    if (fstat(fileno(file), &st)!=0 ||
-        fread(head,1,sizeof(*head),file)!=sizeof(*head))return false;
+    uint64_t bytes=0;
+    if(!hfile_size(path,&bytes) || !hfile_read(file,head,sizeof(*head)))return false;
     uint32_t crc=~crc_update(0xffffffffu,(const uint8_t *)head,
-                              offsetof(hif_header_t,header_crc));
+                             offsetof(hif_header_t,header_crc));
     return head->magic==HIF_MAGIC && head->version==HIF_VERSION &&
            head->count>0 && head->count<=HIF_MAX &&
            head->header_crc==crc &&
-           (uint64_t)st.st_size==sizeof(*head)+(uint64_t)head->count*sizeof(hif_row_t);
+           bytes==sizeof(*head)+(uint64_t)head->count*sizeof(hif_row_t);
 }
-static bool verify_payload(FILE *file, const hif_header_t *head)
+static bool verify_payload(hifi_file_t *file,const hif_header_t *head)
 {
-    if (fseek(file,sizeof(*head),SEEK_SET))return false;
+    if(!hfile_seek(file,sizeof(*head)))return false;
     uint8_t block[4096];
     uint32_t remaining=head->count*(uint32_t)sizeof(hif_row_t);
     uint32_t crc=0xffffffffu;
     while(remaining) {
         size_t n=remaining<sizeof(block)?remaining:sizeof(block);
-        if (fread(block,1,n,file)!=n)return false;
+        if(!hfile_read(file,block,n))return false;
         crc=crc_update(crc,block,n);
         remaining-=(uint32_t)n;
     }
     return (~crc)==head->payload_crc;
 }
-static FILE *open_current(hif_header_t *head)
+static bool open_current(hif_header_t *head,hifi_file_t *opened)
 {
-    FILE *files[2]={NULL,NULL};
+    hifi_file_t files[2]={{0}};
     hif_header_t headers[2]={{0},{0}};
-    for (int i=0;i<2;i++){
-        FILE *f=fopen(catalog_paths[i],"rb");
-        if(!f)continue;
-        if(!read_header(f,&headers[i])){fclose(f);continue;}
-        files[i]=f;
+    bool valid[2]={false,false};
+    for(int i=0;i<2;i++) {
+        if(!hfile_open(&files[i],catalog_paths[i]))continue;
+        if(!read_header(&files[i],catalog_paths[i],&headers[i])) {
+            hfile_close(&files[i]);
+            HIFI_WARN("HIF2 slot %d invalid header",i);
+            continue;
+        }
+        valid[i]=true;
     }
-    int first=files[0] && files[1] ?
+    int first=valid[0] && valid[1] ?
               ((int32_t)(headers[0].generation-headers[1].generation)>=0 ? 0:1) :
-              (files[0]?0:1);
-    for (int attempt=0;attempt<2;attempt++){
+              (valid[0]?0:1);
+    for(int attempt=0;attempt<2;attempt++) {
         int slot=attempt==0?first:1-first;
-        FILE *f=files[slot];
-        if(!f)continue;
+        if(!valid[slot])continue;
         const hif_header_t *h=&headers[slot];
         bool known=verified_slot==slot &&
                    verified_generation==h->generation &&
                    verified_count==h->count &&
                    verified_crc==h->payload_crc;
-        if(!known && !verify_payload(f,h)){
-            /* Power-loss/corrupt latest slot: try the last verified slot,
-             * just as the APP does. Never use an unverified HIF2 payload. */
-            fclose(f);
-            files[slot]=NULL;
+        if(!known && !verify_payload(&files[slot],h)) {
+            HIFI_WARN("HIF2 slot %d payload CRC/read failed",slot);
+            hfile_close(&files[slot]);
             continue;
         }
         if(!known) {
@@ -163,18 +218,19 @@ static FILE *open_current(hif_header_t *head)
             hifi_playlist_reset_shuffle();
         }
         *head=*h;
-        if(files[1-slot])fclose(files[1-slot]);
-        return f;
+        *opened=files[slot];
+        memset(&files[slot],0,sizeof(files[slot]));
+        hfile_close(&files[1-slot]);
+        return true;
     }
-    return NULL;
+    HIFI_WARN("no usable HIF2 catalog at /SD:/aster/apps/aster.hifi/data");
+    return false;
 }
-static bool row_at(FILE *file, uint32_t i, hif_row_t *out)
+static bool row_at(hifi_file_t *file,uint32_t i,hif_row_t *out)
 {
     uint32_t offset=(uint32_t)sizeof(hif_header_t)+i*(uint32_t)sizeof(hif_row_t);
-    if (fseek(file,(long)offset,SEEK_SET) ||
-        fread(out,1,sizeof(*out),file)!=sizeof(*out))return false;
-    return memchr(out->path,0,sizeof(out->path)) &&
-           valid_relative(out->path);
+    if(!hfile_seek(file,offset) || !hfile_read(file,out,sizeof(*out)))return false;
+    return memchr(out->path,0,sizeof(out->path)) && valid_relative(out->path);
 }
 static const char *relative_from_music(const char *absolute)
 {
@@ -184,7 +240,7 @@ static const char *relative_from_music(const char *absolute)
     if(!strncmp(absolute,b,sizeof(b)-1))return absolute+sizeof(b)-1;
     return NULL;
 }
-static int locate(FILE *file, uint32_t count, const char *absolute)
+static int locate(hifi_file_t *file, uint32_t count, const char *absolute)
 {
     if(last_index>=0 && (uint32_t)last_index<count &&
        !strcmp(last_path,absolute))
@@ -202,7 +258,7 @@ static int locate(FILE *file, uint32_t count, const char *absolute)
     }
     return -1;
 }
-static bool make_path(FILE *file,uint32_t index,char out[ASTER_MEDIA_PATH_MAX])
+static bool make_path(hifi_file_t *file,uint32_t index,char out[ASTER_MEDIA_PATH_MAX])
 {
     hif_row_t row;
     if(!row_at(file,index,&row))return false;
@@ -211,11 +267,14 @@ static bool make_path(FILE *file,uint32_t index,char out[ASTER_MEDIA_PATH_MAX])
      * existence using that real VFS path rather than stat(out). */
     int size=snprintf(out,ASTER_MEDIA_PATH_MAX,"/SD:/music/%s",row.path);
     char native[ASTER_MEDIA_PATH_MAX];
+#ifdef HIFI_PLAYLIST_HOST_TEST
     int n=snprintf(native,sizeof(native),"/SD/music/%s",row.path);
+#else
+    int n=snprintf(native,sizeof(native),"/SD:/music/%s",row.path);
+#endif
     if(size<=0 || (unsigned)size>=ASTER_MEDIA_PATH_MAX ||
        n<=0 || (size_t)n>=sizeof(native))return false;
-    struct stat st;
-    return stat(native,&st)==0 && S_ISREG(st.st_mode);
+    return hfile_regular(native);
 }
 static void start_shuffle(uint32_t count,uint32_t generation,uint32_t current)
 {
@@ -245,13 +304,17 @@ static bool choose_with_storage_activity(const char *current,uint32_t mode,
        mode>HIFI_QUEUE_SHUFFLE)return false;
     out[0]=0;
     hif_header_t header={0};
-    FILE *file=open_current(&header);
-    if(!file)return false;
-    int idx=locate(file,header.count,current);
-    if(idx<0){fclose(file);return false;}
+    hifi_file_t file={0};
+    if(!open_current(&header,&file))return false;
+    int idx=locate(&file,header.count,current);
+    if(idx<0) {
+        HIFI_WARN("current track not in HIF2: %s",current);
+        hfile_close(&file);
+        return false;
+    }
     if(automatic && mode==HIFI_QUEUE_REPEAT_ONE){
-        bool yes=make_path(file,(uint32_t)idx,out);
-        fclose(file);
+        bool yes=make_path(&file,(uint32_t)idx,out);
+        hfile_close(&file);
         return yes;
     }
     if(mode==HIFI_QUEUE_SHUFFLE) {
@@ -261,7 +324,7 @@ static bool choose_with_storage_activity(const char *current,uint32_t mode,
             start_shuffle(header.count,header.generation,(uint32_t)idx);
         /* Back uses the existing visited order, not a new random song. */
         if(direction<0 && shuffle_cursor==0) {
-            fclose(file);return false;
+            hfile_close(&file);return false;
         }
         if(direction>0 && shuffle_cursor+1>=shuffle_count)
             start_shuffle(header.count,header.generation,(uint32_t)idx);
@@ -271,14 +334,14 @@ static bool choose_with_storage_activity(const char *current,uint32_t mode,
                 shuffle_cursor++;
             } else shuffle_cursor--;
             uint32_t candidate=shuffled[shuffle_cursor];
-            if(make_path(file,candidate,out)){
+            if(make_path(&file,candidate,out)){
                 last_index=(int)candidate;
                 snprintf(last_path,sizeof(last_path),"%s",out);
-                fclose(file);return true;
+                hfile_close(&file);return true;
             }
             if(direction<0 && !shuffle_cursor)break;
         }
-        fclose(file);return false;
+        hfile_close(&file);return false;
     }
     /* Single-track repeat affects only EOF. Manual NEXT/PREV steps through
      * the complete catalog, just like normal and full-repeat modes. */
@@ -295,21 +358,23 @@ static bool choose_with_storage_activity(const char *current,uint32_t mode,
                 candidate=header.count-1;
             } else candidate--;
         }
-        if(make_path(file,candidate,out)){
+        if(make_path(&file,candidate,out)){
             last_index=(int)candidate;
             snprintf(last_path,sizeof(last_path),"%s",out);
-            fclose(file);return true;
+            hfile_close(&file);return true;
         }
     }
-    fclose(file);return false;
+    hfile_close(&file);return false;
 }
 
 bool hifi_playlist_choose(const char *current,uint32_t mode,
                           int direction,bool automatic,
                           char out[ASTER_MEDIA_PATH_MAX])
 {
-    if (aster_power_activity_begin()) {
-        if (out) out[0]=0;
+    int activity=aster_power_activity_begin();
+    if(activity) {
+        HIFI_WARN("SD activity unavailable during queue change: %d",activity);
+        if(out)out[0]=0;
         return false;
     }
     bool ok=choose_with_storage_activity(current,mode,direction,automatic,out);
