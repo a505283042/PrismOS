@@ -158,29 +158,41 @@ static void benchmark_power(bench_ctx_t *ctx,int mode)
     int64_t start=esp_timer_get_time();
     int64_t stop=start+POWER_SECONDS*1000000LL;
     uint64_t completed=0;
+    uint32_t sample_checksum=0, pixel_errors=0;
     esp_err_t status=ESP_OK;
     while(esp_timer_get_time()<stop) {
+        /* Change an observable source pixel every transfer so a compiler
+         * cannot hoist away repeated CPU memcpy calls in the power test. */
+        if (mode!=3) ctx->src[0]=(uint16_t)(ctx->src[0]+1u);
         if (mode==1) memcpy(ctx->dst,ctx->src,size);
         else if (mode==2) {
             status=dma_copy(ctx,edge);
             if (status!=ESP_OK) break;
         } else vTaskDelay(pdMS_TO_TICKS(10));
+        if (mode!=3) {
+            /* A volatile read after completion proves the destination was
+             * actually updated by this operation, not just at loop exit. */
+            uint16_t observed=*(volatile uint16_t *)ctx->dst;
+            sample_checksum+=observed;
+            if (observed!=ctx->src[0]) {pixel_errors++;break;}
+        }
         completed++;
         /* Low priority worker yields. Keep serial and UI responsive. */
         if ((completed&31u)==0u) vTaskDelay(pdMS_TO_TICKS(1));
     }
     uint64_t elapsed=(uint64_t)(esp_timer_get_time()-start);
-    bool correct=(mode==3) || equal_pixels(ctx,edge);
+    bool correct=((mode==3) || equal_pixels(ctx,edge)) && pixel_errors==0;
     bool valid=correct && status==ESP_OK &&
                elapsed >= POWER_SECONDS*1000000ULL;
     printf("STAGEC POWER end mode=%s elapsed_us=%" PRIu64
            " copies=%" PRIu64 " total_bytes=%" PRIu64
            " pixel_match=%d err=%d dma_retries=%" PRIu32
+           " pixel_errors=%" PRIu32 " sample_checksum=%" PRIu32
            " verdict=%s; current_ma=EXTERNAL_ONLY\n",
            label,elapsed,mode==3?0:completed,
            mode==3?0:completed*(uint64_t)size,
            correct?1:0,(int)status,ctx->dma_retries,
-           valid?"VALID":"INVALID");
+           pixel_errors,sample_checksum,valid?"VALID":"INVALID");
 }
 
 static void bench_worker(void *arg)
