@@ -53,6 +53,15 @@ class StageB(unittest.TestCase):
         self.assertIn("jpeg_decoder_process(", HW)
         self.assertIn("heap_caps_free(decoded)", HW)
 
+    def test_jpeg_native_rgb565_byte_order(self):
+        # Confirm the S31 hardware JPEG output matches the native uint16_t
+        # RGB565 contract: FakePod S31 uses BGR for JPEG_HW_ORDER_LE.
+        # Using JPEG_DEC_RGB_ELEMENT_ORDER_RGB instead swaps red/blue.
+        self.assertIn(".rgb_order = JPEG_DEC_RGB_ELEMENT_ORDER_BGR", HW)
+        self.assertNotIn(".rgb_order = JPEG_DEC_RGB_ELEMENT_ORDER_RGB", HW)
+        self.assertIn("little-endian RGB565", HW)
+        self.assertIn("PPA_BLEND_COLOR_MODE_RGB565", HW)
+
     def test_ppa_blend_and_cpu_fallback(self):
         for key in ("PPA_OPERATION_BLEND", "PPA_BLEND_COLOR_MODE_A8",
                     "ppa_do_blend(", "dim_using_cpu(", "DIM_ALPHA = 151"):
