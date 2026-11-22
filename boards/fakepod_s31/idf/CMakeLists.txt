@@ -15,3 +15,8 @@ set_property(TARGET ${WAMR_LIB} PROPERTY SOURCES "${WAMR_SOURCES}")
 target_sources(${WAMR_LIB} PRIVATE "${CMAKE_CURRENT_LIST_DIR}/port/wamr_memmap.c")
 idf_component_get_property(ESP_MM_LIB esp_mm COMPONENT_LIB)
 target_link_libraries(${WAMR_LIB} PRIVATE ${ESP_MM_LIB})
+
+# Local build workaround for ESP-IDF 6.1 + GCC 15.2
+# Demote only the Bluetooth string truncation warning.
+idf_component_get_property(ASTER_BT_LIB bt COMPONENT_LIB)
+target_compile_options(${ASTER_BT_LIB} PRIVATE -Wno-error=stringop-truncation)

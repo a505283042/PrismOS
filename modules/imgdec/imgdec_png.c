@@ -19,6 +19,7 @@
  */
 #include <errno.h>
 #include <math.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -360,7 +361,7 @@ aster_error_t aster_png_probe(const char *path, aster_imgdec_info_t *info, uint3
 		snprintf(info->why, sizeof(info->why), "png 0x0");
 	} else if (w > PNG_MAX_W) {
 		info->too_big = true;
-		snprintf(info->why, sizeof(info->why), "PNG w=%u > %u", w, PNG_MAX_W);
+		snprintf(info->why, sizeof(info->why), "PNG w=%" PRIu32 " > %u", w, PNG_MAX_W);
 	} else if (!png_variant_ok(bd, ct, il)) {
 		info->unsupported = true;
 		if (il)

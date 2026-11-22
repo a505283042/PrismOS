@@ -18,6 +18,7 @@
  */
 #include <errno.h>
 #include <math.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -211,7 +212,7 @@ aster_error_t aster_jpg_probe(const char *path, aster_imgdec_info_t *info, uint3
 	info->file_size = (uint32_t)de.size;
 	info->too_big = (uint32_t)de.size > JPG_MAX_FILE;
 	if (info->too_big) {
-		snprintf(info->why, sizeof(info->why), "JPG %u B > limit", info->file_size);
+		snprintf(info->why, sizeof(info->why), "JPG %" PRIu32 " B > limit", info->file_size);
 		return ASTER_OK;
 	}
 

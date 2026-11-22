@@ -428,6 +428,8 @@ static int legacy_configure_locked(const struct device *d, enum i2s_dir dir,
                                                   .dout = aster_cs43131_wiring.dout,
                                                   .din = I2S_GPIO_UNUSED}};
         standard.clk_cfg.clk_src = aster_cs43131_wiring.tx_clock;
+        if (rate >= 88200 && standard.clk_cfg.clk_src == I2S_CLK_SRC_DEFAULT)
+            standard.clk_cfg.mclk_multiple = I2S_MCLK_MULTIPLE_128;
         if (status == ESP_OK)
             status = i2s_channel_init_std_mode(tx, &standard);
         if (status != ESP_OK) {
@@ -687,6 +689,8 @@ static int native_open(void *ctx, const aster_audio_format_t *format)
                                                       .dout = aster_cs43131_wiring.dout,
                                                       .din = I2S_GPIO_UNUSED}};
             standard.clk_cfg.clk_src = aster_cs43131_wiring.tx_clock;
+            if (format->rate >= 88200 && standard.clk_cfg.clk_src == I2S_CLK_SRC_DEFAULT)
+                standard.clk_cfg.mclk_multiple = I2S_MCLK_MULTIPLE_128;
             if (status == ESP_OK)
                 status = i2s_channel_init_std_mode(tx, &standard);
             r = error(status);

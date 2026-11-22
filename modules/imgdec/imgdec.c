@@ -15,6 +15,7 @@
  */
 #include <errno.h>
 #include <math.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -171,13 +172,13 @@ static aster_error_t bmp_probe_fill(bmp_t *b, const uint8_t dib[40], uint32_t fi
 		info->unsupported =
 		        !ok_bpp || !ok_comp || b->w == 0 || b->h == 0 || b->w > BMP_MAX_W;
 		if (!ok_comp)
-			snprintf(info->why, sizeof(info->why), "BMP compression %u / bpp %u",
+			snprintf(info->why, sizeof(info->why), "BMP compression %" PRIu32 " / bpp %" PRIu32,
 			         b->compression, b->bpp);
 		else if (b->w > BMP_MAX_W)
-			snprintf(info->why, sizeof(info->why), "BMP width %u > %u", b->w,
+			snprintf(info->why, sizeof(info->why), "BMP width %" PRIu32 " > %u", b->w,
 			         BMP_MAX_W);
 		else if (!ok_bpp)
-			snprintf(info->why, sizeof(info->why), "BMP bpp %u", b->bpp);
+			snprintf(info->why, sizeof(info->why), "BMP bpp %" PRIu32, b->bpp);
 		info->too_big = false; /* streamed: size-independent memory */
 	}
 	if (!ok_bpp || !ok_comp || b->w == 0 || b->h == 0 || b->w > BMP_MAX_W)
