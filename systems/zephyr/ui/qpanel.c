@@ -461,20 +461,26 @@ static void vol_refresh(void)
 
 void aster_qpanel_restore_volume(void)
 {
+	/* Restore persistent volume once after SD becomes available at boot.
+	 * The same codec volume is shared by APP, FLUX and the background media
+	 * worker. Reapplying an old KV value on every launcher_show() silently
+	 * changes the volume when an APP exits while music keeps playing. */
+	static bool restored_this_boot;
+	if (restored_this_boot || !aster_service_storage_mounted())
+		return;
 	uint8_t raw = 0;
 	size_t n = 0;
-
-	/* kv lives on the SD card, so there is nothing to restore from until
-	 * it is up. The launcher's show path is the only caller and the only
-	 * place that runs on the UI thread knowing that. */
-	if (!aster_service_storage_mounted()) {
-		return;
-	}
 	if (aster_service_kv_get(QPANEL_KV_ID, QPANEL_KV_VOL, &raw, 1, &n) == 0 && n == 1 &&
 	    raw <= 100) {
-		(void)aster_device_audio_set_volume((int)raw);
-		aster_service_logf(3, "qpanel: volume %u restored", (unsigned)raw);
+		int result = aster_device_audio_set_volume((int)raw);
+		if (result)
+			aster_service_logf(2, "qpanel: volume restore failed %d", result);
+		else
+			aster_service_logf(3, "qpanel: boot volume %u restored", (unsigned)raw);
 	}
+	/* Even with no stored volume, do not restore while returning from an APP.
+	 * Retry only if storage was unavailable before this call. */
+	restored_this_boot = true;
 }
 #else
 void aster_qpanel_restore_volume(void)
