@@ -11,7 +11,7 @@ idf.py --preview -C boards/fakepod_s31/idf -B "$PWD/build/fakepod-s31/system" -D
 idf.py --preview -C boards/fakepod_s31/idf -B "$PWD/build/fakepod-s31/system" -p PORT flash
 ```
 
-将 `PORT` 替换为下载接口的串口。设备端 Type-C 插头方向决定连接下载串口或原生 USB。USB 读卡器由板级选项 `CONFIG_ASTER_FAKEPOD_USB_STORAGE` 控制。可在 menuconfig 开启，也可在新构建目录配置时传入 `-DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.usb-storage"`。进入系统的 USB 读卡器模式后可从电脑写 SD 卡，安全弹出后再恢复设备访问。
+将 `PORT` 替换为下载接口的串口。设备端 Type-C 插头方向决定连接下载串口或原生 USB。USB 读卡器由板级选项 `CONFIG_ASTER_FAKEPOD_USB_STORAGE` 控制。主线默认关闭；**实验分支 `feat/fakepod-s31-usb-msc` 已开启该选项**。进入 FLUX 桌面「电源 → USB 读卡器」后，固件会先停止 APP／音频并卸载 TF 卡，再交由 Windows 独占访问，安全弹出后恢复设备访问。编译、串口直装和安全验证步骤见 [USB MSC 指南](USB_MSC_GUIDE.zh-CN.md)。
 
 ## 实机功能
 
