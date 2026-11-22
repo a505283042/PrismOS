@@ -16,6 +16,13 @@
 #include <sys/stat.h>
 #include <stdbool.h>
 #include <stddef.h>
+#ifndef HIFI_PLAYLIST_HOST_TEST
+#include "aster_power.h"
+#else
+/* Host-only executable uses an isolated temporary SD fixture. */
+static int aster_power_activity_begin(void) { return 0; }
+static void aster_power_activity_end(void) { }
+#endif
 #ifdef ESP_PLATFORM
 #include "sdkconfig.h"
 #include "esp_attr.h"
@@ -222,9 +229,9 @@ static void start_shuffle(uint32_t count,uint32_t generation,uint32_t current)
     shuffle_cursor=0;
     shuffle_started=true;
 }
-bool hifi_playlist_choose(const char *current,uint32_t mode,
-                          int direction,bool automatic,
-                          char out[ASTER_MEDIA_PATH_MAX])
+static bool choose_with_storage_activity(const char *current,uint32_t mode,
+                                         int direction,bool automatic,
+                                         char out[ASTER_MEDIA_PATH_MAX])
 {
     if(!current || !out || (direction!=1 && direction!=-1) ||
        mode>HIFI_QUEUE_SHUFFLE)return false;
@@ -287,4 +294,17 @@ bool hifi_playlist_choose(const char *current,uint32_t mode,
         }
     }
     fclose(file);return false;
+}
+
+bool hifi_playlist_choose(const char *current,uint32_t mode,
+                          int direction,bool automatic,
+                          char out[ASTER_MEDIA_PATH_MAX])
+{
+    if (aster_power_activity_begin()) {
+        if (out) out[0]=0;
+        return false;
+    }
+    bool ok=choose_with_storage_activity(current,mode,direction,automatic,out);
+    aster_power_activity_end();
+    return ok;
 }
