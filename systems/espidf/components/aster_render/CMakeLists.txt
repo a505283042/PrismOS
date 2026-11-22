@@ -9,7 +9,7 @@ include(${ROOT}/common/setup/assets.cmake)
 # below. Otherwise the source is built without driver/jpeg_decode.h includes.
 set(ASTER_HIFI_COVER_SOURCES "")
 if(CONFIG_IDF_TARGET_ESP32S31)
-    set(ASTER_HIFI_COVER_SOURCES "hifi_cover_accel.c")
+    set(ASTER_HIFI_COVER_SOURCES "hifi_cover_accel.c" "stage_c_bench.c")
 endif()
 file(GLOB_RECURSE LV_SOURCES "${ROOT}/third_party/lvgl/src/*.c")
 list(FILTER LV_SOURCES EXCLUDE REGEX "/(examples|tests|demos|libs)/")
@@ -23,7 +23,7 @@ idf_component_register(SRCS "port.c" "ppa_fill.c" "render_workers.c" ${ASTER_HIF
     INCLUDE_DIRS ${ASTER_COMMON_INCLUDE_DIRS} "." "compat" "${UI}" "${ROOT}/contract/include" "${ROOT}/platform"
       "${ROOT}/systems/zephyr/core" "${ROOT}/systems/zephyr/services"
       "${ROOT}/modules/prettypoly" "${IMG}" "${ROOT}/third_party/lvgl" "${ROOT}/third_party/lvgl/src"
-    REQUIRES esp_timer heap log esp_driver_ppa esp_driver_jpeg fatfs)
+    REQUIRES esp_timer heap log esp_driver_ppa esp_driver_jpeg esp_driver_dma fatfs)
 add_dependencies(${COMPONENT_LIB} aster_system_fonts)
 target_compile_definitions(${COMPONENT_LIB} PUBLIC ASTER_SYSTEM_ESP_IDF=1 CONFIG_ASTER_LAUNCHER_FLUX=1 LV_LVGL_H_INCLUDE_SIMPLE
     ASTER_PLAT_MAX_TOUCH=5
