@@ -11,7 +11,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
-#include <dirent.h>
 #include <errno.h>
 #include <stdbool.h>
 #include <string.h>
@@ -64,66 +63,6 @@ static const char *music_basename(const char *path)
     if (!strncmp(path, "/SD/music/", 10))
         return path + 10;
     return NULL;
-}
-
-static bool music_filename(const char *name)
-{
-    const char *ext = strrchr(name, '.');
-    if (!ext || !ext[1])
-        return false;
-    char tail[5] = {0};
-    size_t length = strlen(++ext);
-    if (length >= sizeof(tail))
-        return false;
-    for (size_t i = 0; i < length; i++)
-        tail[i] = ext[i] >= 'A' && ext[i] <= 'Z' ? (char)(ext[i] + ('a' - 'A')) : ext[i];
-    return !strcmp(tail, "flac") || !strcmp(tail, "mp3") || !strcmp(tail, "wav");
-}
-
-/* Do not allocate a full firmware playlist: locate the following filename
- * with one bounded directory pass, wrapping at the last entry. */
-static bool music_successor(const char *path, char out[ASTER_MEDIA_PATH_MAX])
-{
-    const char *current = music_basename(path);
-    if (!current || !*current)
-        return false;
-    DIR *directory = opendir("/SD/music");
-    if (!directory) {
-        ESP_LOGW("hifi_autoplay", "cannot open music directory: errno=%d", errno);
-        return false;
-    }
-    char first[ASTER_MEDIA_PATH_MAX] = {0};
-    char chosen[ASTER_MEDIA_PATH_MAX] = {0};
-    bool found_current = false;
-    struct dirent *entry;
-    while ((entry = readdir(directory)) != NULL) {
-#ifdef DT_DIR
-        if (entry->d_type == DT_DIR)
-            continue;
-#endif
-        const char *name = entry->d_name;
-        size_t length = strlen(name);
-        if (name[0] == '.' || !music_filename(name) ||
-            length + sizeof("/SD:/music/") > ASTER_MEDIA_PATH_MAX)
-            continue;
-        if (!first[0])
-            memcpy(first, name, length + 1);
-        if (found_current) {
-            memcpy(chosen, name, length + 1);
-            break;
-        }
-        if (!strcmp(name, current))
-            found_current = true;
-    }
-    closedir(directory);
-    if (!found_current)
-        return false;
-    if (!chosen[0] && first[0] && strcmp(first, current))
-        memcpy(chosen, first, strlen(first) + 1);
-    if (!chosen[0])
-        return false; /* Only one file, or the current entry disappeared. */
-    int n = snprintf(out, ASTER_MEDIA_PATH_MAX, "/SD:/music/%s", chosen);
-    return n > 0 && (unsigned)n < ASTER_MEDIA_PATH_MAX;
 }
 
 static bool media_busy(uint32_t state)
@@ -184,7 +123,14 @@ static void local_auto_next_task(void *ctx)
                     else
                         ESP_LOGI("hifi_autoplay","manual: %s",next);
                 } else {
-                    ESP_LOGW("hifi_autoplay","manual no successor: %s",manual_path);
+                    /* PREVIOUS at the beginning of a sequential/shuffle
+                     * history restarts this track rather than leaving silence. */
+                    if (manual_direction<0) {
+                        int rc=aster_media_play(manual_path,ASTER_MEDIA_OUTPUT_SYSTEM);
+                        if(rc) ESP_LOGW("hifi_autoplay","restart failed: %d",rc);
+                    } else {
+                        ESP_LOGI("hifi_autoplay","reached end of queue");
+                    }
                 }
                 manual_direction=0;
             }
@@ -208,8 +154,16 @@ static void local_auto_next_task(void *ctx)
                 armed[0]=0;
                 ended_since=0;
                 char next[ASTER_MEDIA_PATH_MAX]={0};
+                uint32_t intent=atomic_load(&playback_intent);
                 if(hifi_playlist_choose(snapshot.path,mode,1,true,next)){
-                    if(atomic_load(&next_request) || snapshot.state!=ASTER_MEDIA_ENDED)
+                    /* Do not race an APP-originated PLAY_FILE or STOP while
+                     * we were reading the catalog after EOF. */
+                    aster_media_snapshot_t still={.size=sizeof(still),.version=1};
+                    if(atomic_load(&next_request) ||
+                       intent!=atomic_load(&playback_intent) ||
+                       aster_media_snapshot(&still) ||
+                       still.state!=ASTER_MEDIA_ENDED ||
+                       strcmp(still.path,snapshot.path))
                         continue;
                     int result=aster_media_play(next,ASTER_MEDIA_OUTPUT_SYSTEM);
                     if(result)
