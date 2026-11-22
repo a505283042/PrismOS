@@ -112,6 +112,7 @@ int main(void)
             harness.write_text(code, encoding="utf-8")
             executable = root / "test"
             cmd = ["cc", "-std=c11", "-D_POSIX_C_SOURCE=200809L",
+                   "-DHIFI_PLAYLIST_HOST_TEST",
                    "-Wall", "-Wextra", "-Werror", "-I" + str(QUEUE_INCLUDE),
                    "-I" + str(MEDIA_INCLUDE), str(harness),
                    str(implementation), "-o", str(executable)]
