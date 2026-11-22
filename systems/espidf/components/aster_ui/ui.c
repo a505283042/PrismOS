@@ -21,6 +21,10 @@
 #ifndef ASTER_IDF_HOST_TEST
 #include "ppa_fill.h"
 #include "render_workers.h"
+#if defined(CONFIG_IDF_TARGET_ESP32S31)
+#include "stage_c_bench.h"
+#include "aster_media.h"
+#endif
 #endif
 #include <stdatomic.h>
 #include <stdio.h>
@@ -124,6 +128,42 @@ int aster_idf_ui_command(int argc, char **argv)
         return aster_setup_repair();
     if (argc == 4 && !strcmp(argv[2], "setup-source"))
         return aster_setup_repair_source(argv[3]);
+#if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
+    /* Stage C never changes the live renderer. Each run requires idle audio
+     * and an exited APP; the worker is separate from UI/console tasks. */
+    int stage_c_mode = -1;
+    if (argc == 3 && !strcmp(argv[2], "stagec"))
+        stage_c_mode = 0;
+    else if (argc == 4 && !strcmp(argv[2], "stagec-power")) {
+        if (!strcmp(argv[3], "cpu")) stage_c_mode = 1;
+        else if (!strcmp(argv[3], "dma2d")) stage_c_mode = 2;
+        else if (!strcmp(argv[3], "idle")) stage_c_mode = 3;
+        else return ASTER_EINVAL;
+    }
+    if (stage_c_mode >= 0) {
+        if (app_active) {
+            puts("STAGEC refused: exit the APP before benchmarking");
+            return ASTER_EBUSY;
+        }
+        aster_media_snapshot_t media={.size=sizeof(media),.version=1};
+        if (aster_media_snapshot(&media) ||
+            media.state==ASTER_MEDIA_OPENING ||
+            media.state==ASTER_MEDIA_PLAYING ||
+            media.state==ASTER_MEDIA_PAUSED ||
+            media.state==ASTER_MEDIA_STOPPING) {
+            puts("STAGEC refused: stop local playback and Bluetooth first");
+            return ASTER_EBUSY;
+        }
+        if (!aster_idf_ppa_fill_ready()) {
+            puts("STAGEC refused: PPA Fill did not pass both boot self-tests");
+            return ASTER_ESTATE;
+        }
+        int started=aster_idf_stage_c_start(stage_c_mode);
+        if (started)
+            puts("STAGEC refused: worker already running or unavailable");
+        return started ? ASTER_EBUSY : 0;
+    }
+#endif
     int request;
     if (argc == 4 && !strcmp(argv[2], "volume")) {
         char *end = NULL;
