@@ -19,11 +19,12 @@
 #include "esp_heap_caps.h"
 #include "flux_draw.h"
 #ifndef ASTER_IDF_HOST_TEST
+#include "sdkconfig.h"
 #include "ppa_fill.h"
 #include "render_workers.h"
 #if defined(CONFIG_IDF_TARGET_ESP32S31)
 #include "stage_c_bench.h"
-#include "aster_media.h"
+#include "aster_player_service.h"
 #endif
 #endif
 #include <stdatomic.h>
@@ -145,13 +146,17 @@ int aster_idf_ui_command(int argc, char **argv)
             puts("STAGEC refused: exit the APP before benchmarking");
             return ASTER_EBUSY;
         }
-        aster_media_snapshot_t media={.size=sizeof(media),.version=1};
-        if (aster_media_snapshot(&media) ||
-            media.state==ASTER_MEDIA_OPENING ||
-            media.state==ASTER_MEDIA_PLAYING ||
-            media.state==ASTER_MEDIA_PAUSED ||
-            media.state==ASTER_MEDIA_STOPPING) {
-            puts("STAGEC refused: stop local playback and Bluetooth first");
+        /* The native player snapshot covers *both* local and Bluetooth
+         * source playback; testing a local media snapshot alone would miss
+         * a background A2DP receiver session. */
+        aster_player_info_t player={.size=sizeof(player),.version=1};
+        if (!aster_player_service_available() ||
+            aster_player_service_info(&player) ||
+            player.state==ASTER_PLAYER_OPENING ||
+            player.state==ASTER_PLAYER_PLAYING ||
+            player.state==ASTER_PLAYER_PAUSED ||
+            player.state==ASTER_PLAYER_STOPPING) {
+            puts("STAGEC refused: stop local/BT playback first");
             return ASTER_EBUSY;
         }
         if (!aster_idf_ppa_fill_ready()) {
