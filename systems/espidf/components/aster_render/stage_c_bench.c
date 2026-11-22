@@ -28,6 +28,7 @@ typedef struct {
     uint16_t *src;
     uint16_t *dst;
     async_color_convert_handle_t dma;
+    uint32_t dma_retries;
 } bench_ctx_t;
 
 static esp_err_t dma_copy(bench_ctx_t *ctx, unsigned edge)
@@ -39,9 +40,18 @@ static esp_err_t dma_copy(bench_ctx_t *ctx, unsigned edge)
         .src_color_format=ESP_COLOR_FOURCC_RGB16,
         .dst_color_format=ESP_COLOR_FOURCC_RGB16,
     };
-    /* ESP-IDF 6.1's public blocking wrapper handles cache maintenance
-     * and waits for complete DMA2D output. It must not target WASM memory. */
-    return esp_color_convert_blocking(ctx->dma,&request,-1);
+    /* The IDF 6.1 blocking callback signals its waiter before the ISR
+     * recycles its transaction. Backlog=1 can race this bookkeeping.
+     * A 2-entry pool plus bounded retry only on temporary pool exhaustion
+     * avoids a false power-run failure. All other errors fail immediately. */
+    for (unsigned attempt=0;attempt<3u;attempt++) {
+        esp_err_t status=esp_color_convert_blocking(ctx->dma,&request,-1);
+        if (status==ESP_OK) return ESP_OK;
+        if (status!=ESP_ERR_INVALID_STATE || attempt==2u) return status;
+        ctx->dma_retries++;
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+    return ESP_ERR_INVALID_STATE;
 }
 
 static bool equal_pixels(const bench_ctx_t *ctx, unsigned edge)
@@ -109,11 +119,11 @@ static void benchmark_latency(bench_ctx_t *ctx)
         }
         printf("STAGEC BENCH edge=%u bytes=%u reps=%u cpu_avg_us=%" PRIu64
                " dma2d_avg_us=%" PRIu64 " cpu_min_us=%" PRIu32
-               " dma2d_min_us=%" PRIu32 " dma2d_available=%d pixel_match=%d\n",
+               " dma2d_min_us=%" PRIu32 " dma2d_available=%d pixel_match=%d dma_retries=%" PRIu32 "\n",
                edge,(unsigned)size,reps,cpu_us/reps,
                ctx->dma?dma_us/reps:0,cpu_min,
                ctx->dma?dma_min:0,ctx->dma?1:0,
-               cpu_ok && (!ctx->dma || dma_ok)?1:0);
+               cpu_ok && (!ctx->dma || dma_ok)?1:0,ctx->dma_retries);
         if (!cpu_ok || (ctx->dma && !dma_ok)) break;
         vTaskDelay(pdMS_TO_TICKS(25));
     }
@@ -140,6 +150,7 @@ static void benchmark_power(bench_ctx_t *ctx,int mode)
             return;
         }
     }
+    ctx->dma_retries=0;
     printf("STAGEC POWER begin mode=%s duration_s=%u bytes_per_copy=%u "
            "fill_ready=%d (external current meter required)\n",
            label,POWER_SECONDS,(unsigned)size,
@@ -160,12 +171,16 @@ static void benchmark_power(bench_ctx_t *ctx,int mode)
     }
     uint64_t elapsed=(uint64_t)(esp_timer_get_time()-start);
     bool correct=(mode==3) || equal_pixels(ctx,edge);
+    bool valid=correct && status==ESP_OK &&
+               elapsed >= POWER_SECONDS*1000000ULL;
     printf("STAGEC POWER end mode=%s elapsed_us=%" PRIu64
            " copies=%" PRIu64 " total_bytes=%" PRIu64
-           " pixel_match=%d err=%d; current_ma=EXTERNAL_ONLY\n",
+           " pixel_match=%d err=%d dma_retries=%" PRIu32
+           " verdict=%s; current_ma=EXTERNAL_ONLY\n",
            label,elapsed,mode==3?0:completed,
            mode==3?0:completed*(uint64_t)size,
-           correct?1:0,(int)status);
+           correct?1:0,(int)status,ctx->dma_retries,
+           valid?"VALID":"INVALID");
 }
 
 static void bench_worker(void *arg)
@@ -184,7 +199,7 @@ static void bench_worker(void *arg)
     memset(ctx.dst,0,bytes);
     if (mode!=3) {
         async_color_convert_config_t config={
-            .backlog=1,.dma_burst_size=64,.intr_priority=0
+            .backlog=2,.dma_burst_size=64,.intr_priority=0
         };
         esp_err_t status=esp_async_color_convert_install_dma2d(&config,&ctx.dma);
         if (status!=ESP_OK)
