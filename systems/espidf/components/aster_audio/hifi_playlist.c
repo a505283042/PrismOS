@@ -197,8 +197,8 @@ static bool make_path(FILE *file,uint32_t index,char out[ASTER_MEDIA_PATH_MAX])
     int size=snprintf(out,ASTER_MEDIA_PATH_MAX,"/SD:/music/%s",row.path);
     char native[ASTER_MEDIA_PATH_MAX];
     int n=snprintf(native,sizeof(native),"/SD/music/%s",row.path);
-    if(size<=0 || size>=ASTER_MEDIA_PATH_MAX ||
-       n<=0 || n>=sizeof(native))return false;
+    if(size<=0 || (unsigned)size>=ASTER_MEDIA_PATH_MAX ||
+       n<=0 || (size_t)n>=sizeof(native))return false;
     struct stat st;
     return stat(native,&st)==0 && S_ISREG(st.st_mode);
 }
