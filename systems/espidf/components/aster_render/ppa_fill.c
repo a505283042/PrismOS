@@ -147,7 +147,30 @@ static bool self_test(void)
                 break;
             }
     free(data);
+    if (!good) return false;
+
+    /* The small 32x16 check above exercises the LVGL fill path. This
+     * second test covers the actual >=4096px APP acceleration threshold,
+     * including an untouched blue border surrounding a magenta fill. */
+    enum { TEST_W=128, TEST_H=64 };
+    uint16_t *large=heap_caps_aligned_alloc(64,TEST_W*TEST_H*2u,
+                                            MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    if (!large) return false;
+    for (unsigned i=0;i<TEST_W*TEST_H;i++) large[i]=0x001fu;
+    good=aster_idf_ppa_fill_rgb565(large,TEST_W,TEST_H,16,8,96,48,0xf81fu);
+    for (unsigned y=0;y<TEST_H && good;y++) {
+        for (unsigned x=0;x<TEST_W;x++) {
+            uint16_t want=(x>=16 && x<112 && y>=8 && y<56)?0xf81fu:0x001fu;
+            if (large[y*TEST_W+x]!=want) {good=false;break;}
+        }
+    }
+    free(large);
     return good;
+}
+
+bool aster_idf_ppa_fill_ready(void)
+{
+    return client!=NULL && !failed;
 }
 
 int aster_idf_ppa_fill_init(void)
@@ -156,19 +179,23 @@ int aster_idf_ppa_fill_init(void)
         return 0;
     ppa_client_config_t config = {.oper_type = PPA_OPERATION_FILL, .max_pending_trans_num = 1};
     esp_err_t result = ppa_register_client(&config, &client);
-    if (result != ESP_OK)
+    if (result != ESP_OK) {
+        ESP_LOGW("aster_ppa", "PPA Fill unavailable: %s", esp_err_to_name(result));
         return result;
+    }
     if (!self_test()) {
         ppa_unregister_client(client);
         client = NULL;
         ESP_LOGW("aster_ppa", "RGB565/cache self-test failed; software rendering retained");
         return ESP_FAIL;
     }
+    /* Self-tests are not user workloads; keep perf counters honest. */
+    aster_idf_ppa_fill_reset();
     lv_draw_unit_t *unit = lv_draw_create_unit(sizeof(lv_draw_unit_t));
     unit->name = "ASTER_PPA_FILL";
     unit->evaluate_cb = evaluate;
     unit->dispatch_cb = dispatch;
-    ESP_LOGI("aster_ppa", "RGB565/cache self-test passed; large fill acceleration ready");
+    ESP_LOGI("aster_ppa", "RGB565/cache self-tests passed (LVGL + 4608px APP); fill ready");
     return 0;
 }
 
