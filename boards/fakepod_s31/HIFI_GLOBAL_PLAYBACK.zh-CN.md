@@ -46,19 +46,10 @@ $env:PATH = "D:\ESP32\aster-idf61-python\Scripts;$pio\packages\toolchain-riscv32
 & $python "$fw\tools\idf.py" --version
 
 # 只构建，不刷机。隔离旧 USB MSC 的稳定 build 目录。
-& $python "$fw\tools\idf.py" --preview \
-    -C boards/fakepod_s31/idf \
-    -B D:/ESP32/aster-firmware/build/fakepod-s31/hifi-global \
-    -DIDF_TARGET=esp32s31 build
-\`\`\`
-
-**PowerShell 多行续行实际应使用反引号 \` \`，不是上面示例行中的反斜杠**，或全部写成一行：
-
-\`\`\`powershell
 & $python "$fw\tools\idf.py" --preview -C boards/fakepod_s31/idf -B D:/ESP32/aster-firmware/build/fakepod-s31/hifi-global -DIDF_TARGET=esp32s31 build
-\`\`\`
+```
 
-手动检查开启 USB MSC：\`CONFIG_ASTER_FAKEPOD_USB_STORAGE=y\`；编译成功后验证产物尺寸／分区及 bootloader，再在备份旧固件后烧录。
+手动检查开启 USB MSC：`CONFIG_ASTER_FAKEPOD_USB_STORAGE=y`；编译成功后验证产物尺寸／分区及 bootloader，再在备份旧固件后烧录。
 
 ## 建议升级顺序
 
