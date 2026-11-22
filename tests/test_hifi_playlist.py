@@ -124,6 +124,119 @@ int main(void)
             subprocess.run([str(executable)], check=True, capture_output=True,
                            text=True, timeout=8)
 
+    @unittest.skipUnless(shutil.which("cc"), "host C compiler not found")
+    def test_native_queue_uses_mounted_sd_paths(self):
+        """Compile the production (non-HOST_TEST) queue against a tiny OS
+        adapter. Catch regressions where native /SD: paths are opened through
+        a POSIX-only /SD alias instead of the shared Aster filesystem."""
+        import os
+
+        with tempfile.TemporaryDirectory() as dirname:
+            root = Path(dirname)
+            catalog_dir = root / "aster/apps/aster.hifi/data"
+            catalog_dir.mkdir(parents=True)
+            music_dir = root / "music"
+            music_dir.mkdir()
+            for song in ROWS:
+                track = music_dir / song
+                track.parent.mkdir(parents=True, exist_ok=True)
+                track.write_bytes(b"audio")
+            (catalog_dir / "hifi_catalog_a.bin").write_bytes(catalog_bytes(ROWS, 12))
+
+            (root / "aster_os.h").write_text(r'''
+#ifndef TEST_ASTER_OS_H
+#define TEST_ASTER_OS_H
+#include <stddef.h>
+#include <stdint.h>
+enum { ASTER_OS_READ = 1, ASTER_OS_SEEK_SET = 0, ASTER_OS_FILE = 1 };
+typedef struct { void *handle; } aster_os_file_t;
+typedef struct { uint64_t size; uint32_t type; char name[256]; } aster_os_entry_t;
+int aster_os_file_open(aster_os_file_t *, const char *, unsigned);
+int aster_os_file_close(aster_os_file_t *);
+int aster_os_file_read(aster_os_file_t *, void *, size_t);
+int aster_os_file_seek(aster_os_file_t *, int64_t, unsigned);
+int aster_os_stat(const char *, aster_os_entry_t *);
+#endif
+''', encoding="utf-8")
+            (root / "aster_power.h").write_text(r'''
+int aster_power_activity_begin(void);
+void aster_power_activity_end(void);
+''', encoding="utf-8")
+            (root / "mock_native.c").write_text(r'''
+#include "aster_os.h"
+#include "aster_power.h"
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+static int resolve(const char *path, char out[1024]) {
+    const char *root = getenv("HIFI_TEST_SD");
+    if (!root || strncmp(path, "/SD:", 4)) return -EINVAL;
+    int n = snprintf(out, 1024, "%s%s", root, path + 4);
+    return n > 0 && n < 1024 ? 0 : -ENAMETOOLONG;
+}
+int aster_os_file_open(aster_os_file_t *f, const char *path, unsigned flags) {
+    char name[1024];
+    if (flags != ASTER_OS_READ || resolve(path, name)) return -EINVAL;
+    f->handle = fopen(name, "rb");
+    return f->handle ? 0 : -ENOENT;
+}
+int aster_os_file_close(aster_os_file_t *f) {
+    int rc = fclose((FILE *)f->handle);
+    f->handle = NULL;
+    return rc ? -EIO : 0;
+}
+int aster_os_file_read(aster_os_file_t *f, void *buf, size_t bytes) {
+    return (int)fread(buf, 1, bytes, (FILE *)f->handle);
+}
+int aster_os_file_seek(aster_os_file_t *f, int64_t offset, unsigned whence) {
+    if (whence != ASTER_OS_SEEK_SET) return -EINVAL;
+    return fseek((FILE *)f->handle, (long)offset, SEEK_SET) ? -EIO : 0;
+}
+int aster_os_stat(const char *path, aster_os_entry_t *entry) {
+    char name[1024];
+    struct stat st;
+    if (resolve(path, name) || stat(name, &st)) return -ENOENT;
+    memset(entry, 0, sizeof(*entry));
+    entry->size = (uint64_t)st.st_size;
+    entry->type = S_ISREG(st.st_mode) ? ASTER_OS_FILE : 2;
+    return 0;
+}
+int aster_power_activity_begin(void) { return 0; }
+void aster_power_activity_end(void) { }
+''', encoding="utf-8")
+            (root / "test_native.c").write_text(r'''
+#include "hifi_playlist.h"
+#include <assert.h>
+#include <string.h>
+int main(void) {
+    char next[ASTER_MEDIA_PATH_MAX] = {0};
+    assert(hifi_playlist_choose("/SD:/music/a.mp3",
+            HIFI_QUEUE_SEQUENCE, 1, true, next));
+    assert(!strcmp(next, "/SD:/music/sub/b.flac"));
+    assert(hifi_playlist_choose("/SD:/music/a.mp3",
+            HIFI_QUEUE_REPEAT_ALL, -1, false, next));
+    assert(!strcmp(next, "/SD:/music/sub/d.mp3"));
+    assert(hifi_playlist_choose("/SD:/music/sub/b.flac",
+            HIFI_QUEUE_REPEAT_ONE, 1, true, next));
+    assert(!strcmp(next, "/SD:/music/sub/b.flac"));
+    return 0;
+}
+''', encoding="utf-8")
+            binary = root / "test_native"
+            subprocess.run(
+                ["cc", "-std=c11", "-D_POSIX_C_SOURCE=200809L",
+                 "-Wall", "-Wextra", "-Werror", "-I" + str(root),
+                 "-I" + str(QUEUE_INCLUDE), "-I" + str(MEDIA_INCLUDE),
+                 str(root / "test_native.c"), str(root / "mock_native.c"),
+                 str(C_SOURCE), "-o", str(binary)],
+                check=True, capture_output=True, text=True)
+            env = os.environ.copy()
+            env["HIFI_TEST_SD"] = str(root)
+            subprocess.run([str(binary)], check=True, capture_output=True,
+                           text=True, timeout=10, env=env)
+
 
 if __name__ == "__main__":
     unittest.main()
