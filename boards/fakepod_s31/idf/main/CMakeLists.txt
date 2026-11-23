@@ -11,6 +11,7 @@ if(ASTER_S31_DIAGNOSTIC)
         wamr
         esp_mm
         esp_lcd
+        esp_timer
         esp_lcd_co5300
         esp_driver_spi
         esp_driver_i2c
@@ -40,6 +41,7 @@ else()
         aster_runtime
         aster_audio
         esp_lcd
+        esp_timer
         esp_lcd_co5300
         esp_driver_spi
         esp_driver_i2c
