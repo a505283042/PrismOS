@@ -42,6 +42,17 @@ class StageF1RuntimePipeline(unittest.TestCase):
         self.assertIn("ui_pipe_poll();", idle)
         self.assertLess(idle.index("ui_pipe_poll();"), idle.index("aster_deploy_ui_tick()"))
 
+    def test_default_on_is_owner_only_and_has_safe_fallback(self):
+        init = UI[UI.index("int aster_idf_ui_init("):UI.index("void aster_idf_ui_idle(")]
+        self.assertLess(init.index("aster_idf_lcd_pipe_set_mode(true);"),
+                        init.index("aster_launcher_init();"))
+        self.assertIn("ui_pipe_runtime = enabled && !fault;", init)
+        self.assertIn("aster_idf_lcd_pipe_set_mode(false);", init)
+        self.assertIn("UI PIPE boot default=ON", init)
+        self.assertIn("reason=hooks_unavailable", init)
+        self.assertIn("#if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)", init)
+        self.assertIn("static bool ui_pipe_runtime;", UI)
+
     def test_bench_override_and_app_handoff_preserve_choice(self):
         self.assertIn("aster_idf_lcd_pipe_set_bench(ui_bench_pipe);", UI)
         self.assertEqual(UI.count("aster_idf_lcd_pipe_set_bench(ui_pipe_runtime);"), 2)

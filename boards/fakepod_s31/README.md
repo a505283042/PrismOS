@@ -274,9 +274,9 @@ LCD PIPE requested=1 enabled=1 fault=0 rects=... stripes=... fallback_rects=0 fa
 
 验收门槛：流水线连续多轮 `failures=0`、`errors=0`，无花屏、像素错位、熄屏唤醒异常、后台音乐卡顿；`flush_us` 建议至少稳定下降 10% 且 UI 帧耗时/FPS 改善，才考虑下一步生产化。否则保留原单缓冲。 
 
-## Stage F1：运行时可选 LCD 双缓冲（默认 OFF，待实机验证）
+## Stage F1/F2：LCD 双缓冲默认启用，支持运行时回退
 
-F1 将 Stage E 的 16 行 LCD Ping-Pong 扩展到 **Aster 桌面和运行中的 WASM APP**。它仍是实验模式：不会写 NVS，**每次重启恢复单缓冲**；不要求重新编译 HiFiPlayer APP。
+F1 已将 Stage E 的 16 行 LCD Ping-Pong 扩展到 **Aster 桌面和运行中的 WASM APP**，并通过 S31 实机基本开关及 HiFiPlayer 启用验证。F2 将它设为 **S31 启动时默认开启**；不会写 NVS，手动 `off` 在本次运行有效，**重启后重新尝试启用双缓冲**。无需重新编译 HiFiPlayer APP。
 
 通过 S31 设备的串口控制台运行：
 
@@ -288,13 +288,14 @@ aster ui pipe off
 aster ui pipe status
 ```
 
-- 命令先输出 `UI PIPE queued action=...`，表示进入 mailbox；**只有 UI/APP 工作线程**会修改 LCD 双缓冲状态，切换完成后输出 `UI PIPE runtime=ON/OFF requested=... enabled=... fault=... app=... bench=...`。
+- 启动时在 UI/APP 工作线程输出 `UI PIPE boot default=ON runtime=ON requested=1 enabled=1 fault=0`。如果无法分配第二块内部 DMA 缓冲，会明确输出 fallback 并继续使用单缓冲，不阻止启动。
+- 手动命令先输出 `UI PIPE queued action=...`，表示进入 mailbox；**只有 UI/APP 工作线程**会修改 LCD 双缓冲状态，切换完成后输出 `UI PIPE runtime=ON/OFF requested=... enabled=... fault=... app=... bench=...`。
 - 成功启用必须看到 `runtime=ON enabled=1 fault=0`；第二缓冲使用 14,720 字节内部 DMA RAM。`off` 在同步 Flush 边界关闭并释放第二缓冲。APP 启动/退出不再改变 F1 的运行时选择。
 - 申请失败将输出 `LCD PIPE fallback=single reason=internal_dma_ram`，实际运行时保持 OFF。若 DMA 完成状态未知，原 fail-closed 机制仍会禁止新 LCD 提交并保留 DMA 可能持有的缓冲，`off` **不能清除硬故障**，需要重启。
 - `aster ui bench 8` 和 `aster ui bench-pipe 8` 会临时覆盖运行时模式，结束或被 APP 打断时恢复此前选择；进行 Benchmark 时拒绝新的 `pipe on/off` 请求。
 - 保持 CO5300 40 MHz QSPI、16 行条带、2×2 对齐、RGB565 字节交换、`trans_queue_depth=1`，始终至多一个 DMA 提交在途。未修改音频任务、APP 接口或 Flash 数据格式。
 
-**F1 只提供运行时安全开关，不等于已经验证音乐播放/熄屏唤醒/持续运行稳定性。** 实机请先在桌面开关，再测试 HiFiPlayer 播放时切歌、封面、歌词、列表、音量、熄屏唤醒和 APP 退出。画面异常且 `fault=0` 时可先执行 `aster ui pipe off`；`fault=1` 时停止测试并重启。
+**当前已证明桌面和 HiFiPlayer 内可手动启停，但不代表全部长时可靠性场景已完成。** 用户选择默认开启后，不再反复进行 Stage E 的 A/B Benchmark；日常使用中若出现新的花屏、唤醒异常或音频卡顿，先通过 `aster ui pipe off` 回到单缓冲确认是否为新引入。`fault=1` 时保护 DMA 缓冲，须重启，不要继续调用显示驱动。先前存在的切歌起始短暂卡顿/爆音属于独立的音频问题，不与 LCD F2 混改。
 
 ### Windows 本地检查与构建
 
@@ -312,4 +313,4 @@ python -m unittest discover -s tests -p "test_stage_f1_lcd_runtime.py" -v
     -DIDF_TARGET=esp32s31 build
 ```
 
-如果本地已经建立同名分支，请先 `git switch` 到该分支，再执行 `git pull --ff-only`；不要在有未提交修改的目录里覆盖源码。构建和测试通过后才进行 S31 烧录。
+如果本地已经建立同名分支，请先 `git switch` 到该分支，再执行 `git pull --ff-only`；不要在有未提交修改的目录里覆盖源码。更新后只需一次构建、烧录与开机 `aster ui pipe status` 冒烟确认，不要求重新做多轮 A/B。

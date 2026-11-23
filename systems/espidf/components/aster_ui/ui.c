@@ -53,7 +53,8 @@ static atomic_bool ui_bench_reserved;
 static bool ui_bench_cpu_only;
 static bool ui_bench_pipe;
 /* Console requests only enter an atomic mailbox, handled by the UI/APP owner.
- * Mode is deliberately not stored in NVS and starts disabled on every boot. */
+ * S31 defaults to ping-pong on boot; a manual OFF remains until next reboot.
+ * No NVS write or persistent setting is needed. */
 static atomic_int ui_pipe_request; /* 1 on, 2 off, 3 status */
 static bool ui_pipe_runtime;
 #endif
@@ -593,6 +594,29 @@ int aster_idf_ui_init(int (*launch)(const char *))
     int r = aster_ui_lvgl_init();
     if (r)
         return r;
+#if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
+    /* The APP worker owns the LCD. Enable the already-tested 16-row pipe
+     * BEFORE the first launcher frame, not from the console or an ISR.
+     * If internal DMA RAM is unavailable, keep the synchronous baseline.
+     * A manual pipe off applies to the current boot only. */
+    ui_pipe_runtime = false;
+    if (aster_idf_lcd_pipe_set_mode && aster_idf_lcd_pipe_status) {
+        aster_idf_lcd_pipe_set_mode(true);
+        bool requested = false, enabled = false, fault = false;
+        aster_idf_lcd_pipe_status(&requested, &enabled, &fault);
+        ui_pipe_runtime = enabled && !fault;
+        if (!ui_pipe_runtime && !fault) {
+            /* An allocation fallback is not a live pipeline request. */
+            aster_idf_lcd_pipe_set_mode(false);
+            aster_idf_lcd_pipe_status(&requested, &enabled, &fault);
+        }
+        printf("UI PIPE boot default=ON runtime=%s requested=%u enabled=%u fault=%u\n",
+               ui_pipe_runtime ? "ON" : "OFF",
+               requested ? 1u : 0u, enabled ? 1u : 0u, fault ? 1u : 0u);
+    } else {
+        puts("UI PIPE boot default=ON fallback=single reason=hooks_unavailable");
+    }
+#endif
     aster_launcher_init();
     aster_launcher_request_show();
     const aster_idf_ui_hooks_t hooks = {touch, app_tick, aster_qpanel_app_holds_glass};
