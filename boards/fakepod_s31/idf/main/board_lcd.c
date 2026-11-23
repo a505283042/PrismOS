@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: MIT */
 #include "board_lcd.h"
 #include <string.h>
+#include <stdatomic.h>
+#include <stdio.h>
+#include "esp_timer.h"
 #include "board_pins.h"
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
@@ -18,6 +21,46 @@ static uint8_t *snapshot;
 static SemaphoreHandle_t completed;
 static uint16_t *bounce;
 static bool panel_blank;
+
+/* S31 LCD stage-D profile: enabled only during a launcher benchmark.
+ * Timers cover the existing synchronous path without changing buffers,
+ * SPI clock, transfer queue depth, RGB565 ordering or callbacks.
+ * Measurements are called from the same UI/VM owner that presents frames. */
+static atomic_bool lcd_profile_enabled;
+static struct {
+    uint64_t copy_us, swap_us, submit_us, wait_us;
+    uint64_t snapshot_bytes, wire_bytes;
+    uint32_t rects, stripes, errors;
+    uint32_t max_wait_us;
+} lcd_profile;
+
+void aster_idf_lcd_profile_begin(void)
+{
+    atomic_store(&lcd_profile_enabled, false);
+    memset(&lcd_profile, 0, sizeof(lcd_profile));
+    atomic_store(&lcd_profile_enabled, true);
+}
+
+void aster_idf_lcd_profile_end(bool report)
+{
+    if (!atomic_exchange(&lcd_profile_enabled, false) || !report)
+        return;
+    /* wait_us is elapsed blocking time including RTOS wake latency, NOT
+     * a hardware-only measurement of QSPI transfer duration. */
+    printf("LCD PROFILE rects=%lu stripes=%lu snapshot_bytes=%llu wire_bytes=%llu "
+           "copy_us=%llu swap_us=%llu submit_us=%llu wait_us=%llu "
+           "wait_max_us=%lu errors=%lu\\n",
+           (unsigned long)lcd_profile.rects,
+           (unsigned long)lcd_profile.stripes,
+           (unsigned long long)lcd_profile.snapshot_bytes,
+           (unsigned long long)lcd_profile.wire_bytes,
+           (unsigned long long)lcd_profile.copy_us,
+           (unsigned long long)lcd_profile.swap_us,
+           (unsigned long long)lcd_profile.submit_us,
+           (unsigned long long)lcd_profile.wait_us,
+           (unsigned long)lcd_profile.max_wait_us,
+           (unsigned long)lcd_profile.errors);
+}
 
 static bool transfer_done(esp_lcd_panel_io_handle_t io, esp_lcd_panel_io_event_data_t *event,
                           void *context)
@@ -90,10 +133,12 @@ esp_err_t fakepod_lcd_init(void)
 
 static int transfer_snapshot(uint32_t x, uint32_t y, uint32_t w, uint32_t h)
 {
+    const bool measure = atomic_load(&lcd_profile_enabled);
     for (uint32_t row = 0; row < h; row += 16) {
         uint32_t rows = h - row;
         if (rows > 16)
             rows = 16;
+        int64_t swap_start = measure ? esp_timer_get_time() : 0;
         for (uint32_t yy = 0; yy < rows; yy++) {
             const uint8_t *src = snapshot + ((size_t)(y + row + yy) * FP_LCD_WIDTH + x) * 2;
             uint8_t *dst = (uint8_t *)bounce + (size_t)yy * w * 2;
@@ -102,10 +147,31 @@ static int transfer_snapshot(uint32_t x, uint32_t y, uint32_t w, uint32_t h)
                 dst[col + 1] = src[col];
             }
         }
+        if (measure)
+            lcd_profile.swap_us += (uint64_t)(esp_timer_get_time() - swap_start);
         xSemaphoreTake(completed, 0);
-        if (esp_lcd_panel_draw_bitmap(panel, x, y + row, x + w, y + row + rows, bounce) != ESP_OK)
+        int64_t submit_start = measure ? esp_timer_get_time() : 0;
+        esp_err_t status =
+            esp_lcd_panel_draw_bitmap(panel, x, y + row, x + w, y + row + rows, bounce);
+        int64_t wait_start = measure ? esp_timer_get_time() : 0;
+        if (status != ESP_OK) {
+            if (measure) {
+                lcd_profile.submit_us += (uint64_t)(wait_start - submit_start);
+                lcd_profile.errors++;
+            }
             return -1;
+        }
         xSemaphoreTake(completed, portMAX_DELAY);
+        if (measure) {
+            int64_t finished = esp_timer_get_time();
+            uint32_t wait_us = (uint32_t)(finished - wait_start);
+            lcd_profile.submit_us += (uint64_t)(wait_start - submit_start);
+            lcd_profile.wait_us += wait_us;
+            if (wait_us > lcd_profile.max_wait_us)
+                lcd_profile.max_wait_us = wait_us;
+            lcd_profile.stripes++;
+            lcd_profile.wire_bytes += (uint64_t)w * rows * 2;
+        }
     }
     return 0;
 }
@@ -117,11 +183,18 @@ int fakepod_lcd_present(const uint8_t *pixels, uint32_t x, uint32_t y, uint32_t 
         w > FP_LCD_WIDTH - x || h > FP_LCD_HEIGHT - y || pitch < w)
         return -1;
     /* Capture shares the retained image in native RGB565 order. Convert
-  * only in the SPI buffer, including when replaying the image on wake. */
+     * only in the SPI buffer, including when replaying the image on wake. */
+    const bool measure = atomic_load(&lcd_profile_enabled);
+    int64_t copy_start = measure ? esp_timer_get_time() : 0;
     for (uint32_t yy = 0; yy < h; yy++) {
         const uint8_t *src = pixels + (size_t)yy * pitch * 2;
         uint8_t *dst = snapshot + ((size_t)(y + yy) * FP_LCD_WIDTH + x) * 2;
         memcpy(dst, src, w * 2);
+    }
+    if (measure) {
+        lcd_profile.copy_us += (uint64_t)(esp_timer_get_time() - copy_start);
+        lcd_profile.snapshot_bytes += (uint64_t)w * h * 2;
+        lcd_profile.rects++;
     }
     if (panel_blank)
         return 0;
