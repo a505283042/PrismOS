@@ -25,6 +25,10 @@
 #if defined(CONFIG_IDF_TARGET_ESP32S31)
 #include "stage_c_bench.h"
 #include "aster_player_service.h"
+/* Optional board-owned profiler. The generic UI component never touches
+ * LCD registers or assumes an S31 driver on other IDF targets. */
+extern void aster_idf_lcd_profile_begin(void) __attribute__((weak));
+extern void aster_idf_lcd_profile_end(bool report) __attribute__((weak));
 #endif
 #endif
 #include <stdatomic.h>
@@ -281,6 +285,10 @@ static void perf_tick(void)
         return;
     if (now >= bench_end) {
         bench_end = 0;
+#if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
+        if (aster_idf_lcd_profile_end)
+            aster_idf_lcd_profile_end(true);
+#endif
         perf_print();
 #if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
         printf("UI BENCH RESULT fill_mode=%s (production PPA restored)\n",
@@ -297,6 +305,10 @@ static void perf_tick(void)
     if (bench_warm && now >= bench_warm) {
         bench_warm = 0;
         perf_reset();
+#if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
+        if (aster_idf_lcd_profile_begin)
+            aster_idf_lcd_profile_begin();
+#endif
     }
     if (now >= bench_step) {
         aster_launcher_step_page(1);
@@ -522,6 +534,8 @@ void aster_idf_ui_before_app(void)
         aster_deploy_dismiss(s.generation);
     aster_deploy_ui_close();
 #if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
+    if (aster_idf_lcd_profile_end)
+        aster_idf_lcd_profile_end(false);
     /* Opening an APP cancels any in-flight or still-pending UI A/B test.
      * Without this, a CPU-only test interrupted by an app launch could
      * permanently leave the launcher PPA accelerator disabled. */
