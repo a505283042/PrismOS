@@ -170,3 +170,51 @@ aster ui bench-ppa 8
 - 四轮交替而非仅各一次，是为了控制温度、缓存与复杂动画场景导致的偏差；任何模式发生画面错误时不得继续扩大硬件使用范围。
 
 后续决策：只有 PPA 模式在可重复的真实 UI 负载下明显优于 CPU，才保留当前门槛/评估调整阈值；无明显收益则不盲目提高加速覆盖率。
+
+
+## 阶段 D：LCD Flush 分段性能诊断（实测待完成）
+
+阶段 C 的 CPU / PPA Fill A/B 实机结果：CPU Fill 平均 44,617us/帧；PPA Fill 平均 44,157us/帧，改善约 1.03%。因此不扩大 PPA Fill 使用范围，优先定位 LCD Flush 和 FLUX 动态丝带的开销。
+
+本阶段**只增加低侵入的定时计数**，不修改 S31 CO5300 的 40MHz QSPI、16 行 DMA bounce buffer、单事务队列、RGB565 字节顺序、屏幕唤醒及屏幕快照逻辑；未引入 DMA2D 或双缓冲。新增弱链接的 board LCD profile 钩子，仅在 `aster ui bench` 预热结束后开启，8 秒测试结束自动停止；APP 打断基准时放弃本次统计并关闭计时。其他板没有板级钩子时 UI 正常工作。
+
+### 编译（Windows PowerShell）
+
+```powershell
+cd D:\ESP32\aster-firmware
+git pull --ff-only origin main
+python -m unittest discover -s tests -p "test_stage_d_lcd_profile.py" -v
+python -m unittest discover -s tests -p "test_stage_c_copy.py" -v
+
+& "D:\ESP32\aster-idf61-python\Scripts\python.exe" `
+    "$env:IDF_PATH\tools\idf.py" --preview `
+    -C boards/fakepod_s31/idf `
+    -B D:/ESP32/aster-firmware/build/fakepod-s31/system `
+    -DIDF_TARGET=esp32s31 `
+    build
+```
+
+编译通过后刷入固件；无需修改或重编 HiFiPlayer APP。
+
+### 实机测试
+
+退出 APP、停止后台音频，串口执行 `aster ui bench 8`，等 `UI BENCH done` 后再执行 `aster ui bench 8` 复测。若希望同时比较 CPU/PPA Fill，分别执行 `aster ui bench-cpu 8` 与 `aster ui bench-ppa 8`，同样须逐条完成。
+
+8 秒测量会额外输出：
+
+```text
+LCD PROFILE rects=... stripes=... snapshot_bytes=... wire_bytes=... copy_us=... swap_us=... submit_us=... wait_us=... wait_max_us=... errors=...
+UI PERF frames=... render_avg_us=... flush_us=... ribbon_us=...
+```
+
+- `rects` 是提交的 LCD 脏矩形次数，`stripes` 是 16 行分块数。
+- `snapshot_bytes` 是从 LVGL/native RGB565 帧缓冲复制到 PSRAM 保留快照的字节数；`copy_us` 是其累计 CPU 时间。
+- `swap_us` 是读 PSRAM 快照并写入内部 DMA bounce buffer、交换 RGB565 字节序的累计 CPU 时间。
+- `submit_us` 记录 `esp_lcd_panel_draw_bitmap` 调用耗时（可能包含队列/命令提交等待）。
+- `wait_us` 是提交后在完成信号量上的阻塞时间，**包含 DMA 传输与任务唤醒延迟**，不能直接称为纯 SPI 线上传输时间；`wait_max_us` 是最慢一次等待。
+- `wire_bytes` 是经过 2×2 像素单元对齐后实际提交给面板的 RGB565 字节数，可能高于 `snapshot_bytes`。
+- `errors` 为 LCD 分块提交失败计数；正常必须等于 0。
+
+判断下一步要根据 `copy_us` / `swap_us` / `submit_us` / `wait_us` 的比例和 `stripes` 数量，而不是仅用 `flush_us` 断言 SPI 是瓶颈。`flush_us` 是更外层调用的累计耗时，两者存在包含关系，**禁止相加**。
+
+所有数字必须由新固件实机输出，以上只说明指标，不预填实测值。若显示异常或编译失败，保留原来的显示路径，勿直接试验双缓冲/改高 SPI 时钟。
