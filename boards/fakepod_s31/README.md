@@ -265,10 +265,10 @@ aster ui bench-pipe 8
 每轮已有 `UI PERF`、`LCD PROFILE`；新增：
 
 ```text
-LCD PIPE requested=1 enabled=1 rects=... stripes=... fallback_rects=0 failures=0 prep_during_dma_us=...
+LCD PIPE requested=1 enabled=1 fault=0 rects=... stripes=... fallback_rects=0 failures=0 prep_after_submit_us=...
 ```
 
-`requested=1 enabled=0` 表示申请流水线失败、实际回退了单缓冲；该组不能当双缓冲成绩。`prep_during_dma_us` 是从 DMA 提交后、开始等待信号量前准备下一块的总耗时，**不证明每个微秒都与真实 SPI DMA 活动重叠**；重点以 `flush_us`、`render_avg_us`、FPS、`errors` 的真实 A/B 对照评价收益。
+`requested=1 enabled=0` 表示申请流水线失败、实际回退了单缓冲；该组不能当双缓冲成绩。`prep_after_submit_us` 是从 DMA 提交后、开始等待信号量前准备下一块的总耗时，**不证明每个微秒都与真实 SPI DMA 活动重叠**；重点以 `flush_us`、`render_avg_us`、FPS、`errors` 的真实 A/B 对照评价收益。
 
 注意：流水线的 `LCD PROFILE wait_us` 只包括准备下一块*后*尚需等待的时间；因此与旧模式的 wait_us 含义略有不同，不能用它直接推断传输变快。对比外层 `flush_us` 与完整端到端帧耗时才有意义。
 
