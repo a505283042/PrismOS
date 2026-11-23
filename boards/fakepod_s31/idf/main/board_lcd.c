@@ -22,10 +22,9 @@ static SemaphoreHandle_t completed;
 static uint16_t *bounce;
 static bool panel_blank;
 
-/* Stage E is OPT-IN and never changes the production 16-row single buffer.
- * The second buffer exists only for bench-pipe, and both buffers must remain
- * allocated until the color-transmission completion callback has fired.
- * Pipeline mode is switched only on the UI owner, between completed flushes.
+/* Stage E/F1: 16-row ping-pong is opt-in, including when an APP runs.
+ * The UI/VM owner changes modes only between completed synchronous flushes.
+ * A DMA completion fault retains both bounce buffers until reboot.
  */
 enum { LCD_STRIP_ROWS = 16, LCD_STRIP_BYTES = FP_LCD_WIDTH * LCD_STRIP_ROWS * 2 };
 static uint16_t *pipe_bounce;
@@ -35,8 +34,12 @@ static struct {
     uint64_t prepared_after_submit_us;
 } pipe_profile;
 
-void aster_idf_lcd_pipe_set_bench(bool enabled)
+void aster_idf_lcd_pipe_set_mode(bool enabled)
 {
+    /* All mode changes happen on the same UI/APP owner, after any prior
+     * synchronous present() has completed. No extra DMA can be in flight. */
+    if (enabled && pipe_enabled)
+        return;
     if (!enabled) {
         pipe_enabled = false;
         pipe_requested = false;
@@ -70,6 +73,20 @@ void aster_idf_lcd_pipe_set_bench(bool enabled)
            LCD_STRIP_ROWS, LCD_STRIP_BYTES);
 }
 
+
+/* Preserve the existing Stage E diagnostic API. */
+void aster_idf_lcd_pipe_set_bench(bool enabled)
+{
+    aster_idf_lcd_pipe_set_mode(enabled);
+}
+
+/* State is only sampled on the UI/VM owner, not on the console thread. */
+void aster_idf_lcd_pipe_status(bool *requested, bool *enabled, bool *fault)
+{
+    if (requested) *requested = pipe_requested;
+    if (enabled) *enabled = pipe_enabled;
+    if (fault) *fault = pipe_fault;
+}
 
 /* S31 LCD stage-D profile: enabled only during a launcher benchmark.
  * Timers cover the existing synchronous path without changing buffers,

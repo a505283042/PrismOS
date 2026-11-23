@@ -30,6 +30,9 @@
 extern void aster_idf_lcd_profile_begin(void) __attribute__((weak));
 extern void aster_idf_lcd_profile_end(bool report) __attribute__((weak));
 extern void aster_idf_lcd_pipe_set_bench(bool enabled) __attribute__((weak));
+extern void aster_idf_lcd_pipe_set_mode(bool enabled) __attribute__((weak));
+extern void aster_idf_lcd_pipe_status(bool *requested, bool *enabled, bool *fault)
+    __attribute__((weak));
 #endif
 #endif
 #include <stdatomic.h>
@@ -49,6 +52,10 @@ static atomic_bool ui_bench_reserved;
 /* Kept on UI worker; restored to PPA after CPU-only measurement. */
 static bool ui_bench_cpu_only;
 static bool ui_bench_pipe;
+/* Console requests only enter an atomic mailbox, handled by the UI/APP owner.
+ * Mode is deliberately not stored in NVS and starts disabled on every boot. */
+static atomic_int ui_pipe_request; /* 1 on, 2 off, 3 status */
+static bool ui_pipe_runtime;
 #endif
 
 static struct {
@@ -186,6 +193,25 @@ int aster_idf_ui_command(int argc, char **argv)
         return started ? ASTER_EBUSY : 0;
     }
 #endif
+#if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
+    if (argc == 4 && !strcmp(argv[2], "pipe")) {
+        int action = !strcmp(argv[3], "on") ? 1 :
+                     !strcmp(argv[3], "off") ? 2 :
+                     !strcmp(argv[3], "status") ? 3 : 0;
+        if (!action)
+            return ASTER_EINVAL;
+        if (action != 3 && (atomic_load(&ui_bench_reserved) ||
+                            aster_idf_stage_c_running())) {
+            puts("UI PIPE refused: a benchmark is running");
+            return ASTER_EBUSY;
+        }
+        int empty = 0;
+        if (!atomic_compare_exchange_strong(&ui_pipe_request, &empty, action))
+            return ASTER_EBUSY;
+        printf("UI PIPE queued action=%s (UI/APP worker applies it)\n", argv[3]);
+        return 0;
+    }
+#endif
     int request;
     if (argc == 4 && !strcmp(argv[2], "volume")) {
         char *end = NULL;
@@ -219,6 +245,10 @@ int aster_idf_ui_command(int argc, char **argv)
         return ASTER_EINVAL;
 #if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
     if (request > 100 && request < 1000) {
+        if (atomic_load(&ui_pipe_request)) {
+            puts("UI BENCH refused: LCD runtime mode change pending");
+            return ASTER_EBUSY;
+        }
         if (aster_idf_stage_c_running()) {
             puts("UI BENCH refused: Stage C CPU/DMA2D worker running");
             return ASTER_EBUSY;
@@ -239,6 +269,47 @@ int aster_idf_ui_command(int argc, char **argv)
 #endif
     return ASTER_EBUSY;
 }
+
+#if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
+static void ui_pipe_poll(void)
+{
+    int action = atomic_exchange(&ui_pipe_request, 0);
+    if (!action)
+        return;
+    if (!aster_idf_lcd_pipe_set_mode || !aster_idf_lcd_pipe_status) {
+        puts("UI PIPE unavailable: board runtime hooks missing");
+        return;
+    }
+    if (action != 3) {
+        /* A benchmark may have been accepted after the command was queued. */
+        if (atomic_load(&ui_bench_reserved)) {
+            puts("UI PIPE refused: a UI benchmark is running");
+            return;
+        }
+        aster_idf_lcd_pipe_set_mode(action == 1);
+    }
+
+    bool requested = false, enabled = false, fault = false;
+    aster_idf_lcd_pipe_status(&requested, &enabled, &fault);
+    if (action == 1) {
+        ui_pipe_runtime = enabled && !fault;
+        if (!ui_pipe_runtime && !fault) {
+            /* Failed allocation leaves the production mode untouched. */
+            aster_idf_lcd_pipe_set_mode(false);
+            aster_idf_lcd_pipe_status(&requested, &enabled, &fault);
+        }
+    } else if (action == 2) {
+        ui_pipe_runtime = false;
+    }
+    printf("UI PIPE runtime=%s requested=%u enabled=%u fault=%u app=%u bench=%u\n",
+           ui_pipe_runtime ? "ON" : "OFF",
+           requested ? 1u : 0u, enabled ? 1u : 0u, fault ? 1u : 0u,
+           app_active ? 1u : 0u,
+           atomic_load(&ui_bench_reserved) ? 1u : 0u);
+    if (fault)
+        puts("UI PIPE fault: LCD submissions blocked; reboot required");
+}
+#endif
 
 static void perf_tick(void)
 {
@@ -301,7 +372,7 @@ static void perf_tick(void)
         if (aster_idf_lcd_profile_end)
             aster_idf_lcd_profile_end(true);
         if (aster_idf_lcd_pipe_set_bench)
-            aster_idf_lcd_pipe_set_bench(false);
+            aster_idf_lcd_pipe_set_bench(ui_pipe_runtime);
         ui_bench_pipe = false;
 #endif
 #if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
@@ -505,6 +576,9 @@ static bool touch(void *value)
 
 static void app_tick(void)
 {
+#if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
+    ui_pipe_poll();
+#endif
     aster_ui_fonts_advance();
     aster_qpanel_tick();
     if (aster_qpanel_is_open())
@@ -530,6 +604,9 @@ void aster_idf_ui_idle(void)
 {
     if (!display)
         return;
+#if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
+    ui_pipe_poll();
+#endif
     if (aster_deploy_ui_tick())
         return;
     perf_tick();
@@ -550,8 +627,10 @@ void aster_idf_ui_before_app(void)
 #if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
     if (aster_idf_lcd_profile_end)
         aster_idf_lcd_profile_end(false);
-    if (aster_idf_lcd_pipe_set_bench)
-        aster_idf_lcd_pipe_set_bench(false);
+    /* Only an interrupted benchmark overrides the real runtime selection.
+     * Launcher -> APP must preserve the opt-in mode. */
+    if (atomic_load(&ui_bench_reserved) && aster_idf_lcd_pipe_set_bench)
+        aster_idf_lcd_pipe_set_bench(ui_pipe_runtime);
     ui_bench_pipe = false;
     /* Opening an APP cancels any in-flight or still-pending UI A/B test.
      * Without this, a CPU-only test interrupted by an app launch could

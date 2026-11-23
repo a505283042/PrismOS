@@ -14,6 +14,8 @@ int fakepod_lcd_brightness(bool on,uint8_t level);
 void aster_idf_lcd_profile_begin(void);
 void aster_idf_lcd_profile_end(bool report);
 
-/* Stage E: bench-only 16-row ping-pong DMA experiment. Disabling restores
- * the original synchronous single-buffer path. */
+/* Stage E/F1: UI-owner-only opt-in 16-row ping-pong DMA.
+ * Reboot defaults to synchronous single buffer, no persistent setting. */
 void aster_idf_lcd_pipe_set_bench(bool enabled);
+void aster_idf_lcd_pipe_set_mode(bool enabled);
+void aster_idf_lcd_pipe_status(bool *requested, bool *enabled, bool *fault);
