@@ -22,6 +22,51 @@ static SemaphoreHandle_t completed;
 static uint16_t *bounce;
 static bool panel_blank;
 
+/* Stage E is OPT-IN and never changes the production 16-row single buffer.
+ * The second buffer exists only for bench-pipe, and both buffers must remain
+ * allocated until the color-transmission completion callback has fired.
+ * Pipeline mode is switched only on the UI owner, between completed flushes.
+ */
+enum { LCD_STRIP_ROWS = 16, LCD_STRIP_BYTES = FP_LCD_WIDTH * LCD_STRIP_ROWS * 2 };
+static uint16_t *pipe_bounce;
+static bool pipe_requested, pipe_enabled, pipe_fault;
+static struct {
+    uint32_t rects, stripes, fallback_rects, failures;
+    uint64_t prepared_while_dma_us;
+} pipe_profile;
+
+void aster_idf_lcd_pipe_set_bench(bool enabled)
+{
+    if (!enabled) {
+        pipe_enabled = false;
+        pipe_requested = false;
+        /* If a failed DMA has unknown completion state, intentionally keep
+         * both buffers alive and refuse further LCD DMA until reboot. */
+        if (!pipe_fault && pipe_bounce) {
+            heap_caps_free(pipe_bounce);
+            pipe_bounce = NULL;
+        }
+        return;
+    }
+    pipe_requested = true;
+    pipe_enabled = false;
+    if (pipe_fault || !panel || !completed || !bounce) {
+        puts("LCD PIPE fallback=single reason=unavailable_or_fault");
+        return;
+    }
+    if (!pipe_bounce)
+        pipe_bounce = heap_caps_malloc(LCD_STRIP_BYTES,
+                                       MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    if (!pipe_bounce) {
+        puts("LCD PIPE fallback=single reason=internal_dma_ram");
+        return;
+    }
+    pipe_enabled = true;
+    printf("LCD PIPE enabled rows=%d extra_dma_bytes=%d queue_depth=1\n",
+           LCD_STRIP_ROWS, LCD_STRIP_BYTES);
+}
+
+
 /* S31 LCD stage-D profile: enabled only during a launcher benchmark.
  * Timers cover the existing synchronous path without changing buffers,
  * SPI clock, transfer queue depth, RGB565 ordering or callbacks.
@@ -38,6 +83,7 @@ void aster_idf_lcd_profile_begin(void)
 {
     atomic_store(&lcd_profile_enabled, false);
     memset(&lcd_profile, 0, sizeof(lcd_profile));
+    memset(&pipe_profile, 0, sizeof(pipe_profile));
     atomic_store(&lcd_profile_enabled, true);
 }
 
@@ -60,6 +106,14 @@ void aster_idf_lcd_profile_end(bool report)
            (unsigned long long)lcd_profile.wait_us,
            (unsigned long)lcd_profile.max_wait_us,
            (unsigned long)lcd_profile.errors);
+    printf("LCD PIPE requested=%u enabled=%u rects=%lu stripes=%lu "
+           "fallback_rects=%lu failures=%lu prep_during_dma_us=%llu\n",
+           pipe_requested ? 1u : 0u, pipe_enabled ? 1u : 0u,
+           (unsigned long)pipe_profile.rects,
+           (unsigned long)pipe_profile.stripes,
+           (unsigned long)pipe_profile.fallback_rects,
+           (unsigned long)pipe_profile.failures,
+           (unsigned long long)pipe_profile.prepared_while_dma_us);
 }
 
 static bool transfer_done(esp_lcd_panel_io_handle_t io, esp_lcd_panel_io_event_data_t *event,
@@ -176,11 +230,106 @@ static int transfer_snapshot(uint32_t x, uint32_t y, uint32_t w, uint32_t h)
     return 0;
 }
 
+/* Prepare RGB565 high-byte-first pixels into one idle DMA bounce buffer.
+ * Coordinates and 16-row slicing are intentionally identical to the
+ * production transfer_snapshot() path above. */
+static void prepare_pipe_strip(uint16_t *buffer, uint32_t x, uint32_t y,
+                               uint32_t w, uint32_t rows)
+{
+    for (uint32_t yy = 0; yy < rows; yy++) {
+        const uint8_t *src = snapshot + ((size_t)(y + yy) * FP_LCD_WIDTH + x) * 2;
+        uint8_t *dst = (uint8_t *)buffer + (size_t)yy * w * 2;
+        for (uint32_t col = 0; col < w * 2; col += 2) {
+            dst[col] = src[col + 1];
+            dst[col + 1] = src[col];
+        }
+    }
+}
+
+/* Exactly ONE DMA submission is in flight. While it reads A, CPU fills B;
+ * then wait for A's completion before submitting B and reusing A. A failed
+ * or timed-out transaction is NOT assumed to have stopped: fail closed to
+ * prevent buffer reuse or free while the peripheral might still read it. */
+static int transfer_snapshot_pipe(uint32_t x, uint32_t y, uint32_t w, uint32_t h)
+{
+    uint16_t *buffers[2] = {bounce, pipe_bounce};
+    unsigned slot = 0;
+    uint32_t row = 0;
+    uint32_t rows = h < LCD_STRIP_ROWS ? h : LCD_STRIP_ROWS;
+    const bool measure = atomic_load(&lcd_profile_enabled);
+    int64_t prepare_start = measure ? esp_timer_get_time() : 0;
+    prepare_pipe_strip(buffers[slot], x, y, w, rows);
+    if (measure) {
+        lcd_profile.swap_us += (uint64_t)(esp_timer_get_time() - prepare_start);
+        pipe_profile.rects++;
+    }
+    for (;;) {
+        /* Previous completion was already consumed before reaching here.
+         * Clearing stale signals is safe here but never while DMA is live. */
+        xSemaphoreTake(completed, 0);
+        int64_t submit_start = measure ? esp_timer_get_time() : 0;
+        esp_err_t status = esp_lcd_panel_draw_bitmap(
+            panel, x, y + row, x + w, y + row + rows, buffers[slot]);
+        int64_t submitted = measure ? esp_timer_get_time() : 0;
+        if (measure)
+            lcd_profile.submit_us += (uint64_t)(submitted - submit_start);
+        if (status != ESP_OK)
+            goto fail_unknown_dma;
+
+        uint32_t next_row = row + rows;
+        uint32_t next_rows = h - next_row;
+        if (next_rows > LCD_STRIP_ROWS)
+            next_rows = LCD_STRIP_ROWS;
+        if (next_rows) {
+            /* While DMA still owns buffers[slot], this writes ONLY the
+             * other buffer. This is the only behavioral change vs baseline. */
+            prepare_start = measure ? esp_timer_get_time() : 0;
+            prepare_pipe_strip(buffers[slot ^ 1u], x, y + next_row, w, next_rows);
+            if (measure) {
+                uint64_t prepare_us = (uint64_t)(esp_timer_get_time() - prepare_start);
+                lcd_profile.swap_us += prepare_us;
+                pipe_profile.prepared_while_dma_us += prepare_us;
+            }
+        }
+
+        int64_t wait_start = measure ? esp_timer_get_time() : 0;
+        if (xSemaphoreTake(completed, pdMS_TO_TICKS(1000)) != pdTRUE)
+            goto fail_unknown_dma;
+        if (measure) {
+            uint32_t waited = (uint32_t)(esp_timer_get_time() - wait_start);
+            lcd_profile.wait_us += waited;
+            if (waited > lcd_profile.max_wait_us)
+                lcd_profile.max_wait_us = waited;
+            lcd_profile.stripes++;
+            lcd_profile.wire_bytes += (uint64_t)w * rows * 2u;
+            pipe_profile.stripes++;
+        }
+        if (!next_rows)
+            break;
+        row = next_row;
+        rows = next_rows;
+        slot ^= 1u;
+    }
+    return 0;
+
+fail_unknown_dma:
+    pipe_enabled = false;
+    pipe_fault = true;
+    if (measure) {
+        lcd_profile.errors++;
+        pipe_profile.failures++;
+    }
+    ESP_LOGE("fakepod_lcd", "LCD PIPE DMA completion unknown; display submissions "
+             "blocked until reboot to preserve buffer ownership");
+    return -1;
+}
+
 int fakepod_lcd_present(const uint8_t *pixels, uint32_t x, uint32_t y, uint32_t w, uint32_t h,
                         uint32_t pitch)
 {
-    if (!panel || !pixels || !w || !h || x >= FP_LCD_WIDTH || y >= FP_LCD_HEIGHT ||
-        w > FP_LCD_WIDTH - x || h > FP_LCD_HEIGHT - y || pitch < w)
+    if (!panel || !pixels || pipe_fault || !w || !h || x >= FP_LCD_WIDTH ||
+        y >= FP_LCD_HEIGHT || w > FP_LCD_WIDTH - x ||
+        h > FP_LCD_HEIGHT - y || pitch < w)
         return -1;
     /* Capture shares the retained image in native RGB565 order. Convert
      * only in the SPI buffer, including when replaying the image on wake. */
@@ -202,6 +351,10 @@ int fakepod_lcd_present(const uint8_t *pixels, uint32_t x, uint32_t y, uint32_t 
     uint32_t right = (x + w + 1) & ~1u, bottom = (y + h + 1) & ~1u;
     x &= ~1u;
     y &= ~1u;
+    if (pipe_requested && pipe_enabled)
+        return transfer_snapshot_pipe(x, y, right - x, bottom - y);
+    if (pipe_requested && atomic_load(&lcd_profile_enabled))
+        pipe_profile.fallback_rects++;
     return transfer_snapshot(x, y, right - x, bottom - y);
 }
 
@@ -217,7 +370,7 @@ static esp_err_t set_brightness(uint8_t value)
 
 int fakepod_lcd_brightness(bool on, uint8_t level)
 {
-    if (!panel_io || !panel)
+    if (!panel_io || !panel || pipe_fault)
         return -1;
     if (!on) {
         if (panel_blank)
