@@ -1,4 +1,4 @@
-"""S31 stage E: 16-row ping-pong LCD DMA experiment ownership guards.
+"""S31 Stage E/F1: 16-row ping-pong LCD DMA ownership guards.
 
 Static contract checks only. Real A/B performance, physical color correctness
 and DMA completion safety require on-board ESP-IDF 6.1 validation.
@@ -57,17 +57,17 @@ class StageEPipeline(unittest.TestCase):
         self.assertIn("if (request >= 400) seconds = request - 400;", UI)
         self.assertIn("ui_bench_pipe = request >= 400 && request < 500;", UI)
         self.assertIn("aster_idf_lcd_pipe_set_bench(ui_bench_pipe);", UI)
-        self.assertIn("aster_idf_lcd_pipe_set_bench(false);", UI)
+        self.assertIn("aster_idf_lcd_pipe_set_bench(ui_pipe_runtime);", UI)
         self.assertIn("ui_bench_pipe = false;", UI)
         self.assertIn("atomic_compare_exchange_strong(&ui_bench_reserved", UI)
         complete = UI[UI.index("if (now >= bench_end)"):
                       UI.index("if (bench_warm && now >= bench_warm)")]
         self.assertLess(complete.index("aster_idf_lcd_profile_end(true);"),
-                        complete.index("aster_idf_lcd_pipe_set_bench(false);"))
+                        complete.index("aster_idf_lcd_pipe_set_bench(ui_pipe_runtime);"))
         abort = UI[UI.index("void aster_idf_ui_before_app(void)"):
                    UI.index("void aster_idf_ui_after_app(void)")]
         self.assertIn("aster_idf_lcd_profile_end(false);", abort)
-        self.assertIn("aster_idf_lcd_pipe_set_bench(false);", abort)
+        self.assertIn("aster_idf_lcd_pipe_set_bench(ui_pipe_runtime);", abort)
         self.assertIn("ui_bench_pipe = false;", abort)
 
 
