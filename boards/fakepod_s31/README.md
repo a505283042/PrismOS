@@ -218,3 +218,58 @@ UI PERF frames=... render_avg_us=... flush_us=... ribbon_us=...
 判断下一步要根据 `copy_us` / `swap_us` / `submit_us` / `wait_us` 的比例和 `stripes` 数量，而不是仅用 `flush_us` 断言 SPI 是瓶颈。`flush_us` 是更外层调用的累计耗时，两者存在包含关系，**禁止相加**。
 
 所有数字必须由新固件实机输出，以上只说明指标，不预填实测值。若显示异常或编译失败，保留原来的显示路径，勿直接试验双缓冲/改高 SPI 时钟。
+
+
+## 阶段 E：16 行 LCD Ping-Pong 双缓冲实验（默认关闭，待实机 A/B）
+
+### 实施范围
+
+只在 S31 串口明确运行 `aster ui bench-pipe 8` 时，尝试申请第二块内部 DMA 缓冲（460 × 16 × 2 = **14,720 字节**）。正常开机、播放、旧 `aster ui bench 8`、`bench-cpu`、`bench-ppa` 继续原本的**单缓冲同步等待**实现。
+
+- 单缓冲原路径、RGB565 高低字节交换、CO5300 2×2 像素对齐、40MHz QSPI、16 行条带与 **trans_queue_depth=1** 完全保留。
+- 流水线一次最多只有**一个 DMA 事务在途**：准备 A → 提交 A → CPU 在独立 B 上准备下一块 → 收到 A 的完成信号 → 提交 B → 在 A 上准备下一块，依此类推。
+- 第二块内存分配失败时输出 `LCD PIPE fallback=single reason=internal_dma_ram` 并使用原单缓冲。A/B 测量必须看到 `LCD PIPE enabled=1` 才能认定实际使用了流水线。
+- 串口测试结束自动关闭流水线并释放第二缓冲。若 APP 启动打断测试，同样关闭。**如果 DMA 提交失败或完成回调超时，不能假设硬件停止读取缓冲：固件故障保护会停止新的 LCD 提交、保留缓冲直到重启**，而不是冒险立即释放或复用 DMA 缓冲。
+- 不影响 WASM 内存，不改变音乐 APP、音频解码或 PPA Fill 的生产路径。尚未进行本地编译/实机验证，绝不能提前将流水线设为默认模式。
+
+### 本地编译
+
+沿用本机的 ESP-IDF 6.1 环境，在 PowerShell 执行：
+
+```powershell
+cd D:\ESP32\aster-firmware
+git pull --ff-only origin main
+python -m unittest discover -s tests -p "test_stage_e_lcd_pipeline.py" -v
+python -m unittest discover -s tests -p "test_stage_d_lcd_profile.py" -v
+python -m unittest discover -s tests -p "test_stage_c_copy.py" -v
+
+& "D:\ESP32\aster-idf61-python\Scripts\python.exe" `
+    "$env:IDF_PATH\tools\idf.py" --preview `
+    -C boards/fakepod_s31/idf `
+    -B D:/ESP32/aster-firmware/build/fakepod-s31/system `
+    -DIDF_TARGET=esp32s31 `
+    build
+```
+
+### A/B 测试
+
+退出应用，停止后台音乐、蓝牙收发；烧录新版固件后逐条运行，并**等待每次 `UI BENCH done` 后才输入下一条**：
+
+```text
+aster ui bench 8
+aster ui bench-pipe 8
+aster ui bench 8
+aster ui bench-pipe 8
+```
+
+每轮已有 `UI PERF`、`LCD PROFILE`；新增：
+
+```text
+LCD PIPE requested=1 enabled=1 rects=... stripes=... fallback_rects=0 failures=0 prep_during_dma_us=...
+```
+
+`requested=1 enabled=0` 表示申请流水线失败、实际回退了单缓冲；该组不能当双缓冲成绩。`prep_during_dma_us` 是从 DMA 提交后、开始等待信号量前准备下一块的总耗时，**不证明每个微秒都与真实 SPI DMA 活动重叠**；重点以 `flush_us`、`render_avg_us`、FPS、`errors` 的真实 A/B 对照评价收益。
+
+注意：流水线的 `LCD PROFILE wait_us` 只包括准备下一块*后*尚需等待的时间；因此与旧模式的 wait_us 含义略有不同，不能用它直接推断传输变快。对比外层 `flush_us` 与完整端到端帧耗时才有意义。
+
+验收门槛：流水线连续多轮 `failures=0`、`errors=0`，无花屏、像素错位、熄屏唤醒异常、后台音乐卡顿；`flush_us` 建议至少稳定下降 10% 且 UI 帧耗时/FPS 改善，才考虑下一步生产化。否则保留原单缓冲。 
