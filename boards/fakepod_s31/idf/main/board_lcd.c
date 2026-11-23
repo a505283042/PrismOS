@@ -49,7 +49,7 @@ void aster_idf_lcd_profile_end(bool report)
      * a hardware-only measurement of QSPI transfer duration. */
     printf("LCD PROFILE rects=%lu stripes=%lu snapshot_bytes=%llu wire_bytes=%llu "
            "copy_us=%llu swap_us=%llu submit_us=%llu wait_us=%llu "
-           "wait_max_us=%lu errors=%lu\\n",
+           "wait_max_us=%lu errors=%lu\n",
            (unsigned long)lcd_profile.rects,
            (unsigned long)lcd_profile.stripes,
            (unsigned long long)lcd_profile.snapshot_bytes,
