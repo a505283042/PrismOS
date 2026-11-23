@@ -285,11 +285,13 @@ static void perf_tick(void)
         return;
     if (now >= bench_end) {
         bench_end = 0;
+        /* Capture UI elapsed time before printing the extra LCD breakdown.
+         * Console output itself is outside both benchmark intervals. */
+        perf_print();
 #if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
         if (aster_idf_lcd_profile_end)
             aster_idf_lcd_profile_end(true);
 #endif
-        perf_print();
 #if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
         printf("UI BENCH RESULT fill_mode=%s (production PPA restored)\n",
                ui_bench_cpu_only ? "CPU" : "PPA");
