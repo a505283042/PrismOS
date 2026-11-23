@@ -273,3 +273,43 @@ LCD PIPE requested=1 enabled=1 fault=0 rects=... stripes=... fallback_rects=0 fa
 注意：流水线的 `LCD PROFILE wait_us` 只包括准备下一块*后*尚需等待的时间；因此与旧模式的 wait_us 含义略有不同，不能用它直接推断传输变快。对比外层 `flush_us` 与完整端到端帧耗时才有意义。
 
 验收门槛：流水线连续多轮 `failures=0`、`errors=0`，无花屏、像素错位、熄屏唤醒异常、后台音乐卡顿；`flush_us` 建议至少稳定下降 10% 且 UI 帧耗时/FPS 改善，才考虑下一步生产化。否则保留原单缓冲。 
+
+## Stage F1：运行时可选 LCD 双缓冲（默认 OFF，待实机验证）
+
+F1 将 Stage E 的 16 行 LCD Ping-Pong 扩展到 **Aster 桌面和运行中的 WASM APP**。它仍是实验模式：不会写 NVS，**每次重启恢复单缓冲**；不要求重新编译 HiFiPlayer APP。
+
+通过 S31 设备的串口控制台运行：
+
+```text
+aster ui pipe status
+aster ui pipe on
+aster ui pipe status
+aster ui pipe off
+aster ui pipe status
+```
+
+- 命令先输出 `UI PIPE queued action=...`，表示进入 mailbox；**只有 UI/APP 工作线程**会修改 LCD 双缓冲状态，切换完成后输出 `UI PIPE runtime=ON/OFF requested=... enabled=... fault=... app=... bench=...`。
+- 成功启用必须看到 `runtime=ON enabled=1 fault=0`；第二缓冲使用 14,720 字节内部 DMA RAM。`off` 在同步 Flush 边界关闭并释放第二缓冲。APP 启动/退出不再改变 F1 的运行时选择。
+- 申请失败将输出 `LCD PIPE fallback=single reason=internal_dma_ram`，实际运行时保持 OFF。若 DMA 完成状态未知，原 fail-closed 机制仍会禁止新 LCD 提交并保留 DMA 可能持有的缓冲，`off` **不能清除硬故障**，需要重启。
+- `aster ui bench 8` 和 `aster ui bench-pipe 8` 会临时覆盖运行时模式，结束或被 APP 打断时恢复此前选择；进行 Benchmark 时拒绝新的 `pipe on/off` 请求。
+- 保持 CO5300 40 MHz QSPI、16 行条带、2×2 对齐、RGB565 字节交换、`trans_queue_depth=1`，始终至多一个 DMA 提交在途。未修改音频任务、APP 接口或 Flash 数据格式。
+
+**F1 只提供运行时安全开关，不等于已经验证音乐播放/熄屏唤醒/持续运行稳定性。** 实机请先在桌面开关，再测试 HiFiPlayer 播放时切歌、封面、歌词、列表、音量、熄屏唤醒和 APP 退出。画面异常且 `fault=0` 时可先执行 `aster ui pipe off`；`fault=1` 时停止测试并重启。
+
+### Windows 本地检查与构建
+
+```powershell
+cd D:\ESP32\aster-firmware
+git fetch origin
+git switch -c feat/s31-stage-f1-ui-pipe-runtime-20261123 --track origin/feat/s31-stage-f1-ui-pipe-runtime-20261123
+python -m unittest discover -s tests -p "test_stage_e_lcd_pipeline.py" -v
+python -m unittest discover -s tests -p "test_stage_f1_lcd_runtime.py" -v
+
+& "D:\ESP32\aster-idf61-python\Scripts\python.exe" `
+    "$env:IDF_PATH\tools\idf.py" --preview `
+    -C boards/fakepod_s31/idf `
+    -B D:/ESP32/aster-firmware/build/fakepod-s31/system `
+    -DIDF_TARGET=esp32s31 build
+```
+
+如果本地已经建立同名分支，请先 `git switch` 到该分支，再执行 `git pull --ff-only`；不要在有未提交修改的目录里覆盖源码。构建和测试通过后才进行 S31 烧录。
