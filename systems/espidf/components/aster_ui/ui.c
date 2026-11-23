@@ -29,6 +29,7 @@
  * LCD registers or assumes an S31 driver on other IDF targets. */
 extern void aster_idf_lcd_profile_begin(void) __attribute__((weak));
 extern void aster_idf_lcd_profile_end(bool report) __attribute__((weak));
+extern void aster_idf_lcd_pipe_set_bench(bool enabled) __attribute__((weak));
 #endif
 #endif
 #include <stdatomic.h>
@@ -47,6 +48,7 @@ static atomic_int perf_request;
 static atomic_bool ui_bench_reserved;
 /* Kept on UI worker; restored to PPA after CPU-only measurement. */
 static bool ui_bench_cpu_only;
+static bool ui_bench_pipe;
 #endif
 
 static struct {
@@ -200,6 +202,7 @@ int aster_idf_ui_command(int argc, char **argv)
 #if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
               || !strcmp(argv[2], "bench-cpu")
               || !strcmp(argv[2], "bench-ppa")
+              || !strcmp(argv[2], "bench-pipe")
 #endif
              )) {
         char *end = NULL;
@@ -210,6 +213,7 @@ int aster_idf_ui_command(int argc, char **argv)
 #if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
         if (!strcmp(argv[2], "bench-cpu")) request = 200 + (int)seconds;
         if (!strcmp(argv[2], "bench-ppa")) request = 300 + (int)seconds;
+        if (!strcmp(argv[2], "bench-pipe")) request = 400 + (int)seconds;
 #endif
     } else
         return ASTER_EINVAL;
@@ -266,10 +270,14 @@ static void perf_tick(void)
         }
         int seconds = request - 100;
 #if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
-        if (request >= 300) seconds = request - 300;
+        if (request >= 400) seconds = request - 400;
+        else if (request >= 300) seconds = request - 300;
         else if (request >= 200) seconds = request - 200;
         ui_bench_cpu_only = request >= 200 && request < 300;
+        ui_bench_pipe = request >= 400 && request < 500;
         aster_idf_ppa_fill_set_bench_cpu_only(ui_bench_cpu_only);
+        if (aster_idf_lcd_pipe_set_bench)
+            aster_idf_lcd_pipe_set_bench(ui_bench_pipe);
 #endif
         aster_launcher_show_page(0);
         bench_step = now;
@@ -277,8 +285,9 @@ static void perf_tick(void)
         bench_end = bench_warm + seconds * 1000000ULL;
         printf("UI BENCH warmup=2s measurement=%ds\n", seconds);
 #if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
-        printf("UI BENCH FILL mode=%s (diagnostic only)\n",
-               ui_bench_cpu_only ? "CPU" : "PPA");
+        printf("UI BENCH FILL mode=%s LCD=%s (diagnostic only)\n",
+               ui_bench_cpu_only ? "CPU" : "PPA",
+               ui_bench_pipe ? "PIPE_REQUESTED" : "SINGLE");
 #endif
     }
     if (!bench_end)
@@ -291,6 +300,9 @@ static void perf_tick(void)
 #if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
         if (aster_idf_lcd_profile_end)
             aster_idf_lcd_profile_end(true);
+        if (aster_idf_lcd_pipe_set_bench)
+            aster_idf_lcd_pipe_set_bench(false);
+        ui_bench_pipe = false;
 #endif
 #if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
         printf("UI BENCH RESULT fill_mode=%s (production PPA restored)\n",
@@ -538,6 +550,9 @@ void aster_idf_ui_before_app(void)
 #if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
     if (aster_idf_lcd_profile_end)
         aster_idf_lcd_profile_end(false);
+    if (aster_idf_lcd_pipe_set_bench)
+        aster_idf_lcd_pipe_set_bench(false);
+    ui_bench_pipe = false;
     /* Opening an APP cancels any in-flight or still-pending UI A/B test.
      * Without this, a CPU-only test interrupted by an app launch could
      * permanently leave the launcher PPA accelerator disabled. */
