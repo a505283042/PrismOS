@@ -32,7 +32,7 @@ static uint16_t *pipe_bounce;
 static bool pipe_requested, pipe_enabled, pipe_fault;
 static struct {
     uint32_t rects, stripes, fallback_rects, failures;
-    uint64_t prepared_while_dma_us;
+    uint64_t prepared_after_submit_us;
 } pipe_profile;
 
 void aster_idf_lcd_pipe_set_bench(bool enabled)
@@ -50,8 +50,12 @@ void aster_idf_lcd_pipe_set_bench(bool enabled)
     }
     pipe_requested = true;
     pipe_enabled = false;
-    if (pipe_fault || !panel || !completed || !bounce) {
-        puts("LCD PIPE fallback=single reason=unavailable_or_fault");
+    if (pipe_fault) {
+        puts("LCD PIPE refused reason=dma_completion_unknown; reboot_required");
+        return;
+    }
+    if (!panel || !completed || !bounce) {
+        puts("LCD PIPE fallback=single reason=display_unavailable");
         return;
     }
     if (!pipe_bounce)
@@ -106,14 +110,14 @@ void aster_idf_lcd_profile_end(bool report)
            (unsigned long long)lcd_profile.wait_us,
            (unsigned long)lcd_profile.max_wait_us,
            (unsigned long)lcd_profile.errors);
-    printf("LCD PIPE requested=%u enabled=%u rects=%lu stripes=%lu "
-           "fallback_rects=%lu failures=%lu prep_during_dma_us=%llu\n",
-           pipe_requested ? 1u : 0u, pipe_enabled ? 1u : 0u,
+    printf("LCD PIPE requested=%u enabled=%u fault=%u rects=%lu stripes=%lu "
+           "fallback_rects=%lu failures=%lu prep_after_submit_us=%llu\n",
+           pipe_requested ? 1u : 0u, pipe_enabled ? 1u : 0u, pipe_fault ? 1u : 0u,
            (unsigned long)pipe_profile.rects,
            (unsigned long)pipe_profile.stripes,
            (unsigned long)pipe_profile.fallback_rects,
            (unsigned long)pipe_profile.failures,
-           (unsigned long long)pipe_profile.prepared_while_dma_us);
+           (unsigned long long)pipe_profile.prepared_after_submit_us);
 }
 
 static bool transfer_done(esp_lcd_panel_io_handle_t io, esp_lcd_panel_io_event_data_t *event,
@@ -288,7 +292,7 @@ static int transfer_snapshot_pipe(uint32_t x, uint32_t y, uint32_t w, uint32_t h
             if (measure) {
                 uint64_t prepare_us = (uint64_t)(esp_timer_get_time() - prepare_start);
                 lcd_profile.swap_us += prepare_us;
-                pipe_profile.prepared_while_dma_us += prepare_us;
+                pipe_profile.prepared_after_submit_us += prepare_us;
             }
         }
 
