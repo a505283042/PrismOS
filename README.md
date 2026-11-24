@@ -58,9 +58,9 @@ PrismOS 是基于 [Aster 固件](https://github.com/a505283042/aster-firmware) �
 
 ## 当前状态
 
-- 已完成固件源码及 Git 历史迁移：[初始基线 d201d36](https://github.com/a505283042/PrismOS/commit/d201d3690dad5b9e9efbfd100c799f2777d780fc)。
+- 已完成固件源码导入及准备工作合并：[基线 bc57486](https://github.com/a505283042/PrismOS/commit/bc57486d41ac723244f4a3cd5f16aa4a54d14136)。
 - 已确定三层架构及 v0.4 开发计划。
-- 原版固件基线编译、真机验证以及新增功能仍待完成。
+- 原版固件基线编译、真机测试已由用户确认通过；P1.1 已接入公共 UI Shell 转发层，新增代码待编译及真机回归。
 - 独立商城、资源发布服务器及新增板卡适配按实际需求另行评审，本期不实施。
 
 ## 开发文档
