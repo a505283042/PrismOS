@@ -18,6 +18,7 @@
 #include "launcher.h"
 #include "ui_shell_lifecycle.h"
 #include "ui_shell_input.h"
+#include "ui_shell_state.h"
 #include "ui_lvgl.h"
 #include "ui_font.h"
 #include "flux_font.h"
@@ -188,12 +189,9 @@ static unsigned scroll_duration = FLUX_SNAP_MS;
 static bool coasting, draw_pending;
 static uint64_t animation_ms, last_draw, hold_ms, clock_sec = UINT64_MAX;
 static bool animating, launching, visible, initialized, want_show = true, motion = true, quiet;
-static volatile bool dirty;
 static volatile int want_page = -1;
 static int page, prior_page, action, brightness = 90;
-static int brightness_pending = -1, volume_pending = -1;
-static bool volume_save;
-static aster_launcher_slider_stats_t slider_stats;
+static int brightness_pending = -1;
 static uint64_t save_due;
 static char remove_id[64], remove_name[40];
 static lv_obj_t *root, *body, *stage, *bar_time, *description, *position, *pull_label, *handle;
@@ -237,7 +235,7 @@ static int sound_pending = -1;
 
 static void sound_play(int which, int speed)
 {
-    if (quiet || volume_pending == 0 || !aster_device_audio_get_volume()) {
+    if (quiet || aster_ui_shell_volume_pending() == 0 || !aster_ui_shell_volume_get()) {
         aster_device_audio_ui_stop();
         return;
     }
@@ -435,7 +433,7 @@ static void read_entries(void)
   * introductions belong to package metadata, including known IDs. */
     for (size_t k = 0; k < ARRAY_SIZE(known); k++) {
         aster_service_app_t rec;
-        if (!aster_service_app_find(known[k].id, &rec))
+        if (!aster_ui_shell_catalog_find(known[k].id, &rec))
             continue;
         const aster_service_app_t *r = &rec;
         entry_t *e = &entries[entry_n++];
@@ -449,9 +447,9 @@ static void read_entries(void)
         e->group = known[k].group;
         e->icon = ICON_BOX;
     }
-    for (int i = 0; i < aster_service_app_count() && entry_n < MAX_ENTRIES - 4; i++) {
+    for (int i = 0; i < aster_ui_shell_catalog_count() && entry_n < MAX_ENTRIES - 4; i++) {
         aster_service_app_t rec;
-        if (!aster_service_app_snapshot(i, &rec))
+        if (!aster_ui_shell_catalog_snapshot(i, &rec))
             continue;
         const aster_service_app_t *r = &rec;
         bool present = false;
@@ -623,12 +621,6 @@ static lv_draw_buf_t *ribbon_cache_take(int entry)
     return NULL;
 }
 #endif
-void aster_launcher_slider_stats(aster_launcher_slider_stats_t *out)
-{
-    if (out)
-        *out = slider_stats;
-}
-
 void aster_launcher_art_stats(uint32_t *bakes, uint32_t *hits, uint32_t *cached_bytes)
 {
     *bakes = art_bakes;
@@ -1082,20 +1074,16 @@ static void slider_changed(lv_event_t *e)
     int kind = (int)(intptr_t)lv_event_get_user_data(e);
     if (lv_event_get_code(e) == LV_EVENT_PRESSED) {
         if (kind == 1)
-            slider_stats.presses++;
+            aster_ui_shell_volume_pressed();
         return;
     }
     int v = lv_slider_get_value(lv_event_get_target(e));
-    if (kind == 1) {
-        slider_stats.value = v;
-        if (lv_event_get_code(e) == LV_EVENT_VALUE_CHANGED)
-            slider_stats.changes++;
-    }
+    if (kind == 1)
+        aster_ui_shell_volume_changed(v, lv_event_get_code(e) == LV_EVENT_VALUE_CHANGED);
     if (kind == 0) {
         brightness = v;
         brightness_pending = v;
-    } else
-        volume_pending = v;
+    }
     lv_obj_t *l = lv_obj_get_user_data(lv_event_get_target(e));
     char value[16];
     snprintf(value, sizeof(value), "%d%%", v);
@@ -1103,9 +1091,7 @@ static void slider_changed(lv_event_t *e)
     if (lv_event_get_code(e) == LV_EVENT_RELEASED) {
         save();
         if (kind == 1)
-            volume_save = true;
-        if (kind == 1)
-            slider_stats.releases++;
+            aster_ui_shell_volume_released();
     }
 }
 
@@ -1253,7 +1239,7 @@ static void build_mixer(void)
             wifi_state = status;
     }
     slider_card(172, "光", "屏幕亮度", ACCENT, brightness, 0);
-    int volume = volume_pending >= 0 ? volume_pending : aster_device_audio_get_volume();
+    int volume = aster_ui_shell_volume_display();
     slider_card(297, "声", "输出音量", 0xffb8a5, MAX(0, volume), 1);
     aster_power_caps_t power = {0};
     (void)aster_power_caps(&power);
@@ -1316,7 +1302,7 @@ static void build_files(void)
 {
     text(body, "LOCAL STORAGE", 17, 15, 280, DIM, 16, 128);
     text(body, "文件", 17, 38, 286, FG, 20, 320);
-    text(body, aster_service_storage_mounted() ? "SD 卡 /SD:" : "SD 卡未挂载", 17, 85, 286, DIM, 16,
+    text(body, aster_ui_shell_storage_mounted() ? "SD 卡 /SD:" : "SD 卡未挂载", 17, 85, 286, DIM, 16,
          256);
     lv_obj_t *list = box(body, 17, 125, 286, 295, 0x191d1a, 12);
     lv_obj_add_flag(list, LV_OBJ_FLAG_SCROLLABLE);
@@ -1341,7 +1327,7 @@ static void build_files(void)
 static void build_system(void)
 {
     aster_system_info_t profile = {0};
-    (void)aster_service_system_info(&profile);
+    (void)aster_ui_shell_system_info(&profile);
     text(body, "SYSTEM / ASTER", 17, 15, 280, DIM, 16, 128);
     text(body, "设备与运行状态", 17, 38, 286, FG, 20, 280);
     char info[480];
@@ -1350,8 +1336,8 @@ static void build_system(void)
         "%s\n\n显示   %u × %u\nABI     %u.%u.%u\n应用   %d 个已安装\nSD       %s\n运行   %llu 秒\n\n启动与错误日志通过 USB shell 查看。",
         profile.board, (unsigned)aster_ui_lvgl_width(), (unsigned)aster_ui_lvgl_height(),
         (unsigned)(profile.abi_version >> 16), (unsigned)((profile.abi_version >> 8) & 255),
-        (unsigned)(profile.abi_version & 255), aster_service_app_count(),
-        aster_service_storage_mounted() ? "已挂载" : "未挂载",
+        (unsigned)(profile.abi_version & 255), aster_ui_shell_catalog_count(),
+        aster_ui_shell_storage_mounted() ? "已挂载" : "未挂载",
         (unsigned long long)(aster_os_uptime_ms() / 1000));
     text(body, info, 17, 100, 286, FG, 16, 256);
 }
@@ -1420,7 +1406,7 @@ static void open_current(void)
         show_page(e->builtin);
         return;
     }
-    int err = aster_service_app_start(e->id);
+    int err = aster_ui_shell_app_start(e->id);
     aster_service_logf(3, "flux: launch %s -> %d", e->id, err);
     if (err) {
         launching = false;
@@ -1658,7 +1644,7 @@ static void tick_clock(void)
     clock_sec = sec;
     aster_time_info_t t = {0};
     char value[48];
-    if (!aster_os_wall_clock(&t))
+    if (!aster_ui_shell_wall_clock(&t))
         snprintf(value, sizeof(value), "%02u:%02u", (unsigned)t.hour, (unsigned)t.minute);
     else
         snprintf(value, sizeof(value), "--:--");
@@ -1668,7 +1654,7 @@ static void tick_clock(void)
              (unsigned)t.day, (t.flags & ASTER_TIME_FLAG_SYNCED) ? "" : " · 默认时间");
     set_text(clock_date, value);
     aster_power_battery_t battery;
-    if (!aster_power_battery(&battery)) {
+    if (!aster_ui_shell_battery(&battery)) {
         char short_text[24], long_text[80];
         if (battery.flags & ASTER_POWER_PERCENT_VALID) {
             snprintf(short_text, sizeof(short_text), "%u%%", (unsigned)battery.percent);
@@ -1694,7 +1680,7 @@ static void tick_clock(void)
     }
     if (wifi_state) {
         aster_wifi_status_t s = {0};
-        int err = aster_device_wifi_status(&s);
+        int err = aster_ui_shell_wifi_status(&s);
         set_text(wifi_state, err || !s.ip[0] ? "未连接" : "已连接");
     }
 }
@@ -1753,7 +1739,7 @@ int aster_launcher_init(void)
         }
     for (int i = 0; i < RIBBONS; i++)
         ribbons[i].entry = -1;
-    aster_service_registry_callback(aster_launcher_on_registry_change);
+    aster_ui_shell_catalog_init();
     aster_qpanel_bind_theme(&theme);
     uint8_t s[8];
     size_t n = 0;
@@ -1787,7 +1773,7 @@ void aster_launcher_show(void)
     filter_entries();
     warm_visible_text();
     visible = true;
-    dirty = false;
+    aster_ui_shell_catalog_ack();
     launching = false;
     memset(&drag, 0, sizeof(drag));
     root = box(aster_ui_lvgl_screen(), 0, 0, 320, 480, BG, 0);
@@ -1824,7 +1810,7 @@ void aster_launcher_show(void)
      * A persisted FLUX "quiet" preference only silences launcher sound
      * effects; entering the desktop must never reset the codec volume.
      * Discard any deferred slider value from the previous launcher view. */
-    volume_pending = -1;
+    aster_ui_shell_volume_discard_pending();
     sound_entry = current() ? (int)(current() - entries) : -1;
     sound_group = group;
     sound_phase = phase;
@@ -1835,7 +1821,7 @@ void aster_launcher_show(void)
         sound_return = false;
     }
     aster_service_logf(3, "FLUX Rev.04: 320x480, %d entries (%d installed)", entry_n,
-                       aster_service_app_count());
+                       aster_ui_shell_catalog_count());
 }
 
 void aster_launcher_hide(void)
@@ -1861,11 +1847,6 @@ void aster_launcher_hide(void)
 void aster_launcher_request_show(void)
 {
     want_show = true;
-}
-
-void aster_launcher_on_registry_change(void)
-{
-    dirty = true;
 }
 
 void aster_launcher_show_page(int p)
@@ -1926,7 +1907,7 @@ void aster_launcher_pump_idle(void)
     }
     if (!visible)
         return;
-    if (dirty && !modal) {
+    if (aster_ui_shell_catalog_dirty() && !modal) {
         aster_launcher_hide();
         sound_return = false;
         aster_launcher_show();
@@ -2031,7 +2012,7 @@ void aster_launcher_pump_idle(void)
         snprintf(id, sizeof(id), "%s", remove_id);
         lv_obj_delete(modal);
         modal = NULL;
-        int err = aster_service_app_uninstall(id);
+        int err = aster_ui_shell_app_uninstall(id);
         aster_service_logf(3, "flux: uninstall %s -> %d", id, err);
         if (err)
             notify("卸载失败，请查看系统日志。");
@@ -2069,7 +2050,7 @@ void aster_launcher_pump_idle(void)
         sound_pending = S_OPEN;
         sound_launch_started = true;
     }
-    if (sound_pending >= 0 && volume_pending < 0) {
+    if (sound_pending >= 0 && aster_ui_shell_volume_pending() < 0) {
         sound_play(sound_pending, 0);
         sound_pending = -1;
     }
@@ -2089,24 +2070,7 @@ void aster_launcher_pump_idle(void)
         aster_ui_shell_power_set_brightness((uint8_t)(brightness_pending * 255 / 100), true);
         brightness_pending = -1;
     }
-    if (volume_pending >= 0) {
-        uint32_t since = aster_os_cycle_us();
-        (void)aster_device_audio_set_volume(volume_pending);
-        volume_pending = -1;
-        uint32_t elapsed = aster_os_cycle_us() - since;
-        if (elapsed > slider_stats.max_set_us)
-            slider_stats.max_set_us = elapsed;
-    }
-    if (volume_save) {
-        uint8_t value = CLAMP(aster_device_audio_get_volume(), 0, 100);
-        uint32_t since = aster_os_uptime32();
-        (void)aster_service_kv_set("aster.qpanel", "volume", &value, 1);
-        volume_save = false;
-        uint32_t elapsed = aster_os_uptime32() - since;
-        slider_stats.saves++;
-        if (elapsed > slider_stats.max_save_ms)
-            slider_stats.max_save_ms = elapsed;
-    }
+    aster_ui_shell_volume_flush();
     int sound_now = current() ? (int)(current() - entries) : -1;
     if (sound_pending >= 0) {
         sound_play(sound_pending, 0);
