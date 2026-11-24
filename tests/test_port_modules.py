@@ -94,6 +94,7 @@ int main(void){
         for name in [
             'launcher/ui_shell.c',
             'launcher/ui_shell_lifecycle.c',
+            'launcher/ui_shell_input.c',
             'launcher/flux.c',
             'font_sd.c',
             'ui_font.c',

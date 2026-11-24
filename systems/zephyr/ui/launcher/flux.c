@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include "launcher.h"
 #include "ui_shell_lifecycle.h"
+#include "ui_shell_input.h"
 #include "ui_lvgl.h"
 #include "ui_font.h"
 #include "flux_font.h"
@@ -200,9 +201,7 @@ static lv_obj_t *filter_label, *modal, *toast, *clock_value, *clock_date, *wifi_
 static lv_obj_t *battery_label, *power_label, *timeout_button;
 static lv_obj_t *battery_body, *battery_terminal, *battery_fill;
 static bool battery_charging;
-static aster_power_idle_t power_idle;
 static uint8_t timeout_index;
-static bool power_contacts_down;
 static const uint32_t screen_timeouts[] = {0, 30000, 60000, 120000, 300000};
 static const char *const screen_timeout_names[] = {"永不", "30 秒", "1 分钟", "2 分钟", "5 分钟"};
 static uint64_t toast_until;
@@ -224,8 +223,7 @@ static struct {
     uint64_t started;
     struct flux_velocity track;
 } drag;
-static struct aster_touch_ui_state launcher_touch_ui;
-static uint32_t launcher_touch_x, launcher_touch_y;
+
 static void show_page(int next);
 static void redraw(void);
 static void settle(int target);
@@ -1709,20 +1707,39 @@ static void palette(aster_qpanel_palette_t *p)
 
 static const aster_qpanel_theme_ops_t theme = {.palette = palette};
 
+static void flux_power_home(void)
+{
+    if (visible)
+        want_page = HOME;
+    else
+        aster_qpanel_request_exit("应用");
+}
+
+static void flux_power_error(void)
+{
+    if (visible)
+        notify("当前无法执行，请稍后再试。");
+}
+
+static void flux_reset_drag(void)
+{
+    memset(&drag, 0, sizeof(drag));
+    pull = 0;
+}
+
 int aster_launcher_init(void)
 {
     if (initialized)
         return 0;
     initialized = true;
-    aster_power_default_init();
-    aster_power_seal();
+    aster_ui_shell_power_bind();
     size_t timeout_bytes = 0;
     uint8_t saved_timeout = 0;
     if (!aster_service_kv_get(KV_ID, "screen-timeout", &saved_timeout, 1, &timeout_bytes) &&
         timeout_bytes == 1 && saved_timeout < ARRAY_SIZE(screen_timeouts))
         timeout_index = saved_timeout;
-    aster_power_idle_init(&power_idle, aster_os_uptime_ms(), screen_timeouts[timeout_index], 230);
-    aster_touch_ui_reset(&launcher_touch_ui);
+    aster_ui_shell_power_init(screen_timeouts[timeout_index], 230, flux_power_home, flux_power_error);
+    aster_ui_shell_input_reset();
     for (size_t face = 0; face < ARRAY_SIZE(flux_icon_sizes); face++)
         for (size_t i = 0; i < ARRAY_SIZE(chrome[face]); i++) {
             unsigned px = flux_icon_sizes[face];
@@ -1748,7 +1765,7 @@ int aster_launcher_init(void)
         motion = s[6] != 0;
         quiet = s[7] != 0;
     }
-    power_idle.brightness = (uint8_t)(brightness * 255 / 100);
+    aster_ui_shell_power_set_brightness((uint8_t)(brightness * 255 / 100), false);
     return 0;
 }
 
@@ -1757,7 +1774,7 @@ void aster_launcher_show(void)
     if (visible || !aster_ui_lvgl_screen())
         return;
     aster_launcher_init();
-    aster_ui_shell_prepare_show(&launcher_touch_ui);
+    aster_ui_shell_input_prepare_show();
     view_w = (int)aster_ui_lvgl_width();
     view_h = (int)aster_ui_lvgl_height();
     if (view_w < 1)
@@ -1825,7 +1842,7 @@ void aster_launcher_hide(void)
 {
     if (!visible)
         return;
-    aster_ui_shell_prepare_hide(&launcher_touch_ui, launcher_touch_x, launcher_touch_y);
+    aster_ui_shell_input_prepare_hide();
     save_now();
     aster_ui_shell_clear_for_hide();
     for (int i = 0; i < RIBBONS; i++) {
@@ -1864,7 +1881,7 @@ void aster_launcher_step_page(int dir)
 
 uint32_t aster_launcher_idle_wait_ms(void)
 {
-    if (power_idle.screen_off)
+    if (aster_ui_shell_power_is_off())
         return 25;
     return visible && (drag.down || animating || launching) ? 1 : 10;
 }
@@ -1873,7 +1890,7 @@ void aster_launcher_pump_idle(void)
 {
     if (aster_ui_shell_boot_frame_consumed(visible))
         return;
-    if (!power_idle.screen_off && aster_ui_fonts_poll() && aster_ui_lvgl_screen()) {
+    if (!aster_ui_shell_power_is_off() && aster_ui_fonts_poll() && aster_ui_lvgl_screen()) {
         ribbon_cache_clear();
         /* Rebaking during a flick is the hitch between cards. Glyphs that
    * arrive mid-gesture wait until the ribbon has settled. */
@@ -1914,39 +1931,10 @@ void aster_launcher_pump_idle(void)
         sound_return = false;
         aster_launcher_show();
     }
-    aster_touch_evt_t events[ASTER_PLAT_TOUCH_EVENT_QUEUE];
-    int n = aster_device_input_poll(events, ARRAY_SIZE(events));
-    uint32_t masks[ASTER_PLAT_TOUCH_EVENT_QUEUE];
-    for (int i = 0; i < n; i++)
-        masks[i] = events[i].contact_mask;
-    aster_touch_ui_begin_batch(&launcher_touch_ui, masks, (uint8_t)n);
-    for (int i = 0; i < n; i++) {
-        if (aster_launcher_power_touch(events[i].contact_mask != 0))
-            continue;
-        struct aster_touch_ui_decision ui =
-            aster_touch_ui_accept(&launcher_touch_ui, (uint8_t)i, events[i].action, events[i].slot,
-                                  events[i].contact_mask);
-        if (ui.reset_gesture) {
-            aster_gesture_reset();
-            memset(&drag, 0, sizeof(drag));
-            pull = 0;
-        }
-        if (ui.release_pointer) {
-            lv_indev_wait_release(aster_ui_lvgl_indev());
-            aster_ui_lvgl_pointer(launcher_touch_x, launcher_touch_y, false);
-        }
-        if (ui.route) {
-            launcher_touch_x = events[i].x;
-            launcher_touch_y = events[i].y;
-            touch(&events[i]);
-        }
-    }
-    aster_key_evt_t keys[ASTER_PLAT_MAX_KEYS];
-    while (aster_device_input_keys_poll(keys, ASTER_PLAT_MAX_KEYS) > 0) {
-    }
-    if (power_idle.screen_off) {
+    aster_ui_shell_input_poll(touch, flux_reset_drag);
+    if (aster_ui_shell_power_is_off()) {
         aster_launcher_power_tick();
-        if (power_idle.screen_off)
+        if (aster_ui_shell_power_is_off())
             return;
     }
     uint64_t now = aster_os_uptime_ms();
@@ -1995,20 +1983,14 @@ void aster_launcher_pump_idle(void)
         sound_pending = S_TAP;
     } else if (a == ACT_TIMEOUT) {
         timeout_index = (timeout_index + 1) % ARRAY_SIZE(screen_timeouts);
-        power_idle.timeout_ms = screen_timeouts[timeout_index];
+        aster_ui_shell_power_set_timeout(screen_timeouts[timeout_index]);
         save();
         char title[64];
         snprintf(title, sizeof(title), "自动熄屏   %s", screen_timeout_names[timeout_index]);
         if (timeout_button)
             set_text(lv_obj_get_child(timeout_button, 0), title);
     } else if (a == ACT_SCREEN_OFF) {
-        aster_power_caps_t caps = {0};
-        (void)aster_power_caps(&caps);
-        aster_power_request_t r = {sizeof(r), ASTER_POWER_API_VERSION, ASTER_POWER_SCREEN_OFF,
-                                   caps.screen_wake, 0};
-        if (!aster_power_transition(&r, power_idle.brightness))
-            power_idle.screen_off = true;
-        else
+        if (aster_ui_shell_power_screen_off())
             notify("当前设备无法熄屏。");
     } else if (a == ACT_RESTART || a == ACT_SHUTDOWN || a == ACT_SLEEP || a == ACT_USB_STORAGE) {
         aster_power_request_t request = {.size = sizeof(request),
@@ -2104,9 +2086,7 @@ void aster_launcher_pump_idle(void)
     if (draw_pending)
         redraw();
     if (brightness_pending >= 0) {
-        power_idle.brightness = brightness_pending * 255 / 100;
-        if (!power_idle.screen_off)
-            (void)aster_device_backlight_set(true, power_idle.brightness);
+        aster_ui_shell_power_set_brightness((uint8_t)(brightness_pending * 255 / 100), true);
         brightness_pending = -1;
     }
     if (volume_pending >= 0) {
@@ -2149,116 +2129,12 @@ void aster_launcher_pump_idle(void)
     }
     if (save_due && now >= save_due && !drag.down && !animating && !launching)
         save_now();
-    if (!power_idle.screen_off) {
+    if (!aster_ui_shell_power_is_off()) {
         tick_clock();
         aster_wifi_settings_tick();
         aster_qpanel_tick();
-        if (!power_idle.screen_off)
+        if (!aster_ui_shell_power_is_off())
             aster_ui_lvgl_pump();
     }
 }
 
-/* Same owner as Launcher and APP event dispatch. The waking gesture is fully
- * consumed, preventing a wake tap from launching an APP or moving a slider. */
-bool aster_launcher_power_touch(bool contacts_down)
-{
-    power_contacts_down = contacts_down;
-    return aster_power_idle_activity(&power_idle, aster_os_uptime_ms(), contacts_down);
-}
-
-static void dispatch_power_key(aster_power_key_action_t action)
-{
-    if (action == ASTER_KEY_ACTION_SHUTDOWN) {
-        aster_power_request_t request = {sizeof(request), ASTER_POWER_API_VERSION,
-                                         ASTER_POWER_SHUTDOWN, 0, 0};
-        if (aster_power_schedule(&request) && visible)
-            notify("当前无法执行，请稍后再试。");
-    } else if (action == ASTER_KEY_ACTION_SCREEN) {
-        aster_power_caps_t caps = {0};
-        (void)aster_power_caps(&caps);
-        aster_power_request_t request = {sizeof(request), ASTER_POWER_API_VERSION,
-                                         ASTER_POWER_SCREEN_OFF, caps.screen_wake, 0};
-        if (!aster_power_transition(&request, power_idle.brightness))
-            power_idle.screen_off = true;
-    } else if (action == ASTER_KEY_ACTION_HOME) {
-        if (visible)
-            want_page = HOME;
-        else
-            aster_qpanel_request_exit("应用");
-    }
-}
-
-void aster_launcher_power_tick(void)
-{
-    if (!power_idle.initialized)
-        return;
-
-    static struct {
-        uint64_t pressed_at;
-        uint32_t code;
-        bool down, woke, handled;
-    } keys[8];
-
-    uint64_t now = aster_os_uptime_ms();
-    bool held = power_contacts_down;
-    for (unsigned i = 0; i < ARRAY_SIZE(keys); i++)
-        held |= keys[i].down;
-    (void)aster_power_idle_tick(&power_idle, now, held);
-    const aster_power_ops_t *ops = aster_power_ops();
-    if (!ops || !ops->map_key)
-        return;
-    aster_power_key_t events[8];
-    int n = aster_power_keys(events, ARRAY_SIZE(events));
-    for (int i = 0; i < n; i++) {
-        aster_power_key_t *e = &events[i];
-        unsigned slot = ARRAY_SIZE(keys), free_slot = ARRAY_SIZE(keys);
-        for (unsigned j = 0; j < ARRAY_SIZE(keys); j++) {
-            if (keys[j].down && keys[j].code == e->code) {
-                slot = j;
-                break;
-            }
-            if (!keys[j].down && free_slot == ARRAY_SIZE(keys))
-                free_slot = j;
-        }
-        if (e->pressed) {
-            if (slot != ARRAY_SIZE(keys) || free_slot == ARRAY_SIZE(keys))
-                continue;
-            keys[free_slot].down = true;
-            keys[free_slot].code = e->code;
-            keys[free_slot].pressed_at = e->timestamp_ms;
-            keys[free_slot].handled = false;
-            keys[free_slot].woke = aster_power_idle_activity(&power_idle, e->timestamp_ms, true);
-            continue;
-        }
-        if (slot == ARRAY_SIZE(keys))
-            continue;
-        keys[slot].down = false;
-        bool consumed =
-            aster_power_idle_activity(&power_idle, e->timestamp_ms, power_contacts_down);
-        if (keys[slot].handled)
-            continue;
-        uint32_t duration = (uint32_t)(e->timestamp_ms - keys[slot].pressed_at);
-        aster_power_key_action_t action = aster_power_map_key(e->code, false, duration);
-        if (action == ASTER_KEY_ACTION_SHUTDOWN || (!keys[slot].woke && !consumed))
-            dispatch_power_key(action);
-    }
-    now = aster_os_uptime_ms();
-    for (unsigned i = 0; i < ARRAY_SIZE(keys); i++) {
-        if (!keys[i].down || keys[i].handled)
-            continue;
-        uint32_t duration = (uint32_t)(now - keys[i].pressed_at);
-        aster_power_key_action_t action = aster_power_map_key(keys[i].code, true, duration);
-        if (action != ASTER_KEY_ACTION_NONE) {
-            keys[i].handled = true;
-            dispatch_power_key(action);
-        }
-    }
-}
-
-void aster_launcher_power_resume(void)
-{
-    power_idle.screen_off = false;
-    power_idle.last_activity_ms = aster_os_uptime_ms();
-    power_idle.wake_gesture = true;
-    (void)aster_power_screen_on(power_idle.brightness);
-}
