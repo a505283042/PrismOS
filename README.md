@@ -1,88 +1,84 @@
-# Aster Firmware
+# PrismOS
 
-Aster 提供 Launcher、首次联网设置、应用安装和 WAMR AOT 运行时。当前 ABI 为 4.5.0。设备固件按开发板构建，应用按 CPU 架构构建。
+**一个核心，多种体验。**
 
-## 选择开发板
+PrismOS 是基于 [Aster 固件](https://github.com/a505283042/aster-firmware) 的轻量嵌入式系统项目。保留原有系统核心与应用兼容性，将公共界面逻辑和独立主题分离，支持自由选择桌面主题、系统字体和提示音。
 
-- **立创 ESP32-S3 实战派**。Zephyr，240×320，应用目标 `xtensa`，设备标识 `aster.esp32s3.lckfb`。使用下方默认配置。
-- **鱼鹰光电 P4C5**。ESP-IDF 6.0，ST7102 480×480，外接 C5 提供 Wi-Fi。应用目标 `riscv`，设备标识 `osptek-p4-st7102`。[接线、构建与烧录](boards/osptek_p4/README.md)
-- **FAKE POD NANO PRO**。ESP32-S31，ESP-IDF 6.1，460×460，应用目标 `riscv`，设备标识 `fakepod-s31`。板上可使用本地播放器、经典蓝牙音频和 USB 读卡器。[板级说明](boards/fakepod_s31/README.md)
-- **微雪 ESP32-S3-Touch-LCD-3.5B**。Zephyr 实验性配置，应用目标 `xtensa`。使用 `boards/waveshare_35b/selection.conf` 单独构建。[板级说明](boards/waveshare_35b/README.md)
+首发验证设备为 FakePod Nano Pro（ESP32-S31），保留 ESP32-S3 和 ESP32-P4 原有平台支持。
 
-## 构建与烧录
+## 三层系统架构
 
-Zephyr 使用 Python 3.12、west 和 Zephyr SDK。新工作区先按 `west.yml` 初始化依赖并应用驱动补丁。以下命令在固件仓库根目录运行。[工作区补丁](patches/README.md)
-
-```bash
-python tools/firmware.py menuconfig
-python tools/firmware.py build
-python tools/firmware.py flash
-```
-
-两块 ESP-IDF 板各自使用对应版本的 IDF 环境和独立构建目录，命令见上方板级说明。已发布的预编译镜像及适用板型见 [固件 Release](https://github.com/hello-myj/aster-firmware/releases)。
-
-## 首次开机与应用安装
-
-在已发布初始化资源的板上插好 SD 卡，首次开机按屏幕提示用手机连接设备热点，在网页填写 Wi-Fi。设备从默认 OBS 源下载并校验系统字体和本机商城，完成后进入桌面。已有完整资源的卡可离线启动。自建服务或更换证书见 [首次开机](docs/first-boot-setup.md) 和 [下载源配置](docs/distribution-config.md)。
-
-开发者可从 SDK 通过串口安装 AOT 包。以下以 RISC-V 为例，立创板使用 `xtensa`。固件在安装时核对架构、ABI 和包完整性，在启动时核对清单中的 `supported_boards` 和 `requires`。
+| 层级 | 职责 | 复用方式 |
+| --- | --- | --- |
+| 系统核心（System Core） | 设备、音频、网络、存储、应用生命周期 | 完全共用 |
+| 公共界面框架（UI Shell） | 显示调度衔接、输入、桌面切换、快捷面板、系统设置 | 所有主题共用 |
+| 独立界面主题（UI Theme） | 桌面布局、动画、配色、图标和交互风格 | 每套主题独立 |
 
 ```text
-aster deploy dist/riscv/<应用>.ast --target riscv --port <串口> --run
+       FLUX / Classic / 后续主题
+                  │
+           公共 UI Shell
+      主题 / 字体 / 提示音选择
+                  │
+         Aster 系统核心（保留）
+                  │
+          现有 HAL 与板级驱动
+                  │
+       ESP32-S3 / S31 / P4
 ```
 
-## 显示和 Wi-Fi
+主题不仅仅是换色，而是允许不同桌面布局、动画和交互方式。所有主题共用原有音频、网络、应用生命周期、显示宿主及系统服务。字体和提示音可独立选择，不强制跟随主题。
 
-设备 shell：
+初期主题布局随固件编译，运行时切换无需重启；可选字体、提示音和主题数据资源通过 TF 卡安装。不引入通用脚本或插件框架。
 
-```text
-aster display headless
-aster display portrait
-aster sys info
-```
+## 开发路线
 
-有 APP 运行时，手动切换显示会返回忙，先停止该 APP。APP 在 `app.toml` 的 `[app]` 下设置 `orientation = "landscape"` 或 `"portrait"`。
+| 阶段 | 内容 |
+| --- | --- |
+| P0 | 原版固件基线验证 |
+| P1.1 | 建立轻量 UI Shell，保持原 FLUX 行为 |
+| P1.2 | 提取 FLUX 公共界面逻辑 |
+| P1.3 | 建立主题接口、注册及切换机制 |
+| P1.4 | 新增第二套独立桌面主题 |
+| P2 | 多套系统字体切换 |
+| P3 | 多套系统提示音切换 |
+| P4 | 个性化设置整合与稳定性验收 |
 
-下拉快捷设置进入 Wi-Fi 或个人热点。热点地址为 `192.168.4.1/24`，DHCP 从 `192.168.4.10` 起，不提供 NAT。
+详细任务、源码切入点、接口设计、生命周期、回退机制和验收矩阵见 [开发计划 v0.4](docs/DEVELOPMENT_PLAN.zh-CN.md)。该文件是当前唯一实施计划。
 
-## 网络
+## 开发原则
 
-默认随 Wi-Fi 启用。APP 使用六个导入：`aster_net_info`、`aster_net_open`、`aster_net_io`、`aster_net_status`、`aster_net_cancel`、`aster_net_close`。设备 shell 仍用 `aster net` 做诊断。
+- 保留 Aster 系统核心、应用二进制接口（ABI）、应用运行时、现有驱动和平台适配。
+- 公共界面框架只协调现有 UI 调度，不新建 UI 线程，不重写 LVGL 或显示流水线。
+- 每套主题独立实现表现层，系统级动作共用；只激活一套主题，不为每个主题分配常驻全屏缓冲。
+- 复用现有字体加载器、提示音服务、快捷面板、配置存储及应用安装机制。
+- 不因主题、字体或提示音切换停止后台音乐。
+- 每阶段独立提交、测试及回退，不提前重构 HAL、BSP、商城、SDK 或资源服务器。
+- 保持原有首次开机下载协议与旧应用资源路径，不格式化用户 TF 卡。
 
-- [TCP/UDP](docs/network-transport-cli.zh-CN.md)
-- [HTTP/HTTPS](docs/network-http-cli.zh-CN.md)
-- [MQTT/MQTTS](docs/network-mqtt-cli.zh-CN.md)
-- [WebSocket/WSS](docs/network-websocket-cli.zh-CN.md)
+## 当前状态
 
-## 目录
+- 已完成固件源码及 Git 历史迁移：[初始基线 d201d36](https://github.com/a505283042/PrismOS/commit/d201d3690dad5b9e9efbfd100c799f2777d780fc)。
+- 已确定三层架构及 v0.4 开发计划。
+- 原版固件基线编译、真机验证以及新增功能仍待完成。
+- 独立商城、资源发布服务器及新增板卡适配按实际需求另行评审，本期不实施。
 
-```text
-config/                   配置
-hardware/                 板卡描述
-boards/                   设备树和板级配置
-contract/include/aster/   公开 ABI
-systems/zephyr/           设备服务和桌面
-```
+## 开发文档
 
-系统字体：
+- [PrismOS 开发计划：三层界面架构与轻量个性化](docs/DEVELOPMENT_PLAN.zh-CN.md)
+- [原始 Aster 项目说明](docs/ASTER_UPSTREAM_README.md)
+- [现有平台适配接口](docs/platform-adapter-api.md)
+- [现有首次开机流程](docs/first-boot-setup.md)
+- [现有下载源配置](docs/distribution-config.md)
 
-```bash
-python tools/resources.py
-```
+项目新增说明、开发记录和测试报告统一使用中文，技术标识及命令保留原文。
 
-首次开机引导负责准备 SD 字库。自行重建字体后需重新分发资源；烧录镜像不会改写卡上的字形。字体与光带的像素对齐、资源重建及验证说明见 [桌面显示清晰度](docs/ui-display-clarity.md)。
+## 编译与开发基线
 
-## 检查
+参考版本：[Aster 提交 2ff46e11](https://github.com/a505283042/aster-firmware/commit/2ff46e11bb63f12b613fc7fc071a6014d243b832)。
 
-```bash
-python tools/font_metrics.py --check
-python tools/export_contract.py
-python tools/host.py
-python -m unittest discover -s tests -v
-```
+按各板卡原有构建说明和 SDK 版本编译，完成基线验证前不改动底层驱动及工具链。独立发布配置完成前，不触发继承的固件发布工作流。
 
-架构见 [docs/architecture.md](docs/architecture.md)。从工程到设备的步骤见 [快速入门](docs/quickstart.md)。许可见 [NOTICE.md](NOTICE.md)。
+## 版权与许可
 
-## 新板适配
-
-同架构、同 AOT 配置的新板可以沿用现有 SDK。固件通过板型 ID 和运行时能力描述设备。ESP-IDF 的音频编解码器、外接 C5 和板上接线由各板注册。实现入口及可选服务见 [平台适配接口](docs/platform-adapter-api.md)。
+PrismOS 保留原始 Aster Git 历史、许可证及版权声明。详见 [LICENSE](LICENSE)、[NOTICE.md](NOTICE.md) 及相关第三方许可文件。新增资源须确认合法分发权，并保留必要署名。
