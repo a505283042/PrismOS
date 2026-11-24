@@ -5,6 +5,7 @@
 #include "aster_device.h"
 
 /* 只在现有 UI 所有者调用；主题回调不持有事件指针。 */
+bool aster_ui_shell_input_contacts_down(void);
 void aster_ui_shell_input_reset(void);
 void aster_ui_shell_input_prepare_show(void);
 void aster_ui_shell_input_prepare_hide(void);

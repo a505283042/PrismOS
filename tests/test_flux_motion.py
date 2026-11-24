@@ -122,8 +122,7 @@ static unsigned scroll_duration;
 static uint64_t now,animation_ms;
 static bool visible=true,modal,motion=true,animating,coasting,draw_pending,launching;
 static uint64_t aster_os_uptime_ms(void) {return now;}
-static bool aster_wifi_settings_is_open(void) {return false;}
-static bool aster_bluetooth_settings_is_open(void) {return false;}
+static bool aster_ui_shell_settings_pages_open(void) {return false;}
 static bool header_touch(const aster_touch_evt_t *raw) {(void)raw;return false;}
 static void aster_ui_lvgl_pointer(int x,int y,bool pressed) {(void)x;(void)y;(void)pressed;}
 static void *aster_ui_lvgl_indev(void) {return 0;}
@@ -137,7 +136,6 @@ static void event(unsigned ms,unsigned y,unsigned type) {
  now=ms;aster_touch_evt_t e={155,y,type};touch(&e);
 }
 int main(void) {
- (void)launcher_touch_ui;(void)launcher_touch_x;(void)launcher_touch_y;
  event(0,280,ASTER_TOUCH_DOWN);event(100,180,ASTER_TOUCH_MOVE);event(120,160,ASTER_TOUCH_UP);
  assert(animating && coasting && scroll_duration>1000 && target_phase>from_phase+2500);
  assert(selected[0]==1); /* caption follows current card rather than final target */
@@ -199,9 +197,8 @@ typedef struct {uint32_t x,y,action;} aster_touch_evt_t;
 static bool visible=true,modal,wifi,panel,launching;
 static int page=HOME,view_h=320,action,waits,pointers;
 static struct {bool down;} drag;
-static bool aster_wifi_settings_is_open(void) {return wifi;}
-static bool aster_bluetooth_settings_is_open(void) {return false;}
-static bool aster_qpanel_is_open(void) {return panel;}
+static bool aster_ui_shell_settings_pages_open(void) {return wifi;}
+static bool aster_ui_shell_settings_panel_open(void) {return panel;}
 static void aster_ui_lvgl_pointer(int x,int y,bool p) {(void)x;(void)y;(void)p;pointers++;}
 static void *aster_ui_lvgl_indev(void) {return 0;}
 static void lv_indev_wait_release(void *p) {(void)p;waits++;}

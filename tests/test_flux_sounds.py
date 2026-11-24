@@ -87,7 +87,8 @@ static bool quiet;
 static int volume_pending=-1,volume=70,plays,stops;
 static unsigned last_gain,last_priority;
 static uint64_t aster_os_uptime_ms(void) {return now;}
-static int aster_device_audio_get_volume(void) {return volume;}
+static int aster_ui_shell_volume_get(void) {return volume;}
+static int aster_ui_shell_volume_pending(void) {return volume_pending;}
 static void aster_device_audio_ui_stop(void) {stops++;}
 static int aster_device_audio_ui_play(const int16_t *pcm,size_t frames,unsigned gain,unsigned priority) {
  assert(pcm && frames==1);plays++;last_gain=gain;last_priority=priority;return 0;

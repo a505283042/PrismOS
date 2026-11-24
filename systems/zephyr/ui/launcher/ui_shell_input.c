@@ -18,6 +18,8 @@ static bool power_contacts_down;
 static void (*power_home)(void);
 static void (*power_error)(void);
 
+bool aster_ui_shell_input_contacts_down(void) { return power_contacts_down; }
+
 void aster_ui_shell_input_reset(void)
 {
     aster_touch_ui_reset(&launcher_touch_ui);

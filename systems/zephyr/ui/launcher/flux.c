@@ -20,6 +20,8 @@
 #include "ui_shell_input.h"
 #include "ui_shell_state.h"
 #include "ui_shell_settings.h"
+#include "ui_shell.h"
+#include "ui_theme.h"
 #include "ui_lvgl.h"
 #include "ui_font.h"
 #include "flux_font.h"
@@ -71,6 +73,7 @@ enum {
     ACT_SHUTDOWN,
     ACT_SLEEP,
     ACT_USB_STORAGE,
+    ACT_THEME,
     ACT_GROUP = 32
 };
 
@@ -188,6 +191,7 @@ static unsigned scroll_duration = FLUX_SNAP_MS;
 static bool coasting, draw_pending;
 static uint64_t animation_ms, last_draw, hold_ms, clock_sec = UINT64_MAX;
 static bool animating, launching, visible, initialized, want_show = true, motion = true, quiet;
+static bool theme_launch_queued;
 static volatile int want_page = -1;
 static int page, prior_page, action;
 static uint64_t save_due;
@@ -616,7 +620,7 @@ static lv_draw_buf_t *ribbon_cache_take(int entry)
     return NULL;
 }
 #endif
-void aster_launcher_art_stats(uint32_t *bakes, uint32_t *hits, uint32_t *cached_bytes)
+static void flux_art_stats(uint32_t *bakes, uint32_t *hits, uint32_t *cached_bytes)
 {
     *bakes = art_bakes;
     *hits = art_hits;
@@ -1286,8 +1290,11 @@ static void build_mixer(void)
             lv_obj_add_event_cb(control, power_button_guard, LV_EVENT_ALL | LV_EVENT_PREPROCESS,
                                 &power_button_strokes[i + 2]);
         }
-    if (!power.modes)
+    if (!power.modes) {
         text(body, "暂无可配置的电源选项", 17, y, 286, DIM, 16, 160);
+        y += 40;
+    }
+    button(body, "切换主题 / Theme", 17, y, 286, power_height, 0x252d22, ACT_THEME);
     lv_obj_t *settings = button(body, NULL, 273, 413, 30, 27, 0x252d22, ACT_SYSTEM);
     icon(settings, ICON_SETTINGS, 6, 4, 18, ACCENT);
 }
@@ -1401,6 +1408,7 @@ static void open_current(void)
         return;
     }
     int err = aster_ui_shell_app_start(e->id);
+    theme_launch_queued = err == 0;
     aster_service_logf(3, "flux: launch %s -> %d", e->id, err);
     if (err) {
         launching = false;
@@ -1683,16 +1691,6 @@ static void palette(aster_qpanel_palette_t *p)
         .bg = 0x181b18, .fg = FG, .dim = DIM, .surface = 0x252d22, .accent = ACCENT};
 }
 
-static const aster_qpanel_theme_ops_t theme = {.palette = palette};
-
-static void flux_power_home(void)
-{
-    if (visible)
-        want_page = HOME;
-    else
-        aster_ui_shell_settings_request_exit();
-}
-
 static void flux_power_error(void)
 {
     if (visible)
@@ -1705,14 +1703,15 @@ static void flux_reset_drag(void)
     pull = 0;
 }
 
-int aster_launcher_init(void)
+static int flux_init(void)
 {
     if (initialized)
         return 0;
     initialized = true;
     aster_ui_shell_power_bind();
     aster_ui_shell_settings_load_timeout();
-    aster_ui_shell_power_init(aster_ui_shell_settings_timeout_ms(), 230, flux_power_home, flux_power_error);
+    aster_ui_shell_power_init(aster_ui_shell_settings_timeout_ms(), 230,
+                              aster_ui_shell_power_home, aster_ui_shell_power_error);
     aster_ui_shell_input_reset();
     for (size_t face = 0; face < ARRAY_SIZE(flux_icon_sizes); face++)
         for (size_t i = 0; i < ARRAY_SIZE(chrome[face]); i++) {
@@ -1728,7 +1727,7 @@ int aster_launcher_init(void)
     for (int i = 0; i < RIBBONS; i++)
         ribbons[i].entry = -1;
     aster_ui_shell_catalog_init();
-    aster_ui_shell_settings_bind_panel(&theme);
+    aster_ui_shell_bind_panel();
     uint8_t s[8];
     size_t n = 0;
     if (!aster_service_kv_get(KV_ID, "state", s, sizeof(s), &n) && n == sizeof(s)) {
@@ -1743,11 +1742,11 @@ int aster_launcher_init(void)
     return 0;
 }
 
-void aster_launcher_show(void)
+static void flux_show(void)
 {
     if (visible || !aster_ui_lvgl_screen())
         return;
-    aster_launcher_init();
+    flux_init();
     aster_ui_shell_input_prepare_show();
     view_w = (int)aster_ui_lvgl_width();
     view_h = (int)aster_ui_lvgl_height();
@@ -1761,6 +1760,7 @@ void aster_launcher_show(void)
     filter_entries();
     warm_visible_text();
     visible = true;
+    theme_launch_queued = false;
     aster_ui_shell_catalog_ack();
     launching = false;
     memset(&drag, 0, sizeof(drag));
@@ -1811,7 +1811,7 @@ void aster_launcher_show(void)
                        aster_ui_shell_catalog_count());
 }
 
-void aster_launcher_hide(void)
+static void flux_hide(void)
 {
     if (!visible)
         return;
@@ -1831,30 +1831,30 @@ void aster_launcher_hide(void)
     clock_sec = UINT64_MAX;
 }
 
-void aster_launcher_request_show(void)
+static void flux_request_show(void)
 {
     want_show = true;
 }
 
-void aster_launcher_show_page(int p)
+static void flux_show_page(int p)
 {
     want_page = p ? FILTERS : HOME;
 }
 
-void aster_launcher_step_page(int dir)
+static void flux_step_page(int dir)
 {
     if (visible && page == HOME)
         settle((selected[group] + (dir > 0 ? 1 : -1)) * 1000);
 }
 
-uint32_t aster_launcher_idle_wait_ms(void)
+static uint32_t flux_idle_wait_ms(void)
 {
     if (aster_ui_shell_power_is_off())
         return 25;
     return visible && (drag.down || animating || launching) ? 1 : 10;
 }
 
-void aster_launcher_pump_idle(void)
+static void flux_pump_idle(void)
 {
     if (aster_ui_shell_boot_frame_consumed(visible))
         return;
@@ -1890,14 +1890,14 @@ void aster_launcher_pump_idle(void)
             return;
         }
         aster_splash_off();
-        aster_launcher_show();
+        flux_show();
     }
     if (!visible)
         return;
     if (aster_ui_shell_catalog_dirty() && !modal) {
-        aster_launcher_hide();
+        flux_hide();
         sound_return = false;
-        aster_launcher_show();
+        flux_show();
     }
     aster_ui_shell_input_poll(touch, flux_reset_drag);
     if (aster_ui_shell_power_is_off()) {
@@ -1967,6 +1967,8 @@ void aster_launcher_pump_idle(void)
         int r = aster_ui_shell_settings_schedule_power(mode);
         if (r)
             notify("当前无法执行，请稍后再试。");
+    } else if (a == ACT_THEME) {
+        aster_ui_shell_theme_request_next();
     } else if (a == ACT_QUIET) {
         /* Mute FLUX interaction sounds only. Never touch the shared codec
          * volume or pause/mute a media session still running after APP exit. */
@@ -2077,3 +2079,28 @@ void aster_launcher_pump_idle(void)
     }
 }
 
+
+/* P1.3：原 FLUX 实现通过主题契约注册，公共状态继续由 Shell 持有。 */
+static bool flux_mount(void)
+{
+    flux_show();
+    return visible && root != NULL;
+}
+
+static bool flux_is_visible(void) { return visible; }
+
+static bool flux_can_switch(void)
+{
+    return visible && !drag.down && !animating && !launching && !theme_launch_queued && !modal &&
+           action == ACT_NONE && want_page < 0;
+}
+
+const aster_ui_theme_t aster_ui_theme_flux = {
+    .id = "flux", .name = "FLUX",
+    .init = flux_init, .show = flux_mount, .hide = flux_hide,
+    .request_show = flux_request_show, .show_page = flux_show_page,
+    .step_page = flux_step_page, .tick = flux_pump_idle,
+    .idle_wait_ms = flux_idle_wait_ms, .is_visible = flux_is_visible,
+    .can_switch = flux_can_switch, .palette = palette,
+    .art_stats = flux_art_stats, .power_error = flux_power_error,
+};

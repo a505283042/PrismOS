@@ -88,6 +88,7 @@ int main(int argc, char **argv)
     assert(px == 32 && py == 48);
     aster_ui_shell_clear_for_hide(); expect("GAC");
     assert(aster_ui_shell_boot_frame_consumed(visible)); expect("D");
+    assert(aster_ui_shell_boot_busy());
     display = 1; setup = 1;
 #ifdef CONFIG_ASTER_FIRST_BOOT
     assert(aster_ui_shell_boot_frame_consumed(visible));
@@ -100,6 +101,7 @@ int main(int argc, char **argv)
     expect(visible ? "D" : "DB");
     assert(!aster_ui_shell_boot_frame_consumed(false)); expect("D");
 #endif
+    assert(!aster_ui_shell_boot_busy());
     return 0;
 }
 """

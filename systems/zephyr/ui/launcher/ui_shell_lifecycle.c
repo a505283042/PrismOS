@@ -46,10 +46,15 @@ void aster_ui_shell_clear_for_hide(void)
     lv_obj_clean(aster_ui_lvgl_screen());
 }
 
+static bool boot_busy;
+
+bool aster_ui_shell_boot_busy(void) { return boot_busy; }
+
 bool aster_ui_shell_boot_frame_consumed(bool desktop_visible)
 {
     static bool boot_image_started;
 
+    boot_busy = true;
     if (!aster_device_display_count())
         return true;
     if (!boot_image_started) {
@@ -63,5 +68,6 @@ bool aster_ui_shell_boot_frame_consumed(bool desktop_visible)
         return true;
     }
 #endif
+    boot_busy = false;
     return false;
 }

@@ -97,6 +97,7 @@ int main(void){
             'launcher/ui_shell_input.c',
             'launcher/ui_shell_state.c',
             'launcher/ui_shell_settings.c',
+            'launcher/theme_probe.c',
             'launcher/flux.c',
             'font_sd.c',
             'ui_font.c',

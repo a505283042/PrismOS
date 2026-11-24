@@ -16,5 +16,6 @@ void aster_ui_shell_clear_for_hide(void);
 
 /* 无显示设备或首次配置占用当前帧时返回 true，调用者跳过桌面更新。 */
 bool aster_ui_shell_boot_frame_consumed(bool desktop_visible);
+bool aster_ui_shell_boot_busy(void); /* UI 所有者：最近一次引导帧是否被占用 */
 
 #endif

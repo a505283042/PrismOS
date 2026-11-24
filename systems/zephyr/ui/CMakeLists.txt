@@ -58,7 +58,7 @@ if(CONFIG_ASTER_FIRST_BOOT)
 endif()
 
 if(CONFIG_ASTER_LAUNCHER_NATIVE)
-	target_sources(app PRIVATE launcher/ui_shell.c launcher/ui_shell_lifecycle.c launcher/ui_shell_input.c launcher/ui_shell_state.c launcher/ui_shell_settings.c launcher/flux.c launcher/flux_font.c flux_draw.c)
+	target_sources(app PRIVATE launcher/ui_shell.c launcher/ui_shell_lifecycle.c launcher/ui_shell_input.c launcher/ui_shell_state.c launcher/ui_shell_settings.c launcher/theme_probe.c launcher/flux.c launcher/flux_font.c flux_draw.c)
 	target_include_directories(app PRIVATE launcher)
 endif()
 

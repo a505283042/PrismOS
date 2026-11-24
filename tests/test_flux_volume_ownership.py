@@ -26,13 +26,15 @@ class FluxVolumeOwnership(unittest.TestCase):
 
     def test_return_to_launcher_does_not_mute_music(self):
         show = section(
-            self.source, "void aster_launcher_show(void)",
-            "void aster_launcher_hide(void)")
-        self.assertIn("volume_pending = -1;", show)
+            self.source, "static void flux_show(void)",
+            "static void flux_hide(void)")
+        self.assertIn("aster_ui_shell_volume_discard_pending();", show)
         self.assertNotIn("volume_pending = 0;", show)
         self.assertNotIn("aster_device_audio_set_volume(", show)
         # Restoring a previously persisted volume at boot is separate.
-        self.assertIn("aster_qpanel_restore_volume();", show)
+        self.assertIn("aster_ui_shell_settings_on_show();", show)
+        settings = SRC.with_name("ui_shell_settings.c").read_text(encoding="utf-8")
+        self.assertIn("aster_qpanel_restore_volume();", settings)
 
     def test_quiet_setting_only_affects_ui_sound_effects(self):
         action = section(
@@ -52,9 +54,10 @@ class FluxVolumeOwnership(unittest.TestCase):
         slider = section(
             self.source, "static void slider_changed(lv_event_t *e)",
             "static void slider_card(")
-        self.assertIn("volume_pending = v;", slider)
+        self.assertIn("aster_ui_shell_volume_changed(v,", slider)
+        state = SRC.with_name("ui_shell_state.c").read_text(encoding="utf-8")
         tick = section(
-            self.source, "    if (volume_pending >= 0) {",
+            state, "    if (volume_pending >= 0) {",
             "    if (volume_save) {")
         self.assertIn("aster_device_audio_set_volume(volume_pending)", tick)
 

@@ -138,6 +138,18 @@ static void perf_event(lv_event_t *event)
 
 int aster_idf_ui_command(int argc, char **argv)
 {
+    if (argc == 4 && !strcmp(argv[2], "theme")) {
+        if (!strcmp(argv[3], "status")) {
+            printf("THEME active=%s\n", aster_ui_shell_theme_id());
+            return 0;
+        }
+        if (app_active)
+            return ASTER_EBUSY;
+        if (!aster_ui_shell_theme_request_id(argv[3]))
+            return ASTER_EINVAL;
+        printf("THEME queued=%s (UI owner applies at a safe point)\n", argv[3]);
+        return 0;
+    }
     if (argc == 3 && !strcmp(argv[2], "setup-status")) {
         aster_setup_snapshot s;
         aster_setup_get(&s);
@@ -414,7 +426,8 @@ static void flush(lv_display_t *d, const lv_area_t *area, uint8_t *pixels)
         uint64_t start = esp_timer_get_time();
         uint32_t pitch = lv_display_get_horizontal_resolution(d);
         const uint8_t *source = pixels + ((size_t)area->y1 * pitch + area->x1) * 2;
-        aster_plat_display_write_at(source, area->x1, area->y1, w, h, pitch);
+        if (aster_plat_display_write_at(source, area->x1, area->y1, w, h, pitch))
+            aster_ui_shell_theme_report_display_error();
         perf.flush_us += esp_timer_get_time() - start;
         perf.flushes++;
         perf.bytes += (uint64_t)w * h * 2;
@@ -634,6 +647,12 @@ void aster_idf_ui_idle(void)
     if (aster_deploy_ui_tick())
         return;
     perf_tick();
+    bool theme_blocked = app_active || bench_end != 0;
+#if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
+    theme_blocked = theme_blocked || atomic_load(&ui_bench_reserved) ||
+                    atomic_load(&ui_pipe_request) || aster_idf_stage_c_running();
+#endif
+    aster_ui_shell_theme_set_blocked(theme_blocked);
     uint64_t start = esp_timer_get_time();
     aster_ui_shell_pump_idle();
     uint32_t us = (uint32_t)(esp_timer_get_time() - start);

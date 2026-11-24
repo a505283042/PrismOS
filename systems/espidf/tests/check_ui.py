@@ -74,6 +74,7 @@ static inline int ledc_update_duty(int m,int c) {(void)m;(void)c;return 0;}
             "launcher/ui_shell_input.c",
             "launcher/ui_shell_state.c",
             "launcher/ui_shell_settings.c",
+            "launcher/theme_probe.c",
             "launcher/flux.c",
             "launcher/flux_font.c",
             "gesture.c",
