@@ -69,6 +69,8 @@ static inline int ledc_update_duty(int m,int c) {(void)m;(void)c;return 0;}
     sources += [
         shared / name
         for name in (
+            "launcher/ui_shell.c",
+            "launcher/ui_shell_lifecycle.c",
             "launcher/flux.c",
             "launcher/flux_font.c",
             "gesture.c",
