@@ -8,7 +8,7 @@
 #include "ui_lvgl.h"
 #include "ui_font.h"
 #include "font_sd.h"
-#include "launcher.h"
+#include "ui_shell.h"
 #include "qpanel.h"
 #include "wifi_settings.h"
 #include "aster_setup.h"
@@ -81,7 +81,7 @@ static void perf_reset(void)
 static void perf_print(void)
 {
     uint32_t bakes, hits, cached;
-    aster_launcher_art_stats(&bakes, &hits, &cached);
+    aster_ui_shell_art_stats(&bakes, &hits, &cached);
     uint64_t elapsed = esp_timer_get_time() - perf.since;
     unsigned p95 = 0, total = 0, goal = perf.frames > 1 ? (perf.frames - 1) * 95 / 100 : 0;
     for (unsigned i = 0; i < 256; i++) {
@@ -105,7 +105,7 @@ static void perf_print(void)
     printf("UI ART bakes=%lu hits=%lu inactive_bytes=%lu\n", (unsigned long)bakes,
            (unsigned long)hits, (unsigned long)cached);
     aster_launcher_slider_stats_t slider;
-    aster_launcher_slider_stats(&slider);
+    aster_ui_shell_slider_stats(&slider);
     printf(
         "UI SLIDER presses=%lu releases=%lu changes=%lu value=%ld saves=%lu set_max_us=%lu save_max_ms=%lu\n",
         (unsigned long)slider.presses, (unsigned long)slider.releases,
@@ -351,7 +351,7 @@ static void perf_tick(void)
         if (aster_idf_lcd_pipe_set_bench)
             aster_idf_lcd_pipe_set_bench(ui_bench_pipe);
 #endif
-        aster_launcher_show_page(0);
+        aster_ui_shell_show_page(0);
         bench_step = now;
         bench_warm = now + 2000000;
         bench_end = bench_warm + seconds * 1000000ULL;
@@ -397,7 +397,7 @@ static void perf_tick(void)
 #endif
     }
     if (now >= bench_step) {
-        aster_launcher_step_page(1);
+        aster_ui_shell_step_page(1);
         bench_step = now + 180000;
     }
 }
@@ -617,8 +617,8 @@ int aster_idf_ui_init(int (*launch)(const char *))
         puts("UI PIPE boot default=ON fallback=single reason=hooks_unavailable");
     }
 #endif
-    aster_launcher_init();
-    aster_launcher_request_show();
+    aster_ui_shell_init();
+    aster_ui_shell_request_show();
     const aster_idf_ui_hooks_t hooks = {touch, app_tick, aster_qpanel_app_holds_glass};
     aster_idf_set_ui_hooks(&hooks);
     return 0;
@@ -635,7 +635,7 @@ void aster_idf_ui_idle(void)
         return;
     perf_tick();
     uint64_t start = esp_timer_get_time();
-    aster_launcher_pump_idle();
+    aster_ui_shell_pump_idle();
     uint32_t us = (uint32_t)(esp_timer_get_time() - start);
     perf.pump_us += us;
     if (us > perf.max_pump_us)
@@ -671,7 +671,7 @@ void aster_idf_ui_before_app(void)
 #endif
     bench_end = bench_warm = 0;
     app_active = true;
-    aster_launcher_hide();
+    aster_ui_shell_hide();
     aster_qpanel_force_close();
     aster_gesture_reset();
 }
@@ -680,7 +680,7 @@ void aster_idf_ui_after_app(void)
 {
     app_active = false;
     aster_qpanel_on_app_stop();
-    aster_launcher_request_show();
+    aster_ui_shell_request_show();
 }
 
 /* Installer runs on this same UI/APP worker after the guest has stopped.

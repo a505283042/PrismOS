@@ -11,7 +11,7 @@
 #include "aster_os.h"
 #include "aster_deploy.h"
 #include "aster_port_check.h"
-#include "launcher.h"
+#include "ui_shell.h"
 #include "esp_timer.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -48,7 +48,7 @@ static void worker(void *unused)
         ESP_LOGW("aster_apps", "Desktop unavailable: %d", ui);
     for (;;) {
         aster_power_poll();
-        if (xQueueReceive(queue, &job, pdMS_TO_TICKS(aster_launcher_idle_wait_ms())) != pdTRUE) {
+        if (xQueueReceive(queue, &job, pdMS_TO_TICKS(aster_ui_shell_idle_wait_ms())) != pdTRUE) {
             aster_idf_ui_idle();
             continue;
         }

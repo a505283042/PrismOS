@@ -163,7 +163,7 @@ static aster_app_ctx_t *current;
 static struct k_mutex app_lock; /* serialize start/stop vs shell */
 
 #if IS_ENABLED(CONFIG_ASTER_LAUNCHER_NATIVE)
-#include "launcher/launcher.h"
+#include "launcher/ui_shell.h"
 #endif
 
 /* ABI 1.2 launch policy: deferred relaunch (handoff target / home UI).
@@ -217,7 +217,7 @@ static void apply_display_mode(void)
 	if (mode < 0)
 		return;
 #if IS_ENABLED(CONFIG_ASTER_LAUNCHER_NATIVE)
-	aster_launcher_hide();
+	aster_ui_shell_hide();
 #endif
 	int err = aster_plat_display_set_enabled(mode != ASTER_DISPLAY_MODE_HEADLESS);
 	if (!err && mode != ASTER_DISPLAY_MODE_HEADLESS) {
@@ -228,7 +228,7 @@ static void apply_display_mode(void)
 		aster_ui_lvgl_resync_window();
 #endif
 #if IS_ENABLED(CONFIG_ASTER_LAUNCHER_NATIVE)
-		aster_launcher_request_show();
+		aster_ui_shell_request_show();
 #endif
 	}
 	if (err)
@@ -724,7 +724,7 @@ static void deliver_touch_event(aster_app_ctx_t *ctx, const aster_event_t *ev)
  * does nothing". Only the two DELIVERY points are still gated on `paused`,
  * because those are the ones that call back into wasm.
  *
- * Thread: the same one that runs aster_launcher_pump_idle() (one worker
+ * Thread: the same one that runs aster_ui_shell_pump_idle() (one worker
  * thread, two phases -- the launcher only pumps while no app owns it), so
  * all of this stays single-threaded.
  *
@@ -828,7 +828,7 @@ static void ui_service(aster_app_ctx_t *ctx)
 
 	/* The sheet is firmware LVGL, but nothing else advances the cpfont
 	 * pipeline while an app owns the worker: aster_ui_fonts_poll() lives in
-	 * aster_launcher_pump_idle(), and worker_fn() runs app_event_loop()
+	 * aster_ui_shell_pump_idle(), and worker_fn() runs app_event_loop()
 	 * *instead* of that. So a miss-queued glyph stayed in staging forever
 	 * and the sheet drew blank CJK -- same string, some codepoints present
 	 * (cached from the launcher) and some not. App-side spelling only:
@@ -1155,7 +1155,7 @@ static void worker_fn(void *p1, void *p2, void *p3)
 		aster_power_poll();
 		apply_display_mode();
 #if IS_ENABLED(CONFIG_ASTER_LAUNCHER_FLUX)
-		uint32_t idle_wait = aster_launcher_idle_wait_ms();
+		uint32_t idle_wait = aster_ui_shell_idle_wait_ms();
 #else
 		uint32_t idle_wait = 10;
 #endif
@@ -1163,7 +1163,7 @@ static void worker_fn(void *p1, void *p2, void *p3)
 #if IS_ENABLED(CONFIG_ASTER_LAUNCHER_NATIVE)
 			if (aster_deploy_ui_tick())
 				continue;
-			aster_launcher_pump_idle();
+			aster_ui_shell_pump_idle();
 #endif
 			continue;
 		}
@@ -1172,7 +1172,7 @@ static void worker_fn(void *p1, void *p2, void *p3)
 		if (aster_deploy_get(&deployment))
 			aster_deploy_dismiss(deployment.generation);
 		aster_deploy_ui_close();
-		aster_launcher_hide();
+		aster_ui_shell_hide();
 #endif
 		aster_app_ctx_t *ctx = worker_pending;
 		/* Keep the pending reservation until startup has finished. Async
@@ -1557,7 +1557,7 @@ void aster_runtime_boot_ui(void)
 #if IS_ENABLED(CONFIG_ASTER_LAUNCHER_NATIVE)
 	/* Built-in launcher: the worker thread owns LVGL, so only flag the
 	 * request; its idle pump draws home on the next pass (< 10 ms). */
-	aster_launcher_request_show();
+	aster_ui_shell_request_show();
 	LOG_INF("system ui: built-in launcher");
 	return;
 #else

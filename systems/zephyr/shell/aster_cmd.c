@@ -33,7 +33,7 @@
 #if IS_ENABLED(CONFIG_ASTER_SCREENSHOT)
 #include "ui_screenshot.h"
 #if IS_ENABLED(CONFIG_ASTER_LAUNCHER_NATIVE)
-#include "launcher/launcher.h"
+#include "launcher/ui_shell.h"
 #endif
 #endif
 #if IS_ENABLED(CONFIG_ASTER_LVGL)
@@ -1092,9 +1092,9 @@ static int cmd_ui_screenshot(const struct shell *sh, size_t argc, char **argv)
 	if (argc >= 2) {
 #if IS_ENABLED(CONFIG_ASTER_LAUNCHER_NATIVE)
 		if (strcmp(argv[1], "home") == 0) {
-			aster_launcher_show_page(0);
+			aster_ui_shell_show_page(0);
 		} else if (strcmp(argv[1], "apps") == 0) {
-			aster_launcher_show_page(1);
+			aster_ui_shell_show_page(1);
 		} else {
 			shell_error(sh, "page: home|apps");
 			return -EINVAL;
