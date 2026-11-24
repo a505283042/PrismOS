@@ -1,7 +1,7 @@
 set(UI "${CMAKE_CURRENT_LIST_DIR}/../../../zephyr/ui")
 include(${CMAKE_CURRENT_LIST_DIR}/../../../../common/sources.cmake)
 set(SETUP "${CMAKE_CURRENT_LIST_DIR}/../../../../third_party/qrcodegen")
-idf_component_register(SRCS ${ASTER_COMMON_POWER_UI} "ui.c" "platform.c" "wifi.c" "${UI}/launcher/ui_shell.c" "${UI}/launcher/ui_shell_lifecycle.c" "${UI}/launcher/ui_shell_input.c" "${UI}/launcher/ui_shell_state.c" "${UI}/launcher/flux.c" "${UI}/launcher/flux_font.c"
+idf_component_register(SRCS ${ASTER_COMMON_POWER_UI} "ui.c" "platform.c" "wifi.c" "${UI}/launcher/ui_shell.c" "${UI}/launcher/ui_shell_lifecycle.c" "${UI}/launcher/ui_shell_input.c" "${UI}/launcher/ui_shell_state.c" "${UI}/launcher/ui_shell_settings.c" "${UI}/launcher/flux.c" "${UI}/launcher/flux_font.c"
     ${ASTER_COMMON_DEVICE_SOURCES} ${ASTER_COMMON_OS_SOURCES} "../../port/device.c" "../../port/os.c"
     ${ASTER_COMMON_SERVICE_SOURCES} "../../../shared/port/services.c"
     ${ASTER_COMMON_PORT_CHECK}

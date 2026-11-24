@@ -19,14 +19,13 @@
 #include "ui_shell_lifecycle.h"
 #include "ui_shell_input.h"
 #include "ui_shell_state.h"
+#include "ui_shell_settings.h"
 #include "ui_lvgl.h"
 #include "ui_font.h"
 #include "flux_font.h"
 #include "flux_draw.h"
 #include "font_sd.h"
 #include "ui_splash.h"
-#include "wifi_settings.h"
-#include "qpanel.h"
 #include "gesture.h"
 #include "touch_ui.h"
 #include "aster_platform.h"
@@ -190,8 +189,7 @@ static bool coasting, draw_pending;
 static uint64_t animation_ms, last_draw, hold_ms, clock_sec = UINT64_MAX;
 static bool animating, launching, visible, initialized, want_show = true, motion = true, quiet;
 static volatile int want_page = -1;
-static int page, prior_page, action, brightness = 90;
-static int brightness_pending = -1;
+static int page, prior_page, action;
 static uint64_t save_due;
 static char remove_id[64], remove_name[40];
 static lv_obj_t *root, *body, *stage, *bar_time, *description, *position, *pull_label, *handle;
@@ -199,9 +197,6 @@ static lv_obj_t *filter_label, *modal, *toast, *clock_value, *clock_date, *wifi_
 static lv_obj_t *battery_label, *power_label, *timeout_button;
 static lv_obj_t *battery_body, *battery_terminal, *battery_fill;
 static bool battery_charging;
-static uint8_t timeout_index;
-static const uint32_t screen_timeouts[] = {0, 30000, 60000, 120000, 300000};
-static const char *const screen_timeout_names[] = {"永不", "30 秒", "1 分钟", "2 分钟", "5 分钟"};
 static uint64_t toast_until;
 static lv_image_dsc_t chrome[ARRAY_SIZE(flux_icon_sizes)][ARRAY_SIZE(flux_icon_data[0])]
     __attribute__((section(".ext_ram.bss")));
@@ -414,9 +409,9 @@ static entry_t *current(void)
 static void save_now(void)
 {
     uint8_t state[] = {group,       selected[0], selected[1], selected[2],
-                       selected[3], brightness,  motion,      quiet};
+                       selected[3], aster_ui_shell_settings_brightness(), motion, quiet};
     (void)aster_service_kv_set(KV_ID, "state", state, sizeof(state));
-    (void)aster_service_kv_set(KV_ID, "screen-timeout", &timeout_index, 1);
+    aster_ui_shell_settings_save_timeout();
     save_due = 0;
 }
 
@@ -1081,8 +1076,7 @@ static void slider_changed(lv_event_t *e)
     if (kind == 1)
         aster_ui_shell_volume_changed(v, lv_event_get_code(e) == LV_EVENT_VALUE_CHANGED);
     if (kind == 0) {
-        brightness = v;
-        brightness_pending = v;
+        aster_ui_shell_settings_request_brightness(v);
     }
     lv_obj_t *l = lv_obj_get_user_data(lv_event_get_target(e));
     char value[16];
@@ -1216,7 +1210,7 @@ static void build_mixer(void)
     lv_obj_set_scroll_dir(body, LV_DIR_VER);
     text(body, "DEVICE MIXER", 17, 15, 280, DIM, 16, 128);
     text(body, "调到你的节奏。", 17, 36, 286, FG, 20, 280);
-    bool bt = aster_bluetooth_settings_available();
+    bool bt = aster_ui_shell_settings_bluetooth_available();
     const char *names[] = {"Wi-Fi", "蓝牙", "提示静音"};
     int acts[] = {ACT_WIFI, ACT_BT, ACT_QUIET};
     int art[] = {ICON_WIFI, ICON_BT, ICON_MOON};
@@ -1238,7 +1232,7 @@ static void build_mixer(void)
         if (i == 0)
             wifi_state = status;
     }
-    slider_card(172, "光", "屏幕亮度", ACCENT, brightness, 0);
+    slider_card(172, "光", "屏幕亮度", ACCENT, aster_ui_shell_settings_brightness(), 0);
     int volume = aster_ui_shell_volume_display();
     slider_card(297, "声", "输出音量", 0xffb8a5, MAX(0, volume), 1);
     aster_power_caps_t power = {0};
@@ -1252,7 +1246,7 @@ static void build_mixer(void)
         power_gap = MAX(24, (18 * 480 + view_h - 1) / view_h);
     if (power.modes & ASTER_POWER_SCREEN_OFF) {
         char title[64];
-        snprintf(title, sizeof(title), "自动熄屏   %s", screen_timeout_names[timeout_index]);
+        snprintf(title, sizeof(title), "自动熄屏   %s", aster_ui_shell_settings_timeout_name());
         /* Keep at least 56 physical pixels of height and 18 of separation on
    * compact portrait panels too, rather than shrinking every touch target. */
         int height = MAX(76, (56 * 480 + view_h - 1) / view_h);
@@ -1470,8 +1464,7 @@ static int ribbon_hit(int x, int y)
 static bool header_touch(const aster_touch_evt_t *raw)
 {
     bool pressed = raw->action != ASTER_TOUCH_UP;
-    bool enabled = visible && !modal && !aster_wifi_settings_is_open() &&
-                   !aster_bluetooth_settings_is_open() && !aster_qpanel_is_open() && !launching;
+    bool enabled = visible && !modal && !aster_ui_shell_settings_pages_open() && !aster_ui_shell_settings_panel_open() && !launching;
     uint32_t allow = page == MIXER ? 0 : ASTER_GEST_ALLOW_PANEL;
     aster_gest_t g = aster_gesture_feed(raw->x, raw->y, pressed, enabled ? allow : 0, view_h);
     if (!enabled || (page == MIXER ? g != ASTER_GEST_PANEL_UP : g != ASTER_GEST_PANEL_DOWN))
@@ -1491,8 +1484,7 @@ static void touch(const aster_touch_evt_t *raw)
     to_design(&mapped.x, &mapped.y);
     const aster_touch_evt_t *e = &mapped;
     bool pressed = e->action != ASTER_TOUCH_UP;
-    bool owned = visible && page == HOME && !modal && !aster_wifi_settings_is_open() &&
-                 !aster_bluetooth_settings_is_open();
+    bool owned = visible && page == HOME && !modal && !aster_ui_shell_settings_pages_open();
     if (e->action == ASTER_TOUCH_DOWN) {
         memset(&drag, 0, sizeof(drag));
         if (owned && ((e->y >= 93 && e->y < 373) || (e->y >= 404 && e->y <= 447))) {
@@ -1698,7 +1690,7 @@ static void flux_power_home(void)
     if (visible)
         want_page = HOME;
     else
-        aster_qpanel_request_exit("应用");
+        aster_ui_shell_settings_request_exit();
 }
 
 static void flux_power_error(void)
@@ -1719,12 +1711,8 @@ int aster_launcher_init(void)
         return 0;
     initialized = true;
     aster_ui_shell_power_bind();
-    size_t timeout_bytes = 0;
-    uint8_t saved_timeout = 0;
-    if (!aster_service_kv_get(KV_ID, "screen-timeout", &saved_timeout, 1, &timeout_bytes) &&
-        timeout_bytes == 1 && saved_timeout < ARRAY_SIZE(screen_timeouts))
-        timeout_index = saved_timeout;
-    aster_ui_shell_power_init(screen_timeouts[timeout_index], 230, flux_power_home, flux_power_error);
+    aster_ui_shell_settings_load_timeout();
+    aster_ui_shell_power_init(aster_ui_shell_settings_timeout_ms(), 230, flux_power_home, flux_power_error);
     aster_ui_shell_input_reset();
     for (size_t face = 0; face < ARRAY_SIZE(flux_icon_sizes); face++)
         for (size_t i = 0; i < ARRAY_SIZE(chrome[face]); i++) {
@@ -1740,18 +1728,18 @@ int aster_launcher_init(void)
     for (int i = 0; i < RIBBONS; i++)
         ribbons[i].entry = -1;
     aster_ui_shell_catalog_init();
-    aster_qpanel_bind_theme(&theme);
+    aster_ui_shell_settings_bind_panel(&theme);
     uint8_t s[8];
     size_t n = 0;
     if (!aster_service_kv_get(KV_ID, "state", s, sizeof(s), &n) && n == sizeof(s)) {
         group = MIN(s[0], 3);
         for (int i = 0; i < 4; i++)
             selected[i] = s[i + 1];
-        brightness = CLAMP(s[5], 25, 100);
+        aster_ui_shell_settings_restore_brightness(s[5]);
         motion = s[6] != 0;
         quiet = s[7] != 0;
     }
-    aster_ui_shell_power_set_brightness((uint8_t)(brightness * 255 / 100), false);
+    aster_ui_shell_settings_sync_brightness();
     return 0;
 }
 
@@ -1804,8 +1792,7 @@ void aster_launcher_show(void)
     body = NULL;
     show_page(HOME);
     tick_clock();
-    aster_qpanel_restore_volume();
-    brightness_pending = brightness;
+    aster_ui_shell_settings_on_show();
     /* APPs and the system background media worker share one master volume.
      * A persisted FLUX "quiet" preference only silences launcher sound
      * effects; entering the desktop must never reset the codec volume.
@@ -1957,35 +1944,27 @@ void aster_launcher_pump_idle(void)
         show_page(SYSTEM);
         sound_pending = S_TAP;
     } else if (a == ACT_WIFI) {
-        aster_wifi_settings_open(root, NULL);
+        aster_ui_shell_settings_open_wifi(root);
         sound_pending = S_TAP;
     } else if (a == ACT_BT) {
-        aster_bluetooth_settings_open(root, NULL);
+        aster_ui_shell_settings_open_bluetooth(root);
         sound_pending = S_TAP;
     } else if (a == ACT_TIMEOUT) {
-        timeout_index = (timeout_index + 1) % ARRAY_SIZE(screen_timeouts);
-        aster_ui_shell_power_set_timeout(screen_timeouts[timeout_index]);
+        aster_ui_shell_settings_next_timeout();
         save();
         char title[64];
-        snprintf(title, sizeof(title), "自动熄屏   %s", screen_timeout_names[timeout_index]);
+        snprintf(title, sizeof(title), "自动熄屏   %s", aster_ui_shell_settings_timeout_name());
         if (timeout_button)
             set_text(lv_obj_get_child(timeout_button, 0), title);
     } else if (a == ACT_SCREEN_OFF) {
         if (aster_ui_shell_power_screen_off())
             notify("当前设备无法熄屏。");
     } else if (a == ACT_RESTART || a == ACT_SHUTDOWN || a == ACT_SLEEP || a == ACT_USB_STORAGE) {
-        aster_power_request_t request = {.size = sizeof(request),
-                                         .version = ASTER_POWER_API_VERSION,
-                                         .mode = a == ACT_RESTART       ? ASTER_POWER_RESTART
-                                                 : a == ACT_SHUTDOWN    ? ASTER_POWER_SHUTDOWN
-                                                 : a == ACT_USB_STORAGE ? ASTER_POWER_USB_STORAGE
-                                                                        : ASTER_POWER_LIGHT_SLEEP};
-        if (a == ACT_SLEEP) {
-            aster_power_caps_t caps = {0};
-            (void)aster_power_caps(&caps);
-            request.wake_sources = caps.light_wake & (ASTER_WAKE_TOUCH | ASTER_WAKE_KEY);
-        }
-        int r = aster_power_schedule(&request);
+        uint32_t mode = a == ACT_RESTART       ? ASTER_POWER_RESTART
+                        : a == ACT_SHUTDOWN    ? ASTER_POWER_SHUTDOWN
+                        : a == ACT_USB_STORAGE ? ASTER_POWER_USB_STORAGE
+                                               : ASTER_POWER_LIGHT_SLEEP;
+        int r = aster_ui_shell_settings_schedule_power(mode);
         if (r)
             notify("当前无法执行，请稍后再试。");
     } else if (a == ACT_QUIET) {
@@ -2066,10 +2045,7 @@ void aster_launcher_pump_idle(void)
     }
     if (draw_pending)
         redraw();
-    if (brightness_pending >= 0) {
-        aster_ui_shell_power_set_brightness((uint8_t)(brightness_pending * 255 / 100), true);
-        brightness_pending = -1;
-    }
+    aster_ui_shell_settings_flush_brightness();
     aster_ui_shell_volume_flush();
     int sound_now = current() ? (int)(current() - entries) : -1;
     if (sound_pending >= 0) {
@@ -2095,8 +2071,7 @@ void aster_launcher_pump_idle(void)
         save_now();
     if (!aster_ui_shell_power_is_off()) {
         tick_clock();
-        aster_wifi_settings_tick();
-        aster_qpanel_tick();
+        aster_ui_shell_settings_tick();
         if (!aster_ui_shell_power_is_off())
             aster_ui_lvgl_pump();
     }
