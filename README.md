@@ -6,7 +6,7 @@ PrismOS 是基于 [Aster 固件](https://github.com/a505283042/aster-firmware) �
 
 首发验证设备为 FakePod Nano Pro（ESP32-S31，460×460 CO5300），保留 ESP32-S3 Zephyr 和 ESP32-P4 ESP-IDF 原有平台支持。
 
-> 当前版本已实现固件内 FLUX / Probe 静态主题切换及压力诊断。外部桌面、APP View 分包、自动下载和主题商城属于 v0.5 后续开发目标，尚未实现。
+> 当前版本已实现固件内 FLUX / Probe 静态主题切换及压力诊断。外部桌面、APP View 分包、自动下载和主题商城属于 v0.5.1 后续开发目标，尚未实现。
 
 ## 系统架构
 
@@ -51,6 +51,22 @@ PrismOS 是基于 [Aster 固件](https://github.com/a505283042/aster-firmware) �
 
 外部桌面与 View 的执行方式（候选 WAMR AOT 或受限布局）须先通过技术验证；尚未确定二进制格式，不假定独立 AOT 模块可以共享 C 指针或线性内存。所有可执行分包必须校验可信来源、权限、版本及资源完整性。
 
+## 多仓库工程与 Aster 复用
+
+| 仓库 | 职责 | 来源/状态 |
+| --- | --- | --- |
+| [PrismOS](https://github.com/a505283042/PrismOS) | 固件、Shell、运行时、内置 FLUX、系统 ABI | 已继承 aster-firmware |
+| [prism-sdk](https://github.com/a505283042/prism-sdk) | SDK、编译、打包、部署及契约副本 | 待继承 [aster-sdk](https://github.com/a505283042/aster-sdk) |
+| [prism-apps](https://github.com/a505283042/prism-apps) | APP Core、默认 View、AppStore、StoreServer | 待继承 [aster-apps](https://github.com/a505283042/aster-apps) |
+| prism-sim（拟新增） | 原生桌面与 WASM 模拟、预览、截图及录屏 | 待继承 [aster-sim](https://github.com/a505283042/aster-sim) |
+| [prism-themes](https://github.com/a505283042/prism-themes) | 桌面主题、APP View、图标、动画及提示音 | 待初始化 |
+| [prism-fonts](https://github.com/a505283042/prism-fonts) | 字体源、cpfont 转换、字形集合及许可 | 待初始化 |
+| [prism-releases](https://github.com/a505283042/prism-releases) | 统一资源索引、版本、签名及发布产物 | 待初始化 |
+
+优先完整继承已有 SDK、APP 和模拟器的 Git 历史、测试与许可证，不重建 AOT 工具链，不更改旧 APP ID 或 Aster ABI 4.5.0。系统 ABI 以固件 contract 为权威，通过原导出/导入工具同步 SDK；APP View 契约由各 APP 版本化维护并发布至 SDK。原 AppStore、StoreServer 和静态分发工具用于后续扩展 Theme/View 等资源类型，前台商城不等于已支持后台自动下载。模拟器使用 WASM 预览，不代替 S31 AOT 真机性能验证。
+
+建议同级工作区存放各仓库，使用固定版本及显式依赖路径。保留内置 FLUX、救援字体、旧安装路径及首次开机资源；新发布地址、权限和签名未配置前不启用继承的发布流程。完整继承基线、职责、许可及协作规范见开发计划第 13 章。
+
 ## 开发路线
 
 | 阶段 | 内容 | 状态 |
@@ -61,7 +77,8 @@ PrismOS 是基于 [Aster 固件](https://github.com/a505283042/aster-firmware) �
 | P1.3 | 静态主题注册及安全切换 | 功能及性能回归通过 |
 | P1.3.1 | 主题及内存诊断 | 命令验证通过 |
 | P1.3.2 | 生命周期隔离、音频资源保护及压力测试 | 140 次切换及内存回归通过 |
-| **P1.3.3** | **外部 Theme / APP View 分包架构设计** | **下一阶段** |
+| **P1.3.3.0a–0f** | **多仓库初始化、Aster 继承及兼容基线验证** | **下一阶段** |
+| P1.3.3 | 外部 Theme / APP View 分包架构设计 | 待开发 |
 | P1.4.1 | 外部桌面运行技术验证 | 待开发 |
 | P1.4.2 | 本地主题包解析、注册、选择及卸载 | 待开发 |
 | P1.4.3 | 第二套正式可安装主题 | 待开发 |
@@ -77,7 +94,7 @@ PrismOS 是基于 [Aster 固件](https://github.com/a505283042/aster-firmware) �
 | P4.4 | 主题商城及个性化设置 | 待开发 |
 | P4.5 | 完整系统验收 | 待开发 |
 
-详细边界、接口候选、实施任务、安全约束及验收矩阵见 [开发计划 v0.5](docs/DEVELOPMENT_PLAN.zh-CN.md)，为当前唯一实施计划。
+详细边界、接口候选、实施任务、安全约束及验收矩阵见 [开发计划 v0.5.1](docs/DEVELOPMENT_PLAN.zh-CN.md)，为当前唯一实施计划。
 
 ## 当前实机状态（2026-11-24）
 
@@ -110,14 +127,14 @@ stress 从空闲 FLUX 开始，支持 2–200 的偶数切换次数，100 次即
 - 保留 Aster ABI 4.5.0 旧应用兼容、原 APP 安装路径、WAMR、现有 HAL/BSP 和 LCD 16 行乒乓流水线。
 - 单一 UI 所有者、单一活动桌面、无每主题常驻全屏缓冲；后台音乐状态不随主题切换重置。
 - 外部代码受权限、版本及资源约束，可信签名/清单校验后方可执行；不加载任意本机代码，不建通用插件框架。
-- 复用现有存储、下载、安装、字体和音效基础设施；本地可用先于网络发布，不强制新服务器或新 SDK。
+- 复用现有存储、下载、安装、字体和音效基础设施；本地可用先于网络发布，不重建 SDK 工具链或独立服务器；继承现有 SDK、APP、模拟器和分发工具。
 - 下载暂存、校验、原子提交，运行版本不可覆盖；串行有界下载，音频优先，失败不影响默认界面。
 - 保持首次初始化 11 项协议及旧默认下载源兼容，不格式化用户 TF 卡；无网络亦可启动。
 - 每阶段独立中文提交、测试及回退，不同时重构核心、HAL、实时音频及下载协议。
 
 ## 开发文档
 
-- [PrismOS 开发计划 v0.5：独立 APP 功能与可下载主题生态](docs/DEVELOPMENT_PLAN.zh-CN.md)
+- [PrismOS 开发计划 v0.5.1：独立 APP 功能与可下载主题生态](docs/DEVELOPMENT_PLAN.zh-CN.md)
 - [原始 Aster 项目说明](docs/ASTER_UPSTREAM_README.md)
 - [现有平台适配接口](docs/platform-adapter-api.md)
 - [现有首次开机流程](docs/first-boot-setup.md)
