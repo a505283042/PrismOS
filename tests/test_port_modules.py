@@ -92,6 +92,8 @@ int main(void){
     def test_ui_port_boundary(self):
         ui = ROOT / 'systems/zephyr/ui'
         for name in [
+            'launcher/ui_shell.c',
+            'launcher/ui_shell_lifecycle.c',
             'launcher/flux.c',
             'font_sd.c',
             'ui_font.c',

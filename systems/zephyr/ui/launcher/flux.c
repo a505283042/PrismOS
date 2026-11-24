@@ -16,6 +16,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "launcher.h"
+#include "ui_shell_lifecycle.h"
 #include "ui_lvgl.h"
 #include "ui_font.h"
 #include "flux_font.h"
@@ -28,9 +29,6 @@
 #include "touch_ui.h"
 #include "aster_platform.h"
 #include <aster/font_metrics.h>
-#if defined(CONFIG_ASTER_FIRST_BOOT)
-#include "setup_ui.h"
-#endif
 #include "flux_icons.inc"
 #include "flux_motion.h"
 #include "flux_sounds.inc"
@@ -1759,12 +1757,7 @@ void aster_launcher_show(void)
     if (visible || !aster_ui_lvgl_screen())
         return;
     aster_launcher_init();
-    aster_touch_ui_reset(&launcher_touch_ui);
-    aster_qpanel_force_close();
-    aster_gesture_reset();
-    if (aster_device_display_orientation_get() != ASTER_ORIENT_PORTRAIT)
-        (void)aster_device_display_orientation_set(ASTER_ORIENT_PORTRAIT);
-    aster_ui_lvgl_resync_window();
+    aster_ui_shell_prepare_show(&launcher_touch_ui);
     view_w = (int)aster_ui_lvgl_width();
     view_h = (int)aster_ui_lvgl_height();
     if (view_w < 1)
@@ -1772,9 +1765,7 @@ void aster_launcher_show(void)
     if (view_h < 1)
         view_h = 480;
     aster_ui_fonts_prepare(view_w, view_h, "流光");
-    lv_obj_clean(aster_ui_lvgl_screen());
-    aster_ui_lvgl_pointer(0, 0, 0);
-    lv_indev_reset(aster_ui_lvgl_indev(), NULL);
+    aster_ui_shell_clear_for_show();
     read_entries();
     filter_entries();
     warm_visible_text();
@@ -1834,14 +1825,9 @@ void aster_launcher_hide(void)
 {
     if (!visible)
         return;
-    lv_indev_wait_release(aster_ui_lvgl_indev());
-    aster_ui_lvgl_pointer(launcher_touch_x, launcher_touch_y, false);
-    aster_touch_ui_reset(&launcher_touch_ui);
-    aster_qpanel_force_close();
+    aster_ui_shell_prepare_hide(&launcher_touch_ui, launcher_touch_x, launcher_touch_y);
     save_now();
-    aster_gesture_reset();
-    aster_device_audio_ui_release();
-    lv_obj_clean(aster_ui_lvgl_screen());
+    aster_ui_shell_clear_for_hide();
     for (int i = 0; i < RIBBONS; i++) {
         release_icon(i);
         ribbons[i].obj = NULL;
@@ -1885,20 +1871,8 @@ uint32_t aster_launcher_idle_wait_ms(void)
 
 void aster_launcher_pump_idle(void)
 {
-    static bool boot_image_started;
-    if (!aster_device_display_count())
+    if (aster_ui_shell_boot_frame_consumed(visible))
         return;
-    if (!boot_image_started) {
-        boot_image_started = true;
-        if (!visible)
-            aster_splash_boot();
-    }
-#if defined(CONFIG_ASTER_FIRST_BOOT)
-    if (aster_setup_ui_tick()) {
-        aster_splash_tick();
-        return;
-    }
-#endif
     if (!power_idle.screen_off && aster_ui_fonts_poll() && aster_ui_lvgl_screen()) {
         ribbon_cache_clear();
         /* Rebaking during a flick is the hitch between cards. Glyphs that
