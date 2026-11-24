@@ -34,6 +34,8 @@ static bool have_previous;
  * player's audio_lock here: its caller already owns that lock. */
 static SemaphoreHandle_t hardware_lock;
 static atomic_bool native_owner;
+/* 无锁提示音准入提示；硬件锁仍负责最终仲裁。 */
+bool aster_idf_native_audio_owned(void) { return atomic_load(&native_owner); }
 static aster_audio_format_t native_format;
 static uint64_t native_frames;
 static uint32_t native_preroll_frames;

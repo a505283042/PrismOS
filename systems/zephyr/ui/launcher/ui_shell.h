@@ -17,6 +17,7 @@ void aster_ui_shell_slider_stats(aster_launcher_slider_stats_t *out);
 void aster_ui_shell_bind_panel(void);
 void aster_ui_shell_power_home(void);
 void aster_ui_shell_power_error(void);
+void aster_ui_shell_theme_cancel_pending(void); /* UI owner only */
 void aster_ui_shell_theme_request_next(void); /* UI 线程：只排队 */
 bool aster_ui_shell_theme_request_id(const char *id); /* 跨线程：只排队 */
 const char *aster_ui_shell_theme_id(void); /* 可从诊断线程查询 */
@@ -32,5 +33,8 @@ typedef struct {
     bool visible, blocked, fault;
 } aster_ui_theme_stats_t;
 void aster_ui_shell_theme_stats(aster_ui_theme_stats_t *out);
+
+/* 可选诊断观察器，只在 UI 所有者调用，不得改变 UI 状态。 */
+void aster_ui_shell_theme_observe(void (*observer)(const char *phase));
 
 #endif

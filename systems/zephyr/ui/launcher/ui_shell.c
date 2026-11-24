@@ -22,6 +22,9 @@ static atomic_bool show_requested;
 static atomic_int page_requested = -1;
 static bool preference_loaded, switch_blocked, switch_fault, mount_failed;
 static aster_ui_theme_stats_t stats;
+static void (*phase_observer)(const char *phase);
+void aster_ui_shell_theme_observe(void (*observer)(const char *)) { phase_observer = observer; }
+static void observe(const char *phase) { if (phase_observer) phase_observer(phase); }
 
 static const aster_ui_theme_t *active(void) { return themes[atomic_load(&active_index)]; }
 
@@ -44,6 +47,8 @@ bool aster_ui_shell_theme_request_id(const char *id)
     atomic_store(&pending_index, index);
     return true;
 }
+
+void aster_ui_shell_theme_cancel_pending(void) { atomic_store(&pending_index, -1); }
 
 void aster_ui_shell_theme_request_next(void)
 {
@@ -158,14 +163,18 @@ static void switch_at_safe_point(void)
         aster_service_logf(2, "theme: display drain failed; switching disabled until reboot");
         return;
     }
-    active()->hide();
+    observe("before_hide");
+    active()->hide(ASTER_UI_HIDE_SWITCH);
+    observe("after_hide");
     atomic_store(&active_index, next);
-    if (active()->init() || !active()->show()) {
+    int init_error = active()->init();
+    observe("after_init");
+    if (init_error || !active()->show()) {
         stats.failures++;
-        active()->hide(); /* 包含部分构建失败的清理 */
+        active()->hide(ASTER_UI_HIDE_SWITCH); /* 包含部分构建失败的清理 */
         atomic_store(&active_index, previous);
         if (active()->init() || !active()->show()) {
-            active()->hide();
+            active()->hide(ASTER_UI_HIDE_SWITCH);
             atomic_store(&active_index, 0);
             active()->request_show();
             aster_service_logf(2, "theme: previous layout failed; retry FLUX on idle");
@@ -182,6 +191,7 @@ static void switch_at_safe_point(void)
         aster_service_logf(2, "theme: mount failed; restored %s", active()->id);
         return;
     }
+    observe("after_show");
     /* 提交首帧后才保存；若显示后端报错，不再清理可能仍被引用的资源。 */
     if (!present_theme()) {
         stats.failures++;
@@ -189,8 +199,10 @@ static void switch_at_safe_point(void)
         aster_service_logf(2, "theme: first frame drain failed; not saved; reboot required");
         return;
     }
+    observe("after_frame");
     preference_loaded = true;
     persist_theme();
+    observe("after_kv");
     stats.switches++;
     aster_service_logf(3, "theme: active=%s", active()->id);
 }
@@ -204,7 +216,7 @@ void aster_ui_shell_step_page(int dir) { active()->step_page(dir); }
 void aster_ui_shell_hide(void)
 {
     atomic_store(&pending_index, -1);
-    active()->hide();
+    active()->hide(ASTER_UI_HIDE_APP);
 }
 
 void aster_ui_shell_pump_idle(void)
@@ -220,7 +232,7 @@ void aster_ui_shell_pump_idle(void)
         mount_failed = false;
         atomic_store(&pending_index, -1);
         if (!switch_fault && drain_display()) {
-            active()->hide();
+            active()->hide(ASTER_UI_HIDE_SWITCH);
             atomic_store(&active_index, 0);
             preference_loaded = true;
             if (active()->show() && present_theme()) {

@@ -46,6 +46,12 @@ static bool pressed, app_active;
 static int (*launch_callback)(const char *);
 static atomic_int perf_request;
 static atomic_bool theme_stats_request;
+static atomic_int theme_stress_request;
+static atomic_bool theme_stress_active, theme_trace;
+static unsigned stress_goal, stress_done;
+static uint32_t stress_start_switches, stress_start_failures, stress_start_kv;
+static uint64_t stress_next_us, stress_deadline_us;
+static bool stress_waiting;
 #if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
 /* Claim at command acceptance (before the UI worker processes it) so no
  * Stage C DMA/CPU test can overlap the launcher rendering benchmark. */
@@ -139,6 +145,29 @@ static void perf_event(lv_event_t *event)
 
 int aster_idf_ui_command(int argc, char **argv)
 {
+    if (argc == 5 && !strcmp(argv[2], "theme") && !strcmp(argv[3], "trace")) {
+        if (strcmp(argv[4], "on") && strcmp(argv[4], "off"))
+            return ASTER_EINVAL;
+        atomic_store(&theme_trace, !strcmp(argv[4], "on"));
+        return 0;
+    }
+    if (argc == 5 && !strcmp(argv[2], "theme") && !strcmp(argv[3], "stress")) {
+        if (!strcmp(argv[4], "stop")) {
+            atomic_store(&theme_stress_request, -1);
+            return 0;
+        }
+        char *end = NULL;
+        long count = strtol(argv[4], &end, 10);
+        if (*end || count < 2 || count > 200 || count % 2)
+            return ASTER_EINVAL;
+        if (app_active || atomic_load(&theme_stress_active))
+            return ASTER_EBUSY;
+        int empty = 0;
+        if (!atomic_compare_exchange_strong(&theme_stress_request, &empty, (int)count))
+            return ASTER_EBUSY;
+        puts("THEME STRESS queued");
+        return 0;
+    }
     if ((argc == 4 && !strcmp(argv[2], "theme") && !strcmp(argv[3], "stats")) ||
         (argc == 3 && !strcmp(argv[2], "mem"))) {
         bool empty = false;
@@ -152,7 +181,7 @@ int aster_idf_ui_command(int argc, char **argv)
             printf("THEME active=%s\n", aster_ui_shell_theme_id());
             return 0;
         }
-        if (app_active)
+        if (app_active || atomic_load(&theme_stress_active) || atomic_load(&theme_stress_request))
             return ASTER_EBUSY;
         if (!aster_ui_shell_theme_request_id(argv[3]))
             return ASTER_EINVAL;
@@ -668,8 +697,102 @@ static void theme_stats_poll(void)
 #endif
 }
 
+static void theme_phase_sample(const char *phase)
+{
+#ifndef ASTER_IDF_HOST_TEST
+    if (!atomic_load(&theme_trace))
+        return;
+    multi_heap_info_t in = {0}, ext = {0};
+    heap_caps_get_info(&in, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    heap_caps_get_info(&ext, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    printf("THEME TRACE phase=%s active=%s internal_free=%zu internal_blocks=%zu psram_free=%zu psram_blocks=%zu\n",
+           phase, aster_ui_shell_theme_id(), in.total_free_bytes, in.allocated_blocks,
+           ext.total_free_bytes, ext.allocated_blocks);
+#else
+    (void)phase;
+#endif
+}
+
+static void stress_end(const char *reason)
+{
+    atomic_store(&theme_stress_active, false);
+    stress_waiting = false;
+    aster_ui_shell_theme_cancel_pending();
+    printf("THEME STRESS end=%s done=%u target=%u\n", reason, stress_done, stress_goal);
+    atomic_store(&theme_stats_request, true);
+}
+
+static void theme_stress_poll(bool blocked)
+{
+    int request = atomic_exchange(&theme_stress_request, 0);
+    aster_ui_theme_stats_t s;
+    aster_ui_shell_theme_stats(&s);
+    uint64_t now = esp_timer_get_time();
+    if (request < 0) {
+        if (atomic_load(&theme_stress_active))
+            stress_end("cancelled");
+        return;
+    }
+    if (request > 0) {
+        if (blocked || !s.visible || s.fault || s.pending_id || strcmp(s.active_id, "flux")) {
+            puts("THEME STRESS refused: require idle FLUX desktop");
+            return;
+        }
+        stress_goal = (unsigned)request;
+        stress_done = 0;
+        stress_start_switches = s.switches;
+        stress_start_failures = s.failures;
+        stress_start_kv = s.kv_failures;
+        stress_waiting = false;
+        stress_next_us = now + 1000000;
+        stress_deadline_us = now + 10000000;
+        atomic_store(&theme_stress_active, true);
+        atomic_store(&theme_stats_request, true);
+        printf("THEME STRESS start target=%u\n", stress_goal);
+        return;
+    }
+    if (!atomic_load(&theme_stress_active))
+        return;
+    if (blocked || !s.visible || s.fault || s.failures != stress_start_failures ||
+        s.kv_failures != stress_start_kv || now >= stress_deadline_us) {
+        stress_end("unsafe_or_timeout");
+        return;
+    }
+#ifndef ASTER_IDF_HOST_TEST
+    if (heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) < 32768 ||
+        heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) < 8192) {
+        stress_end("low_internal_heap");
+        return;
+    }
+#endif
+    if (stress_waiting) {
+        if (s.switches == stress_start_switches + stress_done + 1 &&
+            !strcmp(s.active_id, stress_done % 2 ? "flux" : "probe")) {
+            stress_done++;
+            stress_waiting = false;
+            stress_next_us = now + 300000;
+            stress_deadline_us = now + 10000000;
+            if (stress_done % 10 == 0)
+                atomic_store(&theme_stats_request, true);
+            if (stress_done == stress_goal)
+                stress_end("complete");
+        }
+        return;
+    }
+    if (s.pending_id || now < stress_next_us)
+        return;
+    if (!aster_ui_shell_theme_request_id(stress_done % 2 ? "flux" : "probe")) {
+        stress_end("request_failed");
+        return;
+    }
+    stress_waiting = true;
+    stress_deadline_us = now + 10000000;
+}
+
 static void app_tick(void)
 {
+    if (atomic_load(&theme_stress_active))
+        stress_end("app_started");
 #if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
     ui_pipe_poll();
 #endif
@@ -712,6 +835,7 @@ int aster_idf_ui_init(int (*launch)(const char *))
     }
 #endif
     aster_ui_shell_init();
+    aster_ui_shell_theme_observe(theme_phase_sample);
     aster_ui_shell_request_show();
     const aster_idf_ui_hooks_t hooks = {touch, app_tick, aster_qpanel_app_holds_glass};
     aster_idf_set_ui_hooks(&hooks);
@@ -725,8 +849,11 @@ void aster_idf_ui_idle(void)
 #if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
     ui_pipe_poll();
 #endif
-    if (aster_deploy_ui_tick())
+    if (aster_deploy_ui_tick()) {
+        if (atomic_load(&theme_stress_active))
+            stress_end("deploy_started");
         return;
+    }
     perf_tick();
     bool theme_blocked = app_active || bench_end != 0;
 #if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
@@ -734,6 +861,7 @@ void aster_idf_ui_idle(void)
                     atomic_load(&ui_pipe_request) || aster_idf_stage_c_running();
 #endif
     aster_ui_shell_theme_set_blocked(theme_blocked);
+    theme_stress_poll(theme_blocked);
     uint64_t start = esp_timer_get_time();
     aster_ui_shell_pump_idle();
     uint32_t us = (uint32_t)(esp_timer_get_time() - start);

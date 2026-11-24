@@ -61,8 +61,8 @@ static const aster_qpanel_theme_ops_t *panel;
 static int init(void) {return 0;}
 static bool fshow(void) {assert(!pvis);fvis=true;return true;}
 static bool pshow(void) {assert(!fvis);pvis=true;return !fail;}
-static void fhide(void) {fvis=false;}
-static void phide(void) {pvis=false;}
+static void fhide(aster_ui_hide_reason_t reason) {assert(reason==ASTER_UI_HIDE_APP || reason==ASTER_UI_HIDE_SWITCH);fvis=false;}
+static void phide(aster_ui_hide_reason_t reason) {assert(reason==ASTER_UI_HIDE_SWITCH || reason==ASTER_UI_HIDE_APP);pvis=false;}
 static bool fv(void) {return fvis;}
 static bool pv(void) {return pvis;}
 static void request(void) {}

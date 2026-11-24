@@ -9,12 +9,18 @@
 /* 静态注册的原生桌面主题。所有回调只在原 UI 所有者执行。
  * show 返回 false 时，hide 必须能清理部分创建的对象。
  * tick 沿用各主题原有帧节奏；无独立任务或常驻帧缓冲。 */
+typedef enum {
+    ASTER_UI_HIDE_APP,
+    ASTER_UI_HIDE_SWITCH,
+    ASTER_UI_HIDE_REFRESH,
+} aster_ui_hide_reason_t;
+
 typedef struct {
     const char *id;
     const char *name;
     int (*init)(void);
     bool (*show)(void);
-    void (*hide)(void);
+    void (*hide)(aster_ui_hide_reason_t reason);
     void (*request_show)(void);
     void (*show_page)(int page);
     void (*step_page)(int dir);

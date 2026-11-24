@@ -89,3 +89,7 @@ PrismOS 保留原始 Aster Git 历史、许可证及版权声明。详见 [LICEN
 ### P1.3.1 主题诊断（ESP-IDF）
 
 `aster ui theme stats` 或 `aster ui mem`：由 UI 所有者输出本次启动累计切换统计、活动屏幕对象数、全局 LVGL 定时器数、艺术缓存及内部 RAM/PSRAM 空闲量、历史最低值、最大连续块和分配块数。诊断在 benchmark 期间延后，不修改主题或配置。P1.3 实机已记录 24 次成功切换及 18.3/18.2 FPS；堆内存、重启恢复与后台播放仍待补充验收。
+
+### P1.3.2 生命周期隔离及压力诊断
+
+`aster ui theme trace on|off` 开关阶段采样；`aster ui theme stress 100` 从空闲 FLUX 发起 100 次切换（50 次往返），每 10 次输出一次统计；`aster ui theme stress stop` 停止。测试期间不要操作桌面或启动 APP。主题切换及目录刷新不触发 APP 返回音；S31 原生音频独占 DAC 时跳过旧 UI 音效，保留原硬件互斥保护。未确认内存下降根因，待新版本实机采样。

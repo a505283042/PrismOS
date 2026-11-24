@@ -27,7 +27,7 @@ class FluxVolumeOwnership(unittest.TestCase):
     def test_return_to_launcher_does_not_mute_music(self):
         show = section(
             self.source, "static void flux_show(void)",
-            "static void flux_hide(void)")
+            "static void flux_hide(aster_ui_hide_reason_t reason)")
         self.assertIn("aster_ui_shell_volume_discard_pending();", show)
         self.assertNotIn("volume_pending = 0;", show)
         self.assertNotIn("aster_device_audio_set_volume(", show)

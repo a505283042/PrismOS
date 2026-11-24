@@ -1811,7 +1811,7 @@ static void flux_show(void)
                        aster_ui_shell_catalog_count());
 }
 
-static void flux_hide(void)
+static void flux_hide(aster_ui_hide_reason_t reason)
 {
     if (!visible)
         return;
@@ -1823,7 +1823,8 @@ static void flux_hide(void)
         ribbons[i].obj = NULL;
     }
     ribbon_cache_clear();
-    sound_return = true;
+    sound_return = reason == ASTER_UI_HIDE_APP;
+    sound_pending = -1;
     root = body = stage = bar_time = battery_label = power_label = battery_body = battery_terminal =
         battery_fill = modal = toast = NULL;
     visible = false;
@@ -1895,8 +1896,7 @@ static void flux_pump_idle(void)
     if (!visible)
         return;
     if (aster_ui_shell_catalog_dirty() && !modal) {
-        flux_hide();
-        sound_return = false;
+        flux_hide(ASTER_UI_HIDE_REFRESH);
         flux_show();
     }
     aster_ui_shell_input_poll(touch, flux_reset_drag);

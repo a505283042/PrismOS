@@ -13,6 +13,8 @@
 #include <string.h>
 #ifdef ASTER_SYSTEM_ESP_IDF
 #include "audio_port.h"
+/* Optional board capability; absent on legacy-only boards. */
+extern bool aster_idf_native_audio_owned(void) __attribute__((weak));
 #define I2S_DIR_TX ASTER_I2S_TX
 #define I2S_DIR_RX ASTER_I2S_RX
 #define I2S_DIR_BOTH ASTER_I2S_BOTH
@@ -1867,6 +1869,10 @@ int aster_plat_audio_effect_load_memory(const void *data, uint32_t bytes)
  * is dropped, never queued for late playback. PCM lifetime must be static. */
 int aster_plat_audio_ui_play(const int16_t *pcm, size_t frames, unsigned gain, unsigned priority)
 {
+#ifdef ASTER_SYSTEM_ESP_IDF
+	if (aster_idf_native_audio_owned && aster_idf_native_audio_owned())
+		return -EAGAIN;
+#endif
 	if (!pcm || !frames || gain > 1000 || CONFIG_ASTER_AUDIO_BITS != 16)
 		return -EINVAL;
 	if (!g_vol)

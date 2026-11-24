@@ -113,8 +113,9 @@ static bool probe_show(void)
     return true;
 }
 
-static void probe_hide(void)
+static void probe_hide(aster_ui_hide_reason_t reason)
 {
+    (void)reason;
     if (root) {
         aster_ui_shell_input_prepare_hide();
         aster_ui_shell_clear_for_hide();
@@ -151,7 +152,7 @@ static void probe_tick(void)
     if (!ready && want_show) {
         want_show = false;
         if (!probe_show()) {
-            probe_hide();
+            probe_hide(ASTER_UI_HIDE_REFRESH);
             /* Shell 在隐藏的验证布局恢复失败时执行回退。 */
             aster_ui_shell_theme_report_mount_failure();
             return;
@@ -163,9 +164,9 @@ static void probe_tick(void)
         lv_obj_invalidate(aster_ui_lvgl_screen());
     if (aster_ui_shell_catalog_dirty() && !aster_qpanel_is_open() && !launch_queued &&
         !aster_ui_shell_input_contacts_down()) {
-        probe_hide();
+        probe_hide(ASTER_UI_HIDE_REFRESH);
         if (!probe_show()) {
-            probe_hide();
+            probe_hide(ASTER_UI_HIDE_REFRESH);
             aster_ui_shell_theme_report_mount_failure();
             return;
         }
