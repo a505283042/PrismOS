@@ -166,6 +166,11 @@ int main(int argc,char **argv)
   aster_ui_shell_theme_request_next();aster_ui_shell_pump_idle();
   assert(fvis && !pvis && !strcmp(stored,"flux"));
  }
+ aster_ui_theme_stats_t snapshot={0};
+ aster_ui_shell_theme_stats(&snapshot);
+ assert(snapshot.attempts==201 && snapshot.switches==200 && snapshot.failures==1);
+ assert(snapshot.rollbacks==1 && !snapshot.kv_failures && !snapshot.remount_failures);
+ assert(!strcmp(snapshot.active_id,"flux") && snapshot.visible && !snapshot.pending_id);
  assert(aster_ui_shell_theme_request_id("probe"));
  aster_ui_shell_hide();assert(!fvis && !pvis && panel->count()==1);
  aster_ui_shell_power_home();assert(exits==1);

@@ -85,3 +85,7 @@ PrismOS 是基于 [Aster 固件](https://github.com/a505283042/aster-firmware) �
 ## 版权与许可
 
 PrismOS 保留原始 Aster Git 历史、许可证及版权声明。详见 [LICENSE](LICENSE)、[NOTICE.md](NOTICE.md) 及相关第三方许可文件。新增资源须确认合法分发权，并保留必要署名。
+
+### P1.3.1 主题诊断（ESP-IDF）
+
+`aster ui theme stats` 或 `aster ui mem`：由 UI 所有者输出本次启动累计切换统计、活动屏幕对象数、全局 LVGL 定时器数、艺术缓存及内部 RAM/PSRAM 空闲量、历史最低值、最大连续块和分配块数。诊断在 benchmark 期间延后，不修改主题或配置。P1.3 实机已记录 24 次成功切换及 18.3/18.2 FPS；堆内存、重启恢复与后台播放仍待补充验收。

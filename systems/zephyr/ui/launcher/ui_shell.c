@@ -21,6 +21,7 @@ static atomic_int pending_index = -1;
 static atomic_bool show_requested;
 static atomic_int page_requested = -1;
 static bool preference_loaded, switch_blocked, switch_fault, mount_failed;
+static aster_ui_theme_stats_t stats;
 
 static const aster_ui_theme_t *active(void) { return themes[atomic_load(&active_index)]; }
 
@@ -112,8 +113,10 @@ static bool present_theme(void)
 static void persist_theme(void)
 {
     const char *id = active()->id;
-    if (aster_service_kv_set(THEME_KV, THEME_KEY, id, strlen(id) + 1))
+    if (aster_service_kv_set(THEME_KV, THEME_KEY, id, strlen(id) + 1)) {
+        stats.kv_failures++;
         aster_service_logf(2, "theme: %s active for this boot; KV save failed", id);
+    }
 }
 
 static void restore_preference(void)
@@ -147,8 +150,10 @@ static void switch_at_safe_point(void)
     int previous = atomic_load(&active_index);
     if (next < 0 || next >= (int)ARRAY_SIZE(themes) || next == previous)
         return;
+    stats.attempts++;
     /* 先确认旧显示提交完成；不得在 DMA 仍持有资源时清屏。 */
     if (!drain_display()) {
+        stats.failures++;
         switch_fault = true;
         aster_service_logf(2, "theme: display drain failed; switching disabled until reboot");
         return;
@@ -156,6 +161,7 @@ static void switch_at_safe_point(void)
     active()->hide();
     atomic_store(&active_index, next);
     if (active()->init() || !active()->show()) {
+        stats.failures++;
         active()->hide(); /* 包含部分构建失败的清理 */
         atomic_store(&active_index, previous);
         if (active()->init() || !active()->show()) {
@@ -172,17 +178,20 @@ static void switch_at_safe_point(void)
         }
         preference_loaded = true;
         persist_theme();
+        stats.rollbacks++;
         aster_service_logf(2, "theme: mount failed; restored %s", active()->id);
         return;
     }
     /* 提交首帧后才保存；若显示后端报错，不再清理可能仍被引用的资源。 */
     if (!present_theme()) {
+        stats.failures++;
         switch_fault = true;
         aster_service_logf(2, "theme: first frame drain failed; not saved; reboot required");
         return;
     }
     preference_loaded = true;
     persist_theme();
+    stats.switches++;
     aster_service_logf(3, "theme: active=%s", active()->id);
 }
 
@@ -207,6 +216,7 @@ void aster_ui_shell_pump_idle(void)
         active()->show_page(page);
     active()->tick();
     if (mount_failed) {
+        stats.remount_failures++;
         mount_failed = false;
         atomic_store(&pending_index, -1);
         if (!switch_fault && drain_display()) {
@@ -215,6 +225,7 @@ void aster_ui_shell_pump_idle(void)
             preference_loaded = true;
             if (active()->show() && present_theme()) {
                 persist_theme();
+                stats.rollbacks++;
                 aster_service_logf(2, "theme: remount failed; restored FLUX");
             } else
                 active()->request_show();
@@ -228,6 +239,19 @@ void aster_ui_shell_pump_idle(void)
     switch_at_safe_point();
 }
 uint32_t aster_ui_shell_idle_wait_ms(void) { return active()->idle_wait_ms(); }
+
+void aster_ui_shell_theme_stats(aster_ui_theme_stats_t *out)
+{
+    if (!out)
+        return;
+    *out = stats;
+    out->active_id = active()->id;
+    int pending = atomic_load(&pending_index);
+    out->pending_id = pending >= 0 && pending < (int)ARRAY_SIZE(themes) ? themes[pending]->id : NULL;
+    out->visible = active()->is_visible();
+    out->blocked = switch_blocked;
+    out->fault = switch_fault;
+}
 void aster_ui_shell_art_stats(uint32_t *bakes, uint32_t *hits, uint32_t *cached_bytes)
 {
     *bakes = *hits = *cached_bytes = 0;

@@ -24,4 +24,13 @@ void aster_ui_shell_theme_set_blocked(bool blocked); /* UI 线程 */
 void aster_ui_shell_theme_report_mount_failure(void); /* UI 线程 */
 void aster_ui_shell_theme_report_display_error(void); /* UI 线程 */
 
+/* 本次启动累计值；仅 UI 所有者读取一致的快照。失败的切换与
+ * APP 返回时的重建失败分别计数；同主题请求不计入 attempts。 */
+typedef struct {
+    uint32_t attempts, switches, failures, rollbacks, remount_failures, kv_failures;
+    const char *active_id, *pending_id;
+    bool visible, blocked, fault;
+} aster_ui_theme_stats_t;
+void aster_ui_shell_theme_stats(aster_ui_theme_stats_t *out);
+
 #endif

@@ -45,6 +45,7 @@ static uint32_t pointer_x, pointer_y;
 static bool pressed, app_active;
 static int (*launch_callback)(const char *);
 static atomic_int perf_request;
+static atomic_bool theme_stats_request;
 #if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
 /* Claim at command acceptance (before the UI worker processes it) so no
  * Stage C DMA/CPU test can overlap the launcher rendering benchmark. */
@@ -138,6 +139,14 @@ static void perf_event(lv_event_t *event)
 
 int aster_idf_ui_command(int argc, char **argv)
 {
+    if ((argc == 4 && !strcmp(argv[2], "theme") && !strcmp(argv[3], "stats")) ||
+        (argc == 3 && !strcmp(argv[2], "mem"))) {
+        bool empty = false;
+        if (!atomic_compare_exchange_strong(&theme_stats_request, &empty, true))
+            return ASTER_EBUSY;
+        puts("THEME STATS queued (UI owner snapshot)");
+        return 0;
+    }
     if (argc == 4 && !strcmp(argv[2], "theme")) {
         if (!strcmp(argv[3], "status")) {
             printf("THEME active=%s\n", aster_ui_shell_theme_id());
@@ -588,6 +597,77 @@ static bool touch(void *value)
     return false;
 }
 
+/* Diagnostic only: walk the active screen tree on its owner, never the console.
+ * Iterative traversal avoids a recursive stack proportional to object depth. */
+static uint32_t theme_screen_objects(void)
+{
+    lv_obj_t *root = aster_ui_lvgl_screen();
+    if (!root)
+        return 0;
+    uint32_t count = 0;
+    lv_obj_t *node = root;
+    while (node) {
+        count++;
+        if (lv_obj_get_child_count(node)) {
+            node = lv_obj_get_child(node, 0);
+            continue;
+        }
+        while (node != root) {
+            lv_obj_t *parent = lv_obj_get_parent(node);
+            uint32_t next = lv_obj_get_index(node) + 1;
+            if (next < lv_obj_get_child_count(parent)) {
+                node = lv_obj_get_child(parent, next);
+                break;
+            }
+            node = parent;
+        }
+        if (node == root)
+            break;
+    }
+    return count;
+}
+
+static void theme_stats_poll(void)
+{
+    if (!atomic_load(&theme_stats_request) || bench_end)
+        return;
+#if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
+    if (atomic_load(&ui_bench_reserved) || aster_idf_stage_c_running())
+        return;
+#endif
+    if (!atomic_exchange(&theme_stats_request, false))
+        return;
+    aster_ui_theme_stats_t s;
+    aster_ui_shell_theme_stats(&s);
+    uint32_t timers = 0;
+    for (lv_timer_t *t = lv_timer_get_next(NULL); t; t = lv_timer_get_next(t))
+        timers++;
+    uint32_t objects = theme_screen_objects();
+    uint32_t bakes, hits, cached;
+    aster_ui_shell_art_stats(&bakes, &hits, &cached);
+    printf("THEME active=%s pending=%s visible=%u blocked=%u fault=%u app=%u attempts=%lu switches=%lu failures=%lu rollbacks=%lu remount_failures=%lu kv_failures=%lu\n",
+           s.active_id, s.pending_id ? s.pending_id : "-", (unsigned)s.visible,
+           (unsigned)s.blocked, (unsigned)s.fault, (unsigned)app_active,
+           (unsigned long)s.attempts, (unsigned long)s.switches, (unsigned long)s.failures,
+           (unsigned long)s.rollbacks, (unsigned long)s.remount_failures,
+           (unsigned long)s.kv_failures);
+    printf("THEME UI screen_objects=%lu lvgl_timers=%lu art_cached_bytes=%lu\n",
+           (unsigned long)objects, (unsigned long)timers, (unsigned long)cached);
+#ifndef ASTER_IDF_HOST_TEST
+    const uint32_t internal = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    const uint32_t psram = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+    multi_heap_info_t in = {0}, ext = {0};
+    heap_caps_get_info(&in, internal);
+    heap_caps_get_info(&ext, psram);
+    printf("THEME HEAP internal_free=%zu internal_min=%zu internal_largest=%zu internal_alloc_blocks=%zu\n",
+           in.total_free_bytes, in.minimum_free_bytes, in.largest_free_block, in.allocated_blocks);
+    printf("THEME HEAP psram_free=%zu psram_min=%zu psram_largest=%zu psram_alloc_blocks=%zu\n",
+           ext.total_free_bytes, ext.minimum_free_bytes, ext.largest_free_block, ext.allocated_blocks);
+#else
+    puts("THEME HEAP unavailable (host test)");
+#endif
+}
+
 static void app_tick(void)
 {
 #if !defined(ASTER_IDF_HOST_TEST) && defined(CONFIG_IDF_TARGET_ESP32S31)
@@ -599,6 +679,7 @@ static void app_tick(void)
         aster_ui_lvgl_pump();
     if (aster_qpanel_take_exit_confirmed())
         aster_idf_exit_current(0);
+    theme_stats_poll();
 }
 
 int aster_idf_ui_init(int (*launch)(const char *))
@@ -659,6 +740,7 @@ void aster_idf_ui_idle(void)
     perf.pump_us += us;
     if (us > perf.max_pump_us)
         perf.max_pump_us = us;
+    theme_stats_poll();
 }
 
 void aster_idf_ui_before_app(void)
