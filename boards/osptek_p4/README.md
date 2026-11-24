@@ -1,0 +1,389 @@
+# OSPTEK ESP32-P4 + C5 / ST7102 480×480
+
+鱼鹰光电 P4C5 的设备标识为 `osptek-p4-st7102`，应用目标为 `riscv`。主线采用 RGB565。桌面、五点触摸、SD、外接 C5 联网、商城安装及 AOT 游戏已有实机验证。固件的 `feat/osptek-p4-rgb666-validation` 和 SDK 的 `feat/p4-rgb888-rendering` 保存颜色实验。
+
+采用 ESP-IDF 6.0：现有 ST7102/ST7123 例程、P4 MIPI-DSI 和 C5 ESP-Hosted
+驱动均可直接复用。Zephyr 保留原 S3 目标；共享的应用、文件、图形和音频逻辑
+通过独立的 IDF 组件接入，未把原 S3 平台切换到 IDF。
+
+## WSL 构建
+
+需要 ESP-IDF 6.0、ESP32-P4 工具链和对应 Python 环境。
+
+```bash
+source ~/esp/esp-idf/export.sh
+cd /mnt/g/proj/aster/aster-firmware
+python tools/bringup.py osptek-p4 build
+# 旧版硅片使用隔离目录；需先核实手上的 P4 修订版本：
+python tools/bringup.py osptek-p4 build --revision pre3
+python tools/bringup.py osptek-p4 menuconfig
+```
+
+默认是 P4 v3.x，最低修订版本 3.0。产物在 `build/osptek-p4/`。
+烧录须使用完整的 bootloader、分区表和应用参数，不能把应用直接写到 0：
+
+```bash
+python tools/bringup.py osptek-p4 flash --port /dev/ttyACM0
+python tools/bringup.py osptek-p4 monitor --port /dev/ttyACM0
+```
+
+2026-10-31 已通过 Windows CH343 串口烧录 P4，未改写 C5 固件。
+当前设备需使用 esptool 的 `--no-stub` ROM 下载模式；默认 stub 启动未成功。
+
+## 首轮实机检查（2026-10-31）
+
+识别为 ESP32-P4 v3.2、16 MB Flash、32 MB PSRAM（200 MHz，内存测试通过）。
+修复厂商旧例程的 MIPI PHY 默认时钟：IDF 6 中旧名称指向 pre3 时钟，
+rev3 会触发 abort；现由 IDF 按芯片修订选择时钟源。
+
+实机日志确认：ST7102 读 ID 成功，RGB565 显示初始化完成；ST7123 地址 0x55
+响应并报告 480×480；ES8311 检出 ID 0x83；C5 SDIO 链路建立，扫描得到 13 个 AP；
+FLUX 进入桌面且串口命令可响应。用户确认 2048 的文字/棋盘显示正常，滑动可移动
+方块。音频输入输出的实际声音、联网与 TLS 尚未完成验收。
+
+首轮未插卡时 SD 挂载 `ESP_ERR_TIMEOUT`。插入 SD 卡并重新上电后已正常挂载：
+SDHC、14910 MB、4-bit/20 MHz，C5 同时正常建立 slot 1 链路。通过读卡器写入
+20 个字体、应用和诊断文件，共 96607338 字节，逐个 SHA-256 校验通过。
+字体加载正常；已安装 Hello、2048、Gfx Show、Continuous Audio 和 Network Echo。
+
+RISC-V AOT 已在 P4 v3.2 执行：600 帧显示诊断达到帧数上限后返回桌面
+（诊断约定结果 124）；Hello 完成生命周期并退出 0；2048 绘制 480×480 首帧，
+暂停/恢复状态为 2/1，停止后退出 0，随后再次通过 AOT 启动并恢复历史分数。
+没有在这些运行中回退解释器。后 3 个应用目前仅验证安装。
+
+实机修复：IDF 分配器拒绝 `EXEC|8BIT` 组合，P4 可执行 SRAM 改为请求
+`INTERNAL|EXEC`；WAMR 的 PSRAM 分配与重分配保证 8 字节对齐；控制台安装
+调用链超过默认 4 KiB 栈，将 REPL 栈改为 16 KiB。相应运行时主机回归通过。
+
+桌面运行后 `mem-dump`：内部空闲 323847 字节（约 316 KiB），最大连续块
+241664 字节（236 KiB），历史最低空闲 316415 字节（约 309 KiB）；PSRAM 空闲
+31762076 字节（约 30.3 MiB）。这是未加载字体/应用时的数据。
+加载字体并运行 2048 AOT 后，内部空闲 261923 字节（约 256 KiB），最大连续块
+188416 字节（184 KiB），历史最低 252523 字节（约 247 KiB）；PSRAM 空闲
+30653460 字节（约 29.2 MiB）。这不是所有功能同时开启后的峰值。
+
+本机证据保存在忽略目录 `build/osptek-p4/hardware/`：`second-boot.log`、
+`runtime-probe.log`、`wifi-results.log`、`sd-inserted-boot.log`、`aot-second-run.log`、
+`installed-aot-run.log`、`aot-lifecycle.log`、`final-apps.log`。
+烧录前备份了本次覆盖范围的前 2 MiB，
+文件 `original-first-2MiB-20261031.bin`，SHA-256：
+`3afa97679b861eadad77b9202dcd9f8d0978455efac0b45b6fb67fea2345c3b0`。
+
+## 已接入的软件
+
+- FLUX 桌面、字体、触摸手势、快捷设置、返回桌面及原生 Wi-Fi 设置页。
+- ST7102 RGB565 显示与 ST7123 五点触摸；保留控制器固定槽位，错误读数不合成为抬手。
+- RGB565 surface、脏矩形、居中等比缩放和反向触摸映射；原图形引擎、字体、BMP/JPEG/PNG。
+- WASM 和 RISC-V AOT，应用生命周期、暂停/恢复、停止、回调超时终止与资源清理。
+- SD 文件、目录、应用沙箱、权限、KV；ASTP 安装、扫描、卸载与双版本代码目录。
+- C5 SDIO Wi-Fi、扫描/连接/保存配置/重连/忘记、受密码保护的本地 AP；SNTP 时钟。
+- 原有 TCP/UDP、HTTP/HTTPS、MQTT/MQTTS、WebSocket/WSS 服务和六个网络 ABI 导入。
+- ES8311/I2S 播放和录音；复用原 WAV/PCM/MP3、歌词、音效混音及压缩流逻辑。
+
+C5 主机固定使用 ESP-Hosted 2.12.9，与板包提供的协处理器版本相同。
+SD 卡占 slot 0、C5 占 slot 1，共享控制器初始化并按槽释放。
+P4 的 SAR ADC 在这个配置中用于本地 RNG 熵源；外部 ES8311 录音不使用它。
+
+## P4 Launcher 性能
+
+同一块 P4 v3.2 / 480×480 板，5 个已安装应用、共 9 个桌面条目。使用
+`aster ui bench 8`：预热 2 秒，然后每 180 ms 向下一张卡片滚动，测量 8 秒。
+这是实际提交到显示缓冲的 UI 帧率，不是 MIPI 扫描刷新率，也不是触摸到显示的延迟。
+
+- 原始 IDF 适配：10.1 FPS，平均绘制 74.0 ms，帧间隔 P95 为 117 ms。
+- 修复 RGB565 快速绘制路径、刷新调度及整屏失效：23.6 FPS。
+- 加入 PPA 填充、DMA2D 拷贝和整屏容量的局部绘制缓冲：28.3 FPS。
+- 加入有界卡片缓存：30.9 FPS，平均绘制 26.9 ms，帧间隔 P95 为 41 ms。
+
+最终固件复测 32.1 FPS、平均绘制 25.7 ms、帧间隔 P95 为 40 ms，PPA 错误数仍为 0。
+用户实机确认上下滑动、松手惯性和下拉设置明显更流畅，画面正常。
+
+最后一轮 8 秒内 PPA 完成 325 次填充、29229457 像素、0 次错误；启动时在真实硬件上
+校验 RGB565 颜色、部分矩形填充和缓存一致性。只加速大于等于 4096 像素的纯色、
+不透明矩形，其他 LVGL 任务继续使用软件路径。PPA 不支持卡片当前的小角度旋转，
+不能用其 90° 步进旋转或 1/16 步进缩放替换连续动画。
+
+DMA2D 使用 IDF 6 的 DPI 拷贝接口；提交后等待完成再允许 LVGL/WASM 复用源缓冲，
+并使 CPU 的显存缓存失效以保证快照正确。LVGL 使用单个 64 字节对齐、整屏容量的
+PSRAM 局部绘制缓冲，避免重复处理 12 个小条带。快照恢复先批量转换字节序，再做
+一次整块传输；内存不足时保留逐行恢复路径。
+
+P4 额外保留最多 8 张非活动卡片位图（最多 806400 字节 PSRAM），切换页面、字体
+更新或离开 Launcher 时清空；S3 默认不启用这部分缓存。像素测试覆盖原 S3 字节序
+与 P4 原生字节序、裁剪、混合和抗锯齿，13 条目循环测试覆盖缓存绕回和退出回收。
+137 项固件测试通过（跳过 3 项），S3 编译通过，2048 AOT 的启动/暂停/恢复/停止通过。
+
+正常上电约 3.2 秒进入桌面，不再自动执行 SD 根目录诊断；需要自动诊断时可设置
+`CONFIG_ASTER_P4_AUTORUN_DIAGNOSTIC=y`。手动诊断和性能测量：
+
+```text
+aster app diagnostic
+aster app stop
+aster ui bench 8
+aster ui perf
+mem-dump
+```
+
+基线及实机日志位于本机忽略目录 `build/osptek-p4/hardware/` 的 `ui-baseline.log`、
+`ui-fast.log`、`ui-hw.log`、`ui-final-bench.log`、`ui-final-repeat.log`、`ui-app-regression.log`。
+
+## AOT
+
+默认 `CONFIG_WAMR_ENABLE_AOT=y`，同时保留快速解释器。
+加载已安装应用时优先 `app.aot`；只有在进入 guest 之前加载/实例化失败时才回退
+`app.wasm`。运行过 guest 之后的异常不会重试，避免重复副作用。
+
+```bash
+# 固件仓库：为单个诊断 WASM 生成 P4 AOT
+python tools/p4_aot.py input.wasm output.aot
+# 配套 SDK 仓库：生成可安装包
+python tools/build.py apps/hello --target riscv --aot
+```
+
+目标为 RV32、ILP32F、M/A/F/C，启用软件内存/栈边界检查。
+WAMR 2.4.3 只给共享内存模块插入循环终止检查，因此工具对 AOT 编译副本设置
+有上限的共享内存，并打开 thread manager。原 portable WASM 不变，不引入 guest
+线程。加载器拒绝不满足该配置的 AOT。P4 的解释器已关闭，安装器拒绝缺少匹配 AOT 的包，运行时也拒绝 portable WASM；AOT 加载失败直接报错，不再回退。
+
+IDF 6 的动态可执行堆与 `CONFIG_ESP_SYSTEM_MEMPROT` 互斥；这个私有配置关闭了该项。
+AOT 代码从 PSRAM 分配，逐段验证 MMU 的物理连续性及指令地址映射；写回数据缓存、使指令缓存失效并对双核执行 `fence.i` 后才进入代码。不再因较大的游戏代码挤占内部 SRAM 而回退解释器。实机已从 PSRAM 执行 GoldMiner 0.1.5（代码 100288 B）和商城（58560 B）。旧版 GoldMiner 菜单约 10.7 FPS，应用优化版帧率待测；日志在忽略的 build/osptek-p4/hardware/goldminer-015-psram-aot.log 与 store-psram-aot.log。AOT 是原生机器码，必须来自受信任的编译/包来源。当前默认未强制包签名；
+头部、权限和软件边界检查不能把任意原生 AOT 变成安全沙箱。
+
+## SD 卡与命令
+
+字体资源约 96 MB。生成的桌面目录不含自动启动诊断文件：
+
+```bash
+python tools/p4_sdcard.py --package ../aster-sdk/dist/riscv/aster.hello.ast
+# 复制 build/osptek-p4/sd-desktop/ 的内容到 FAT SD 卡根目录
+```
+
+串口控制台：
+
+```text
+aster app list
+aster app install /SD:/aster/install/aster.hello.ast
+aster app run aster.hello
+aster app pause
+aster app resume
+aster app stop
+aster app uninstall aster.hello
+aster wifi scan
+aster wifi results
+aster wifi connect "SSID" "PASSWORD"
+aster wifi status
+aster wifi reconnect
+aster wifi forget
+```
+
+Wi-Fi 工作在后台；连接成功后才保存凭据。热点从桌面 Wi-Fi 设置页控制，无路由/NAT。
+SD 挂载不会自动格式化。此端口支持 SD 安装和共享 UART 上的 ASTERFS 3 应用包传输；
+尚未提供独立 USB-CDC 文件服务和完整的硬件调试命令集。
+
+共享下载串口支持现有 SDK 的 `ASTERPING / ASTERPUT`、512 字节逐块 ACK、CRC32
+及 `.part` 断点续传。只接收 SD 根目录或 `/SD:/aster/install/` 下的 `.ast` 安装包，
+拒绝路径穿越、直接覆盖已安装应用目录及其他类型文件。完整校验通过后才发布包文件。
+UART 正文直接读驱动，保留二进制 CR/LF/NUL；接收期间由控制台线程独占输入。
+
+```text
+python tools/deploy.py dist/riscv/aster.touchtest.ast --target riscv --port COM11 --run
+```
+
+以上命令在 SDK 仓库运行，端口按实际设备修改。P4 控制台提供标准提示符
+`aster:~$`、`installed OK` 和 `started <id>` 应答；`aster app start` 与 `run` 均支持。
+已使用原有 SDK 部署工具在实机上传、安装并启动 TouchTest：480×480、RISC-V AOT、
+状态 RUNNING。早期单点适配已由用户确认显示与单指轨迹正常。
+现已接通五点输入：按控制器原始槽位上报 DOWN/MOVE/UP，同帧事件在绘制前交付，
+`aster_input_touch` 返回全部有效触点（兼容原有 12 字节点结构，稳定槽位见事件）。
+读取失败或没有新坐标帧时保留原状态；多指期间抑制应用上方的单指系统手势，直到全部抬起。
+五指事件、稀疏槽位、独立抬起、复用、坐标越界与异常读取已通过真实 WASM/x86 AOT
+桥接回归；新版已烧录实机，TouchTest AOT 运行时报告 `reported_max=5`；
+屏幕五指交叉与独立抬起的最终实机效果待用户确认。
+应用将最大内存改为 2 MiB，以容纳 480×480 画布及初始内存/托管堆预算。
+138 项固件测试通过（跳过 3 项），包含实际接收核心的分片、CRC、断点恢复、
+坏包不覆盖旧包、已完整部分文件发布及路径限制测试。部署日志见本机
+`build/osptek-p4/hardware/touchtest-serial-final-deploy.log`、`touchtest-running.log`。
+
+`check_runtime.py` 另行生成 `build/osptek-p4/sdcard/app.wasm` 和 `app.aot`。
+放到卡根目录后用 `aster app diagnostic` 运行蓝/橙格子诊断，最多 600 帧
+（30 fps 约 20 秒），随后返回桌面；自动启动默认关闭。
+正常已安装应用没有这项帧数限制。`make_smoke.py` 会覆盖该诊断 WASM。
+
+## 验证范围与已知边界
+
+Python 3.12 / Linux：
+
+```bash
+python tools/host.py
+ASTER_TEST_RENDER=1 python systems/espidf/tests/check_runtime.py
+python systems/espidf/tests/check_ui.py
+python -m unittest discover -s tests
+```
+
+主机测试执行真实 WASM 与 x86 AOT，覆盖内存边界、像素、触摸、缩放、定时器、
+文件/KV 权限、安装升级、暂停恢复、死循环停止及超时。桌面测试运行真实 LVGL/FLUX
+并输出 PNG；显示、触摸、音频和无线硬件是测试替身。截图不是实机照片。
+RISC-V AOT 另已完成上述 P4 v3.2 实机检查，仍不代表全部应用与硬件功能验收通过。
+
+显示提交、网络和存储性能见下方按日期记录的实测。长期 SD 稳定性和具体应用的性能需要按固件、存储卡及负载分别测量。应用通过设备能力接口判断音频、传感器等外设是否可用。
+
+## Wiring and panel settings
+
+### RGB565 performance work (2026-11-01 / 2026-11-02)
+
+APPs and Launcher share the RGB565 DMA2D submission path. Large opaque
+`CLEAR` / `RECT_F` gfx commands now use PPA; unsupported layouts and small
+rectangles retain software rendering. Guest surfaces keep their original
+allocation handle for freeing and expose aligned pixels. Native byte order,
+clipping, pitch and guest readback are preserved. The frame loop budgets
+drawing inside the requested frame period instead of sleeping a full period
+after drawing. Scale-fit uses a separable nearest-neighbour mapping; native
+480x480 canvases bypass scaling.
+
+Reproducible AOT fixture: `systems/espidf/tests/apps/rgb565_bench`. It changes
+the rectangle colours on each of 128 frames, mixes PPA fills with a clipped
+software rectangle, then checks every guest pixel outside the timed draw.
+The unchanged older `batched` fixture measured 1417/128 = 11.07 ms drawing
+and 3557/127 = 28.01 ms frame intervals before the APP changes; afterwards
+515/128 = 4.02 ms and 2117/127 = 16.67 ms respectively. The new changing-colour
+fixture also measured 16.67 ms intervals, zero command errors and zero pixel
+errors. These are VM submission intervals, not optical or tear-free FPS;
+complex APPs may exceed the frame budget or explicitly request a lower rate.
+
+Launcher uses CPU1 for LVGL/VM and CPU0 for disjoint, cache-aligned image rows.
+The RGB565 bilinear interpolation retains a single rounding step. The P4
+profile selects 128 KiB L2 cache with 64-byte lines. The temporary 256 KiB
+experiment consumed an additional 128 KiB of internal SRAM; it was reverted
+at the user's request to prioritize SRAM capacity. During that experiment,
+TouchTest AOT measured 124143 internal bytes free and a 45056-byte largest
+block. TouchTest and the installed 2048 both started via AOT. These are
+historical 256 KiB-cache measurements, not the restored profile's memory figures.
+After restoring 128 KiB cache and flashing, the Launcher measured 342 frames
+/ 7980 ms (42.8 FPS), with zero PPA errors. TouchTest started through AOT,
+reported five touch points, and measured 255623 internal bytes free (about
+249.6 KiB), a 180224-byte largest block (176 KiB), and 250719-byte minimum
+free heap. Evidence: `rgb565-restored-cache128-bench.log` and
+`rgb565-restored-cache128-touchtest.log` under the local hardware log directory.
+The user confirmed normal display and multi-touch operation in the updated
+TouchTest after flashing the final RGB565 build; its requested frame rate is
+60 FPS. This visual check does not measure optical FPS.
+
+With the temporary 256 KiB cache, an 8-second continuous-scroll Launcher run measured
+404 frames / 7994 ms (50.5 FPS), 15.44 ms mean rendering, and a 24 ms P95
+frame interval. PPA reported zero errors. The original 128 KiB cache run
+after SMP/touch changes measured about 41–42 FPS. **Launcher has not reached
+60 FPS**; the APP fixture reaching 60 FPS must not be reported as Launcher
+performance or a guarantee for all applications.
+
+LCD VFP is configurable and defaults to 182 (other porches unchanged), giving
+about 60 Hz at 30 MHz. `aster ui bench 8` reports UI drawing FPS separately
+from `LCD SCAN` VSYNC frequency. The single scanout does not guarantee
+tear-free presentation. ST7123 I2C defaults to **400000 Hz (400 kHz)**;
+this is the bus clock, not a 400 Hz touch sampling claim. IRQ-high polls skip
+I2C transactions and preserve the last contact state.
+
+Local physical evidence is under ignored `build/osptek-p4/hardware/`:
+`appbench-baseline.log`, `appbench-ppa.log`, `rgb565-pixelbench.log`,
+`rgb565-cache256-bench.log`, `rgb565-cache256-appbench.log` and
+`cache256-2048.log`, plus `rgb565-final-bench.log` and
+`rgb565-final-touchtest.log`. Host runtime/pixel/overlay checks and the S3 build pass;
+host mocks alone do not validate PPA or physical panel output.
+
+Panel timing/initialization comes from the display archive example. GPIOs
+are corrected against the supplied development-board User Guide dated
+2026-09-10, page 6 (baseboard V1.5 schematic), which differs from that
+display example. The physically tested subset is described above.
+
+- ST7102: 480×480 RGB565; 2 DSI lanes at 620 Mbps; DPI clock 30 MHz.
+- Horizontal back/pulse/front porch: 140/2/120; vertical: 8/4/182
+  (reference example: 8/4/200).
+- DPHY power: internal LDO channel 3, 2500 mV.
+- Backlight: GPIO20, active high. LCD reset: GPIO5, active low.
+- ST7123 five-point touch: I2C1 at 400 kHz,
+  SCL GPIO8, SDA GPIO7, reset GPIO6, interrupt GPIO21.
+- SD: slot 0, CLK43/CMD44/D0=39/D1=40/D2=41/D3=42, detect GPIO45.
+- C5: SDIO slot 1, CLK18/CMD19/D0=14/D1=15/D2=16/D3=17; reset54,
+  boot6, according to the core-board connection diagram. GPIO6 is shared
+  with touch reset; initialize touch before any C5 reset/boot sequence.
+- ES8311: SDA7/SCL8, MCLK13/BCLK12/WS10/TX9/RX11, amplifier enable53.
+  The image probes ES8311 and provides playback/recording; no acoustic test has been run.
+- 16 MB flash and 32 MB PSRAM match the module specification. PSRAM
+  speed and P4 silicon revision still need physical verification. The
+  display reference uses 200 MHz PSRAM and pre-v3 P4; current core-board
+  documentation describes v3.x. The build tool now defaults to v3.x
+  with minimum revision 3.0. Use `--revision pre3` for older chips; its
+  build and sdkconfig are isolated under `build/osptek-p4-pre3/`.
+  A pre-v3 image is not a v3.x image.
+
+GPIOs are configurable under `Aster OSPTEK P4 baseboard V1.5 wiring` in IDF
+menuconfig. DSI uses the chip's dedicated pins. LCD reset is released
+before the vendor driver's initial DCS ID read. Touch reset is held high
+before LCD initialization because the reference uses a TDDI panel.
+
+The diagnostic initially draws six vertical bars (red, green, blue, white,
+black, yellow). If `/SD/app.wasm` exists, the VM takes ownership of drawing
+and touch polling. Touch failure leaves display-only apps available. A successful compilation is not evidence of
+a working physical display.
+
+
+## App Store workspace validation (ABI 4.3)
+
+The `feat/app-store-runtime` branch exposes the shared device-info and deferred
+bundle-install APIs. The board identity is `osptek-p4-st7102`, CPU target `riscv`.
+The installer accepts only the requesting app's own sandbox files, destroys its
+VM before copying the bundle, and reopens it with an installation-result receipt.
+External resources are installed into the inactive version's `assets` directory
+before activation; existing application data remains in `data`.
+
+The matching application and local server live in the sibling `aster-apps`
+repository (`AppStore`, `StoreServer`, `StoreDemo`). On physical hardware the
+Store AOT starts, Wi-Fi connects, DHCP succeeds, and the local server returns a
+compatible catalog. Physical Store download and installation of StoreDemo 1.0.1
+completed; its RISC-V AOT reports `STOREDEMO PASS external message and
+1048576-byte resource`. This verifies the separate text and 1 MiB resource files.
+Host tests cover streamed external-resource installation and rollback on I/O
+failure. Simulator tests cover the complete Store-to-server installation flow.
+
+Connect Wi-Fi in system settings before opening the Store. Its server address
+must be the computer's reachable LAN address, not `127.0.0.1`. Credentials are
+saved in device NVS after a successful connection; they are not build settings.
+
+## APP auxiliary stacks
+
+The IDF runtime enables WAMR thread management for asynchronous termination.
+Aster currently exposes one guest execution context and no guest thread API.
+After creating that context, `aster_runtime/aux_stack.h` restores the module's
+full declared auxiliary-stack region instead of WAMR's default five-way thread
+partition. This does not allocate an additional stack or disable bounds checks.
+Guest thread support must revisit this ownership policy before spawning contexts.
+OpenOMF's nested resource parser needs its full declared stack; OpenTyrian 0.1.3
+also moves its coroutine C stack into the declared auxiliary region.
+
+## Attribution and hardware sources
+
+Display initialization and touch sequencing are adapted from the supplied
+OSPTEK example, copyright 2026 OSPTEK, CC BY 4.0:
+https://github.com/osptek . Source archive:
+`display-tft-3.95inch-480x480-main.zip`.
+Changes replace the LVGL/Modbus demonstration with RGB565 diagnostics and
+Aster display/input callbacks, expose GPIO configuration, and adapt the
+driver for IDF 6.0.
+The vendored ST7102 driver retains its individual Apache-2.0 notices.
+
+GPIO source: `esp32-p4c5-module-dev-board-main.zip`, English User Guide
+20260910 page 6 / Chinese guide page 6. Core SDIO source:
+https://github.com/osptek/esp32-p4c5-core-board ,
+`images/c5-p4-connection.png`. The archived standalone V1.3 schematic and
+the V1.5 schematic embedded in the newer guide are separate revisions.
+
+## 2026-11-03 HTTP 吞吐验证
+
+当前 IDF 传输层的 TCP 收发缓冲各 16 KiB、HTTP 的 body/input/decoded 各 16 KiB，随连接/请求在 PSRAM 中申请，关闭后释放。相对原 2 KiB 配置，每个活动 HTTP/TCP 组合额外约 70 KiB PSRAM；已有 4/8 KiB 网络/HTTP 线程栈预算不变。P4 活动轮询间隔分别为 2/1 ms，Zephyr 保持原 10/5 ms 与 2 KiB 配置，公开 HTTP 单次读取仍限 2 KiB。
+
+同一 P4、Wi-Fi 和本地服务器，下载同一 2511460 B 文件的一轮样本：旧固件纯接收 5133 ms（477 KiB/s），接收并 2 KiB 写卡 21496 ms（114 KiB/s）；新版分别为 2234 ms（1097 KiB/s）、7657 ms（320 KiB/s），新版 8 KiB 批量写卡 5538 ms（442 KiB/s）。未做 SHA/商城 UI 的该诊断与完整商城安装有不同开销，不能将单轮数字视为所有资源的保证速度。原始日志在 `aster-apps/common/artifacts/http-bench`，烧录日志在 `build/shared-core-hardware/p4-http-flash.log`。
+
+## 2026-11-04 安装进度界面
+
+APP VM 完整停止后，P4 的同一个 UI/APP 工作线程执行安装；资源复制回调会协作处理 LVGL 与触摸，不增加线程栈。系统显示检查、复制、同步、提交等阶段，资源预扫描提供总字节数，复制时报告累计字节数、耗时与当前文件。详情按钮可展开/收起文件名；应用的启动仍等待安装事务结束。
+
+进度接口是固件内部回调，Zephyr 与无观察者调用保留原入口；没有新增 SDK ABI。程序和资源写入未启用的 `.v0`/`.v1`，文件同步并写入有效版本记录后才切换。预扫描和进度不改变失败恢复策略。`tests/test_install_io.py` 校验进度单调、文件复制及 129 个 I/O 故障点/129 个进程中断点；`systems/espidf/tests/check_ui.py` 实际绘制并点击详情按钮，截图在 `build/idf-runtime-check/install-*.png`。

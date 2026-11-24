@@ -1,35 +1,84 @@
 # PrismOS
 
-**One Core. Many Experiences.**
+**一个核心，多种体验。**
 
-PrismOS is an independently developed embedded system distribution based on [Aster Firmware](https://github.com/a505283042/aster-firmware), initially targeting FakePod Nano Pro (ESP32-S31).
+PrismOS 是基于 [Aster 固件](https://github.com/a505283042/aster-firmware) 的轻量嵌入式系统项目。保留原有系统核心与应用兼容性，将公共界面逻辑和独立主题分离，支持自由选择桌面主题、系统字体和提示音。
 
-## Status / 当前状态
+首发验证设备为 FakePod Nano Pro（ESP32-S31），保留 ESP32-S3 和 ESP32-P4 原有平台支持。
 
-Planning and repository initialization. The full upstream firmware source has **not yet been imported**. No PrismOS firmware build or hardware validation is claimed.
+## 三层系统架构
 
-- [中文开发方案](docs/DEVELOPMENT_PLAN.zh-CN.md)
-- [Reference baseline](https://github.com/a505283042/aster-firmware/commit/2ff46e11bb63f12b613fc7fc071a6014d243b832)
+| 层级 | 职责 | 复用方式 |
+| --- | --- | --- |
+| 系统核心（System Core） | 设备、音频、网络、存储、应用生命周期 | 完全共用 |
+| 公共界面框架（UI Shell） | 显示调度衔接、输入、桌面切换、快捷面板、系统设置 | 所有主题共用 |
+| 独立界面主题（UI Theme） | 桌面布局、动画、配色、图标和交互风格 | 每套主题独立 |
 
-## Goals
-
-- Preserve existing audio, device services, AOT runtime and ABI compatibility.
-- Develop a modular native UI shell with switchable themes and font families.
-- Establish an independent distribution channel and application store.
-- Preserve upstream licenses, notices and third-party attribution.
-
-## Source import / 基线导入
-
-From a Git-enabled computer authenticated to GitHub, use a temporary directory:
-
-```bash
-git clone https://github.com/a505283042/PrismOS.git PrismOS
-cd PrismOS
-git remote add aster https://github.com/a505283042/aster-firmware.git
-git fetch aster main
-git merge --allow-unrelated-histories --no-commit 2ff46e11bb63f12b613fc7fc071a6014d243b832
+```text
+       FLUX / Classic / 后续主题
+                  │
+           公共 UI Shell
+      主题 / 字体 / 提示音选择
+                  │
+         Aster 系统核心（保留）
+                  │
+          现有 HAL 与板级驱动
+                  │
+       ESP32-S3 / S31 / P4
 ```
 
-The README may conflict: retain the PrismOS introduction and preserve the upstream README under docs/ASTER_UPSTREAM_README.md. Retain all upstream license files. Review imported workflows, release targets, external references and any local conflicts before committing; disable imported release workflows until independently configured. Verify the imported tree against the pinned baseline, then commit and push to PrismOS only. Never force-push or modify the Aster repository.
+主题不仅仅是换色，而是允许不同桌面布局、动画和交互方式。所有主题共用原有音频、网络、应用生命周期、显示宿主及系统服务。字体和提示音可独立选择，不强制跟随主题。
 
-The Chinese development plan defines the implementation stages and acceptance criteria.
+初期主题布局随固件编译，运行时切换无需重启；可选字体、提示音和主题数据资源通过 TF 卡安装。不引入通用脚本或插件框架。
+
+## 开发路线
+
+| 阶段 | 内容 |
+| --- | --- |
+| P0 | 原版固件基线验证 |
+| P1.1 | 建立轻量 UI Shell，保持原 FLUX 行为 |
+| P1.2 | 提取 FLUX 公共界面逻辑 |
+| P1.3 | 建立主题接口、注册及切换机制 |
+| P1.4 | 新增第二套独立桌面主题 |
+| P2 | 多套系统字体切换 |
+| P3 | 多套系统提示音切换 |
+| P4 | 个性化设置整合与稳定性验收 |
+
+详细任务、源码切入点、接口设计、生命周期、回退机制和验收矩阵见 [开发计划 v0.4](docs/DEVELOPMENT_PLAN.zh-CN.md)。该文件是当前唯一实施计划。
+
+## 开发原则
+
+- 保留 Aster 系统核心、应用二进制接口（ABI）、应用运行时、现有驱动和平台适配。
+- 公共界面框架只协调现有 UI 调度，不新建 UI 线程，不重写 LVGL 或显示流水线。
+- 每套主题独立实现表现层，系统级动作共用；只激活一套主题，不为每个主题分配常驻全屏缓冲。
+- 复用现有字体加载器、提示音服务、快捷面板、配置存储及应用安装机制。
+- 不因主题、字体或提示音切换停止后台音乐。
+- 每阶段独立提交、测试及回退，不提前重构 HAL、BSP、商城、SDK 或资源服务器。
+- 保持原有首次开机下载协议与旧应用资源路径，不格式化用户 TF 卡。
+
+## 当前状态
+
+- 已完成固件源码及 Git 历史迁移：[初始基线 d201d36](https://github.com/a505283042/PrismOS/commit/d201d3690dad5b9e9efbfd100c799f2777d780fc)。
+- 已确定三层架构及 v0.4 开发计划。
+- 原版固件基线编译、真机验证以及新增功能仍待完成。
+- 独立商城、资源发布服务器及新增板卡适配按实际需求另行评审，本期不实施。
+
+## 开发文档
+
+- [PrismOS 开发计划：三层界面架构与轻量个性化](docs/DEVELOPMENT_PLAN.zh-CN.md)
+- [原始 Aster 项目说明](docs/ASTER_UPSTREAM_README.md)
+- [现有平台适配接口](docs/platform-adapter-api.md)
+- [现有首次开机流程](docs/first-boot-setup.md)
+- [现有下载源配置](docs/distribution-config.md)
+
+项目新增说明、开发记录和测试报告统一使用中文，技术标识及命令保留原文。
+
+## 编译与开发基线
+
+参考版本：[Aster 提交 2ff46e11](https://github.com/a505283042/aster-firmware/commit/2ff46e11bb63f12b613fc7fc071a6014d243b832)。
+
+按各板卡原有构建说明和 SDK 版本编译，完成基线验证前不改动底层驱动及工具链。独立发布配置完成前，不触发继承的固件发布工作流。
+
+## 版权与许可
+
+PrismOS 保留原始 Aster Git 历史、许可证及版权声明。详见 [LICENSE](LICENSE)、[NOTICE.md](NOTICE.md) 及相关第三方许可文件。新增资源须确认合法分发权，并保留必要署名。

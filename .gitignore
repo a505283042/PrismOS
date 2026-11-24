@@ -1,0 +1,11 @@
+/build*/
+/dist/
+/artifacts/
+__pycache__/
+*.pyc
+.venv/
+*.log
+config/aster.conf
+config/aster.conf.old
+
+/release-output/

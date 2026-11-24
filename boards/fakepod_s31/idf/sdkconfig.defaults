@@ -1,0 +1,49 @@
+CONFIG_IDF_TARGET="esp32s31"
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# Experimental MSC build: expose a host-visible USB SD reader from the
+# launcher Power page. This compiles and wires the existing TinyUSB + SDMMC
+# handoff code; USB serial remains the default until the user enters MSC.
+# The regular main branch keeps the USB reader disabled.
+CONFIG_ASTER_FAKEPOD_USB_STORAGE=y
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
+CONFIG_FREERTOS_HZ=1000
+CONFIG_IDF_EXPERIMENTAL_FEATURES=y
+
+# Start with retention-only light sleep on this board. CPU power-down and
+# PSRAM halfsleep require separate recovery validation on ESP32-S31 silicon.
+# CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP is not set
+# CONFIG_PM_SLP_SPIRAM_HALFSLEEP_ENABLED is not set
+
+# CONFIG_WAMR_ENABLE_INTERP is not set
+CONFIG_WAMR_ENABLE_AOT=y
+CONFIG_WAMR_ENABLE_SHARED_MEMORY=y
+# CONFIG_WAMR_ENABLE_LIBC_WASI is not set
+# CONFIG_WAMR_ENABLE_LIB_PTHREAD is not set
+# CONFIG_ESP_SYSTEM_MEMPROT is not set
+
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FATFS_MAX_LFN=255
+CONFIG_FATFS_API_ENCODING_UTF_8=y
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
+
+# A 5760-byte receive window stalls HTTPS on WAN RTTs. Payload buffering is
+# connection-scoped; this does not reserve another permanent framebuffer.
+CONFIG_LWIP_TCP_WND_DEFAULT=32768
+CONFIG_LWIP_TCP_RECVMBOX_SIZE=16
+
+# Optional Classic Bluetooth audio (runtime start via CLI).
+CONFIG_BT_ENABLED=y
+CONFIG_BT_BLUEDROID_ENABLED=y
+CONFIG_BT_CLASSIC_ENABLED=y
+CONFIG_BT_A2DP_ENABLE=y
+CONFIG_BT_BLE_ENABLED=n
+CONFIG_BT_A2DP_USE_EXTERNAL_CODEC=n
+CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST=y
+CONFIG_BTDM_CTRL_MODE_BR_EDR_ONLY=y

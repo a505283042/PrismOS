@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: MIT
+include(${ASTER_ROOT}/common/distribution.cmake)
+aster_configure_distribution(app)
+if(CONFIG_ASTER_FIRST_BOOT)
+  include(${ASTER_ROOT}/common/setup/service.cmake)
+  add_dependencies(app aster_setup_page)
+  target_sources(app PRIVATE ${ASTER_SETUP_SERVICE_SOURCES})
+endif()
+
+target_sources(app PRIVATE
+	aster_sysinfo.c
+	aster_storage.c
+	aster_versions.c
+	aster_pkg.c
+	aster_app_mgr.c
+	aster_kv.c
+	aster_logring.c
+	aster_file_svc.c
+	aster_sig.c
+	aster_time.c
+    ${ASTER_COMMON_PACKAGE_SOURCES}
+)
+
+if(CONFIG_ASTER_NET)
+  target_sources(app PRIVATE aster_net.c aster_net_event.c)
+endif()
+
+if(CONFIG_ASTER_NET_LOOPBACK_TEST)
+  target_sources(app PRIVATE ${ASTER_ROOT}/tests/zephyr/net_loopback_fixture.c)
+endif()
+
+if(CONFIG_ASTER_NET_POOL_MONITOR)
+  target_sources(app PRIVATE ${ASTER_ROOT}/tests/zephyr/net_pool_monitor.c)
+endif()
+
+if(CONFIG_ASTER_HTTP)
+  target_sources(app PRIVATE aster_http.c ${ASTER_COMMON_HTTP_SOURCES})
+endif()
+if(CONFIG_ASTER_HTTP_TLS)
+  target_sources(app PRIVATE aster_http_tls.c)
+endif()
+
+if(CONFIG_ASTER_MQTT)
+  target_sources(app PRIVATE aster_mqtt.c ${ASTER_COMMON_MQTT_SOURCES})
+endif()
+
+if(CONFIG_ASTER_WEBSOCKET)
+  target_sources(app PRIVATE aster_ws.c ${ASTER_COMMON_WS_SOURCES})
+endif()
+
+if(CONFIG_ASTER_MDNS)
+  target_sources(app PRIVATE aster_mdns.c)
+endif()

@@ -1,0 +1,4 @@
+{
+  "source_url": "https://aster-releases.obs.cn-south-1.myhuaweicloud.com/aster-source.json",
+  "ca_bundle": "certificates/roots.pem"
+}

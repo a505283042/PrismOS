@@ -1,0 +1,289 @@
+"""Exercise the actual sparse SD cache with a mixed-size launcher working set."""
+
+import re
+import unittest
+from test_waveshare import ROOT, run_c
+
+
+class SparseCache(unittest.TestCase):
+    def test_unchanged_app_caption_does_not_request_another_warm(self):
+        s = (ROOT / 'systems/zephyr/ui/launcher/flux.c').read_text()
+        helper = s[s.index('static void set_label_text') : s.index('static lv_obj_t *icon(')]
+        run_c(
+            r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
+typedef struct {int px;} lv_font_t;
+typedef struct {const char *text;const lv_font_t *font;uintptr_t spec;} lv_obj_t;
+static lv_font_t generic={0};
+static int warm_calls;
+static const lv_font_t *aster_ui_font(int px) {(void)px;return &generic;}
+static unsigned aster_flux_font_pixels(int size,int zoom,const char *text) {(void)size;(void)zoom;return (unsigned char)*text>=128?14:10;}
+static const lv_font_t *aster_flux_font(unsigned px,const char *text) {assert(text);generic.px=px;warm_calls++;return &generic;}
+static const char *lv_label_get_text(lv_obj_t *o) {return o->text;}
+static void *lv_obj_get_user_data(lv_obj_t *o) {return (void *)o->spec;}
+static int as(int px){return px*3/4;}
+static int ax(int px){return px*3/4;}
+static void lv_obj_set_width(lv_obj_t *o,int width){(void)o;assert(width==75);}
+static void lv_obj_set_style_transform_scale_x(lv_obj_t *o,int scale,int part){(void)o;(void)part;assert(scale==256);}
+static void lv_obj_set_style_transform_scale_y(lv_obj_t *o,int scale,int part){(void)o;(void)part;assert(scale==256);}
+static void aster_ui_font_warm(int px,const char *s) {(void)px;(void)s;}
+static void lv_obj_set_style_text_font(lv_obj_t *o,const lv_font_t *f,int part) {(void)part;o->font=f;}
+static void lv_label_set_text(lv_obj_t *o,const char *s) {o->text=s;}
+'''
+            + helper
+            + r'''
+int main(void) {
+ lv_obj_t label={.text="",.spec=(16u<<24)|(160u<<12)|100u};
+ set_caption_text(&label,"Package");assert(warm_calls==1 && generic.px==10);
+ for(int i=0;i<10;i++) set_caption_text(&label,"Package");
+ assert(warm_calls==1);
+ set_caption_text(&label,"包元数据");assert(warm_calls==2 && generic.px==10);
+ set_caption_text(&label,"新的介绍");assert(warm_calls==3);
+ return 0;
+}
+'''
+        )
+
+    def test_per_size_cache_lru_and_lifetime(self):
+        s = (ROOT / 'systems/zephyr/ui/font_sd.c').read_text()
+        constants = '\n'.join(
+            re.findall(r'^#define (?:SPARSE_(?:BYTES|N)|SCRATCH_BYTES)\s+.+$', s, re.M)
+        )
+        start = re.search(r'typedef struct\s*\{\s*uint8_t w,\s*h;', s).start()
+        structs = s[start : s.index('static const uint8_t LUT2', start)]
+        code = s[s.index('/* A synchronous UI operation') : s.index('static bool sd_get_dsc')]
+        lifetime = s[
+            s.index('void aster_font_sd_cache_drop') : s.index('bool aster_font_sd_cache_status')
+        ]
+        run_c(
+            r'''
+#include <assert.h>
+#include <stdint.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#define ASTER_FONT_MAX_SCRATCH 2352
+#define CLAMP(v,l,h) ((v)<(l)?(l):(v)>(h)?(h):(v))
+#define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
+#define aster_service_logf(...) ((void)0)
+#define ASTER_OS_READ 1
+#define CPF_REC 16
+#define SPARSE_BYTES (48u*1024u)
+#define SPARSE_N 192u
+#define SCRATCH_BYTES ASTER_FONT_MAX_SCRATCH
+typedef struct {int unused;} lv_draw_buf_t;
+typedef struct {int unused;} lv_font_t;
+'''
+            + structs
+            + r'''
+static slot_t s_slots[2];
+static bool s_inited=true;
+enum {ST_EMPTY,ST_SPARSE,ST_DEAD};
+static bool s_probe_first,s_repaint;
+static unsigned s_generation,reload_polls;
+static int aster_font_sd_poll(void){reload_polls++;return 0;}
+static unsigned s_full_refs,disk_reads,live_allocs,fail_next,io_opens,io_closes,fail_io;
+static struct {unsigned reads,read_bytes,evictions,misses,miss_filled,hits,load_us,max_load_us,open_us,record_us,bitmap_us,close_us,load_failures;} s_st;
+static uint32_t aster_os_cycle_us(void){static uint32_t clock;return ++clock;}
+static uint32_t aster_os_elapsed_us(uint32_t t){return t;}
+static void *aster_os_alloc_external(unsigned n) {if(fail_next && --fail_next==0) return NULL;void *p=malloc(n);if(p) live_allocs++;return p;}
+static void aster_os_free_external(void *p) {if(p) {live_allocs--;free(p);}}
+typedef struct {int px;} aster_os_file_t;
+static void aster_os_file_init(aster_os_file_t *f) {memset(f,0,sizeof(*f));}
+static int aster_os_file_open(aster_os_file_t *f,const char *p,int flags) {assert(flags==1);if(fail_io==1){fail_io=0;return -1;}io_opens++;f->px=atoi(p);return 0;}
+static int aster_os_file_close(aster_os_file_t *f) {(void)f;io_closes++;if(fail_io==3){fail_io=0;return -1;}return 0;}
+static bool read_at(aster_os_file_t *f,unsigned off,void *buf,unsigned len) {
+ disk_reads++;if(fail_io==2){fail_io=0;return false;}
+ if(len==16) {unsigned index=(off-32)/CPF_REC;memcpy(buf,&index,4);}
+ else {assert(len==64 && off>=100000);memset(buf,((off-100000)/64+f->px)&255,len);}
+ return true;
+}
+static void rd_rec(cp_rec_t *r,const uint8_t raw[16]) {
+ uint32_t index;memcpy(&index,raw,4);memset(r,0,sizeof(*r));r->w=8;r->h=16;r->doff=index*64;r->dlen=64;
+}
+'''
+            + code
+            + lifetime
+            + r'''
+int main(void) {
+ for(int i=0;i<2;i++) {s_slots[i].px=i?16:20;snprintf(s_slots[i].path,64,"%u",s_slots[i].px);s_slots[i].rec_foff=32;s_slots[i].bm_foff=100000;s_slots[i].fsize=1000000;}
+ assert(!s_slots[0].cache && !live_allocs);
+ for(unsigned fail=1;fail<=3;fail++) {fail_next=fail;assert(!sparse_fetch(s_slots,0x4e00,0) && !live_allocs && !s_slots[0].cache);}
+ for(int pass=0;pass<3;pass++) {
+  unsigned before=disk_reads;
+  for(int i=0;i<100;i++) {
+   slot_t *f=&s_slots[i/50];int gi=i%50;
+   const struct sparse_ent *e=sparse_fetch(f,0x4e00+gi,gi);
+   assert(e && e->px==f->px && e->cp==0x4e00u+(unsigned)gi);
+   assert(e->len==64 && f->cache->mem[e->off]==gi+f->px);
+  }
+  if(pass) assert(disk_reads==before);
+ }
+ assert(s_slots[0].cache->n==50 && s_slots[1].cache->n==50 && live_allocs==6);
+ assert(s_st.open_us==100 && s_st.record_us==100 && s_st.bitmap_us==100 && s_st.close_us==100 && !s_st.load_failures);
+ assert(s_st.hits==200 && s_st.miss_filled==100 && s_st.load_us==400 && s_st.max_load_us==4);
+ for(int gi=50;gi<500;gi++) {
+  assert(sparse_fetch(s_slots,0x4e00,0));
+  assert(sparse_fetch(s_slots,0x4e00+gi,gi));
+ }
+ unsigned before=disk_reads;
+ assert(sparse_fetch(s_slots,0x4e00,0));assert(disk_reads==before && s_st.evictions>0);
+ struct sparse_cache *c=s_slots[0].cache;
+ for(unsigned i=0;i<c->n;i++) {
+  struct sparse_ent *e=&c->entries[i];assert(e->off+e->len<=c->used);
+  for(unsigned j=0;j<e->len;j++) assert(c->mem[e->off+j]==((e->cp-0x4e00+20)&255));
+ }
+ assert(!sparse_fetch(s_slots,0x1234,-1));
+ aster_font_sd_session_begin();assert(!live_allocs && s_full_refs==1);
+ assert(sparse_fetch(s_slots,0x4e00,0));assert(live_allocs==3);
+ aster_font_sd_session_begin();aster_font_sd_session_end();assert(live_allocs==3);
+ aster_font_sd_session_end();assert(!live_allocs && !s_slots[0].cache);
+ assert(sparse_fetch(s_slots+1,0x4e00,0));aster_font_sd_cache_drop();assert(!live_allocs);
+ unsigned opened=io_opens;
+ aster_font_sd_io_begin();aster_font_sd_io_begin();
+ for(int i=0;i<10;i++) assert(sparse_fetch(s_slots,0x5000+i,i));
+ assert(io_opens==opened+1 && io_closes+1==io_opens);
+ aster_font_sd_io_end();assert(io_closes+1==io_opens);
+ aster_font_sd_io_end();assert(io_closes==io_opens);
+ opened=io_opens;aster_font_sd_io_begin();
+ for(int i=0;i<10;i++) assert(sparse_fetch(s_slots,0x5000+i,i));
+ aster_font_sd_io_end();assert(io_opens==opened); /* All hits: no file. */
+ aster_font_sd_io_begin();
+ assert(sparse_fetch(s_slots,0x6000,50));
+ assert(sparse_fetch(s_slots+1,0x6001,51)); /* Switch closes previous face. */
+ assert(io_opens==io_closes+1);
+ fail_io=2;assert(!sparse_fetch(s_slots+1,0x6002,52));
+ assert(io_opens==io_closes && s_st.load_failures==1);
+ assert(sparse_fetch(s_slots+1,0x6002,52)); /* Read error can retry. */
+ aster_font_sd_io_end();assert(io_opens==io_closes);
+ aster_font_sd_io_begin();fail_io=1;
+ assert(!sparse_fetch(s_slots,0x7000,60));assert(io_opens==io_closes);
+ assert(sparse_fetch(s_slots,0x7000,60));
+ aster_font_sd_cache_drop();assert(!live_allocs && io_opens==io_closes);
+ aster_font_sd_io_end(); /* Drop safely cancels an active scope. */
+ unsigned failures=s_st.load_failures;fail_io=3;
+ assert(sparse_fetch(s_slots,0x8000,70));
+ assert(s_st.load_failures==failures+1 && io_opens==io_closes);
+ aster_font_sd_cache_drop();assert(!live_allocs);
+ for(unsigned i=0;i<2;i++) {
+  s_slots[i].ivs=aster_os_alloc_external(24);s_slots[i].state=ST_SPARSE;
+  s_slots[i].iv_cnt=2;s_slots[i].gl_cnt=100;s_slots[i].fsize=1000000;
+ }
+ assert(sparse_fetch(s_slots,0x9000,71));s_probe_first=true;
+ aster_font_sd_reload();
+ assert(!live_allocs && !s_probe_first && s_repaint && s_generation==1 && reload_polls==1);
+ for(unsigned i=0;i<2;i++)assert(!s_slots[i].ivs && !s_slots[i].cache && s_slots[i].state==ST_EMPTY && !s_slots[i].iv_cnt && !s_slots[i].gl_cnt);
+ return 0;
+}
+'''
+        )
+
+    def test_accelerated_font_bake_matches_scalar_edge_sampling(self):
+        import importlib.util, random
+
+        for dependency in ('numpy', 'freetype', 'fontTools'):
+            if importlib.util.find_spec(dependency) is None:
+                self.skipTest('optional font bake dependency unavailable: ' + dependency)
+        spec = importlib.util.spec_from_file_location('cpfont_bake', ROOT / 'tools/build_cpfont.py')
+        bake = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(bake)
+        if bake.np is None:
+            self.skipTest('optional numpy accelerator unavailable')
+        numpy = bake.np
+        r = random.Random(42)
+        for _ in range(80):
+            w, h = r.randrange(1, 45), r.randrange(1, 45)
+            args = (
+                bytes(r.randrange(256) for _ in range(w * h)),
+                w,
+                h,
+                r.randrange(-8, 9),
+                r.randrange(-8, 50),
+                r.randrange(-4, 5),
+                r.randrange(0, 15),
+                r.choice([1, 2, 4]),
+            )
+            fast = bake.resample_anchored(*args)
+            try:
+                bake.np = None
+                slow = bake.resample_anchored(*args)
+            finally:
+                bake.np = numpy
+            self.assertEqual(fast, slow)
+
+    def test_large_complete_font_passes_streaming_file_size_gate(self):
+        s = (ROOT / 'systems/zephyr/services/aster_file_svc.c').read_text()
+        define = re.search(r'^#define FSVC_MAX_FILE.*$', s, re.M)[0]
+        a = s.index('static void do_put(')
+        b = s.index('\n\tchar tmp[192];', a)
+        gate = (
+            s[a:b].replace('{\n', '{\n (void)dev;(void)path;(void)want_crc;(void)off;\n', 1)
+            + '\n}\n'
+        )
+        run_c(
+            r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <stdarg.h>
+#include <errno.h>
+struct device {int unused;};
+static int verdict;
+static void cdc_reply(const char *s,...) {va_list a;va_start(a,s);verdict=va_arg(a,int);va_end(a);}
+static int aster_storage_mounted(void) {return 0;}
+'''
+            + define
+            + '\n'
+            + gate
+            + r'''
+int main(void) {
+ do_put(NULL,"font",19586836,0,0);assert(verdict==-ENODEV);
+ do_put(NULL,"font",27776000,0,0);assert(verdict==-ENODEV);
+ do_put(NULL,"font",FSVC_MAX_FILE+1,0,0);assert(verdict==-EFBIG);
+ return 0;
+}
+'''
+        )
+
+    def test_native_hinting_keeps_metrics_and_grayscale_at_requested_size(self):
+        import importlib.util
+
+        for dependency in ('freetype', 'fontTools'):
+            if importlib.util.find_spec(dependency) is None:
+                self.skipTest('optional font bake dependency unavailable: ' + dependency)
+        spec = importlib.util.spec_from_file_location('bake_hint', ROOT / 'tools/build_cpfont.py')
+        bake = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(bake)
+        text = set(map(ord, '音乐设置清晰中文笔画ABCxyz012345'))
+        for px in (12, 14, 16, 18, 20):
+            with self.subTest(px=px):
+                base = bake.rasterize(
+                    ROOT / 'resources/fonts/ui.ttf', px, text, bake.make_lut(1), 4
+                )
+                hinted = bake.rasterize(
+                    ROOT / 'resources/fonts/ui.ttf',
+                    px,
+                    text,
+                    bake.make_lut(1),
+                    4,
+                    bake.NATIVE_HINT_MAX_DEFAULT,
+                )
+                self.assertEqual(base[1], hinted[1])
+                self.assertEqual(base[4:7], hinted[4:7])
+                self.assertEqual([g[2] for g in base[2]], [g[2] for g in hinted[2]])
+                self.assertNotEqual(base[3], hinted[3])
+                levels = {
+                    v for packed in hinted[3] for byte in packed for v in (byte >> 4, byte & 15)
+                }
+                self.assertGreater(len(levels), 8)  # Grayscale, not monochrome thresholding.
+        unchanged = bake.rasterize(
+            ROOT / 'resources/fonts/ui.ttf', 16, text, bake.make_lut(1), 4, 12
+        )
+        self.assertEqual(
+            unchanged,
+            bake.rasterize(ROOT / 'resources/fonts/ui.ttf', 16, text, bake.make_lut(1), 4),
+        )

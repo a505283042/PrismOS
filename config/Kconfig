@@ -1,0 +1,46 @@
+mainmenu "Aster firmware configuration"
+menu "System and hardware"
+choice ASTER_SYSTEM_SELECT
+    prompt "Operating system"
+    default ASTER_SYSTEM_ZEPHYR
+config ASTER_SYSTEM_ZEPHYR
+    bool "Zephyr"
+endchoice
+choice ASTER_HARDWARE_SELECT
+    prompt "Hardware model"
+    default ASTER_HW_LCKFB_S3
+config ASTER_HW_LCKFB_S3
+    bool "LCKFB ESP32-S3 ShiZhanPai (N16R8)"
+config ASTER_HW_WAVESHARE_35B
+    bool "Waveshare ESP32-S3-Touch-LCD-3.5B (N16R8)"
+endchoice
+endmenu
+menu "Startup display (launcher is portrait; APPs select their orientation)"
+choice ASTER_BOOT_DISPLAY
+    prompt "Display startup mode"
+    default ASTER_BOOT_PORTRAIT
+config ASTER_BOOT_PORTRAIT
+    bool "Portrait"
+config ASTER_BOOT_HEADLESS
+    bool "Headless (shell and non-graphical applications)"
+endchoice
+endmenu
+menu "Firmware services"
+config ASTER_CFG_CAMERA
+    bool "Camera"
+    depends on !ASTER_HW_WAVESHARE_35B
+    default y
+config ASTER_CFG_AUDIO
+    bool "Audio input and output"
+    default y
+config ASTER_CFG_WIFI
+    bool "Wi-Fi"
+    default y
+config ASTER_CFG_LAUNCHER
+    bool "Built-in system desktop"
+    default y
+config ASTER_CFG_USB_CONSOLE
+    bool "USB console (shell, logs and file transfer on Serial/JTAG)"
+    depends on ASTER_HW_WAVESHARE_35B
+    default n
+endmenu

@@ -1,0 +1,64 @@
+# Board identity is independent of the chip target.
+config ASTER_BOARD_FAKEPOD_S31
+    bool
+    default y
+config ASTER_BOARD_ID
+    string
+    default "fakepod-s31"
+config ASTER_BOARD_NAME
+    string
+    default "FAKE POD NANO PRO · ESP32-S31"
+config ASTER_DISPLAY_WIDTH
+    int
+    default 460
+config ASTER_DISPLAY_HEIGHT
+    int
+    default 460
+config ASTER_BOARD_CODEC_CS43131
+    bool
+    default y
+
+config ASTER_FAKEPOD_USB_STORAGE
+    bool "Enable USB SD card reader"
+    default n
+    select TINYUSB_MSC_ENABLED
+    help
+        Allow the user to hand the SD card to a computer through USB OTG.
+        The card is exclusively owned by the computer during the session.
+
+config ASTER_FAKEPOD_EXPERIMENTAL_LIGHT_SLEEP
+    bool "Expose unvalidated FAKE POD NANO PRO light sleep"
+    default n
+    help
+        Keep disabled until timer and physical wake-up pass on this board.
+        The current ESP32-S31 bring-up does not return from the sleep call
+        reliably. Screen-off remains available independently of CPU sleep.
+
+config ASTER_APP_WATCHDOG_MS
+    int "Maximum duration of a guest lifecycle/event callback (ms)"
+    range 100 30000
+    default 2000
+config ASTER_P4_AUTORUN_DIAGNOSTIC
+    bool "Run SD root app.aot/app.wasm diagnostic automatically at boot"
+    default n
+    help
+        Normally boot directly to the desktop. Run the SD root diagnostic
+        explicitly with 'aster app diagnostic' when checking the hardware.
+config ASTER_SIGNATURE_VERIFY
+    bool "Verify package signatures"
+    default n
+config ASTER_SIGNATURE_REQUIRE
+    bool "Reject unsigned packages"
+    depends on ASTER_SIGNATURE_VERIFY
+    default y
+config ASTER_VENDOR_PUBKEY
+    string "Trusted P-256 public key (130 hexadecimal characters)"
+    depends on ASTER_SIGNATURE_VERIFY
+    default ""
+
+config ASTER_P4_DUAL_CORE_RENDER
+    bool "Split launcher pixel rows across both HP cores"
+    default y
+    help
+        CPU1 owns LVGL and VM. CPU0 processes disjoint, cache-aligned rows
+        of each ribbon. All jobs join before the next draw or cache release.

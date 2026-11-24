@@ -1,0 +1,345 @@
+"""Decode real WAV/FLAC/MP3 samples through the production OS callback adapter."""
+
+import math
+import shutil
+import struct
+import subprocess
+import tempfile
+import unittest
+import wave
+from pathlib import Path
+from test_waveshare import ROOT
+
+STUB = r"""
+#include "aster_audio_decoder.h"
+#include "aster_os.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <assert.h>
+static size_t allocations;
+static uint64_t file_bytes_read;
+void *aster_os_alloc(size_t n,unsigned region){(void)region;void *p=malloc(n);if(p)allocations++;return p;}
+void aster_os_free(void *p,unsigned region){(void)region;if(p){assert(allocations);allocations--;free(p);}}
+int aster_os_stat(const char *path,aster_os_entry_t *out){FILE *f=fopen(path,"rb");if(!f)return -ENOENT;fseek(f,0,SEEK_END);out->size=ftell(f);out->type=ASTER_OS_FILE;fclose(f);return 0;}
+int aster_os_file_open(aster_os_file_t *f,const char *path,unsigned flags){(void)flags;f->handle=fopen(path,"rb");return f->handle?0:-ENOENT;}
+int aster_os_file_close(aster_os_file_t *f){int r=fclose(f->handle);f->handle=NULL;return r?-EIO:0;}
+int aster_os_file_read(aster_os_file_t *f,void *p,size_t n){size_t got=fread(p,1,n,f->handle);file_bytes_read+=got;return ferror(f->handle)?-EIO:(int)got;}
+int aster_os_file_seek(aster_os_file_t *f,int64_t n,unsigned mode){return fseek(f->handle,(long)n,mode)?-EIO:0;}
+static bool abort_read;
+static bool cancel(void *ctx){(void)ctx;return abort_read;}
+int main(int argc,char **argv){
+ assert(argc==4);int bits=atoi(argv[2]);aster_audio_decoder_t *d=NULL;
+ assert(!aster_audio_decoder_open(argv[1],cancel,NULL,&d));
+ aster_audio_decoder_info_t info;aster_audio_decoder_info(d,&info);
+ assert(info.rate==48000 && info.bits==(unsigned)bits && info.channels==2 && info.frames==1024);
+ assert(info.allocated>0 && info.peak_allocated<=768*1024);
+ int32_t pcm[1024];uint64_t pos=0;
+ while(1){
+  int n=aster_audio_decoder_read(d,pcm,127);assert(n>=0);if(!n)break;
+  for(int i=0;i<n*2;i++){
+   uint32_t sample=(uint32_t)((pos*2+i)*37+1)&(UINT32_MAX>>(32-bits));
+   uint32_t expected=sample<<(32-bits);uint32_t actual;memcpy(&actual,pcm+i,4);assert(actual==expected);
+  }
+  pos+=(unsigned)n;
+ }
+ assert(pos==1024);
+ assert(!aster_audio_decoder_seek(d,500));assert(aster_audio_decoder_read(d,pcm,1)==1);
+ uint32_t actual;memcpy(&actual,pcm,4);assert(actual==(((1000u*37+1)&(UINT32_MAX>>(32-bits)))<<(32-bits)));
+ abort_read=true;assert(aster_audio_decoder_read(d,pcm,512)==-ECANCELED);
+ assert(!aster_audio_decoder_close(d));assert(!allocations);
+ abort_read=false;d=NULL;
+ assert(aster_audio_decoder_open(argv[3],NULL,NULL,&d)<0);assert(!d && !allocations);
+ return 0;
+}
+"""
+
+
+class AudioDecoder(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('ffmpeg'), 'ffmpeg needed to generate MP3 samples')
+    def test_mp3_cbr_and_vbr_duration_seek_and_cleanup(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            code = (
+                STUB[: STUB.index('int main(')]
+                + r"""
+int main(int argc, char **argv)
+{
+    assert(argc == 4);
+    unsigned rate = (unsigned)atoi(argv[2]);
+    uint64_t duration = (uint64_t)rate * atoi(argv[3]);
+    aster_audio_decoder_t *d = NULL;
+    assert(!aster_audio_decoder_open(argv[1], cancel, NULL, &d));
+    aster_audio_decoder_info_t info;
+    aster_audio_decoder_info(d, &info);
+    assert(info.codec == ASTER_AUDIO_CODEC_MP3 && info.bits == 16 && info.rate == rate);
+    assert(info.channels >= 1 && info.channels <= 2);
+    assert(info.frames + 2304 >= duration && info.frames <= duration + 2304);
+
+    /* Save short PCM windows from linear playback, including encoder delay,
+     * an exact frame boundary and the final partial block. */
+    const uint64_t positions[] = {info.frames - 2*rate + 17, rate/2, 5*rate, 0,
+                                  32*1152, info.frames - 201, 2*rate + 7};
+    enum { windows = sizeof(positions) / sizeof(positions[0]) };
+    int32_t reference[windows][1024] = {0}, pcm[1024];
+    size_t sample_bytes = info.channels * sizeof(int32_t);
+    uint64_t count = 0;
+    bool nonzero = false;
+    for (;;) {
+        int n = aster_audio_decoder_read(d, pcm, 512);
+        assert(n >= 0);
+        if (!n)
+            break;
+        for (unsigned i = 0; i < windows; i++) {
+            uint64_t begin = count > positions[i] ? count : positions[i];
+            uint64_t end = count + n < positions[i] + 512 ? count + n : positions[i] + 512;
+            if (begin < end)
+                memcpy(reference[i] + (begin - positions[i]) * info.channels,
+                       pcm + (begin - count) * info.channels, (end - begin) * sample_bytes);
+        }
+        count += n;
+        for (unsigned i = 0; i < n * info.channels; i++)
+            nonzero |= pcm[i] != 0;
+    }
+    assert(count == info.frames && nonzero);
+    assert(!aster_audio_decoder_close(d) && !allocations);
+
+    assert(!aster_audio_decoder_open(argv[1], cancel, NULL, &d));
+    for (unsigned i = 0; i < windows; i++) {
+        uint64_t remaining = info.frames - positions[i];
+        uint64_t before = file_bytes_read;
+        assert(!aster_audio_decoder_seek(d, positions[i]));
+        int n = aster_audio_decoder_read(d, pcm, 512);
+        assert(n == (int)(remaining < 512 ? remaining : 512));
+        assert(!memcmp(pcm, reference[i], n * sample_bytes));
+        /* The long, untagged fixture was indexed while counting samples.
+         * A jump near EOF must not reread several minutes from the SD card. */
+        if (duration >= 300u * rate)
+            assert(file_bytes_read - before < 256 * 1024);
+    }
+    abort_read = true;
+    assert(aster_audio_decoder_read(d, pcm, 512) == -ECANCELED);
+    assert(!aster_audio_decoder_close(d) && !allocations);
+    return 0;
+}
+"""
+            )
+            (root / 'test.c').write_text(code)
+            binary = root / 'decoder'
+            subprocess.run(
+                [
+                    'cc',
+                    '-std=c11',
+                    '-O1',
+                    '-fsanitize=address,undefined',
+                    '-I' + str(ROOT / 'common/audio'),
+                    '-I' + str(ROOT / 'common/port'),
+                    '-I' + str(ROOT / 'contract/include'),
+                    '-I' + str(ROOT / 'third_party/dr_libs'),
+                    str(root / 'test.c'),
+                    str(ROOT / 'common/audio/aster_audio_decoder.c'),
+                    str(ROOT / 'common/audio/aster_audio_output.c'),
+                    str(ROOT / 'common/port/aster_power.c'),
+                    '-lm',
+                    '-o',
+                    str(binary),
+                ],
+                check=True,
+            )
+            for rate, channels, opts in (
+                (44100, 2, ['-q:a', '4']),
+                (48000, 2, ['-b:a', '192k', '-write_xing', '0']),
+                (32000, 1, ['-b:a', '96k']),
+            ):
+                mp3 = root / f'{rate}.MP3'
+                subprocess.run(
+                    [
+                        'ffmpeg',
+                        '-v',
+                        'error',
+                        '-f',
+                        'lavfi',
+                        '-i',
+                        f'anoisesrc=color=pink:seed=41:sample_rate={rate}:duration=12',
+                        '-ac',
+                        str(channels),
+                        '-c:a',
+                        'libmp3lame',
+                        '-metadata',
+                        'title=Test',
+                        *opts,
+                        str(mp3),
+                    ],
+                    check=True,
+                    timeout=15,
+                )
+                subprocess.run([str(binary), str(mp3), str(rate), '12'], check=True, timeout=10)
+
+            # More than 768 equally spaced points forces index compaction.
+            long_mp3 = root / 'long.mp3'
+            subprocess.run(
+                ['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i',
+                 'anoisesrc=color=pink:seed=53:sample_rate=44100:duration=340',
+                 '-c:a', 'libmp3lame', '-q:a', '5', '-write_xing', '0', str(long_mp3)],
+                check=True, timeout=45,
+            )
+            subprocess.run([str(binary), str(long_mp3), '44100', '340'], check=True, timeout=45)
+
+    @unittest.skipUnless(shutil.which('ffmpeg'), 'ffmpeg needed to create FLAC fixture')
+    def test_large_flac_random_seek_matches_wav(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            wav = root / 'music.wav'
+            flac = root / 'music.flac'
+            rate = 48000
+            notes = [
+                261.6256,
+                329.6276,
+                391.9954,
+                523.2511,
+                493.8833,
+                391.9954,
+                440.0,
+                391.9954,
+                329.6276,
+                293.6648,
+                261.6256,
+                261.6256,
+            ]
+            data = bytearray()
+            for i in range(rate * 12):
+                t = i / rate
+                local = t % 1
+                f = notes[int(t)]
+                envelope = min(1, local / 0.025) * max(0, 1 - local) ** 1.6
+                note = (
+                    (math.sin(2 * math.pi * f * local) + 0.15 * math.sin(4 * math.pi * f * local))
+                    * 0.038
+                    * envelope
+                )
+                pad = (
+                    (
+                        math.sin(2 * math.pi * 130.8128 * t)
+                        + 0.6 * math.sin(2 * math.pi * 195.9977 * t)
+                    )
+                    * 0.006
+                    * min(1, t / 0.04, (12 - t) / 0.04)
+                )
+                for value in ((note + pad) * 0.9, (note * 0.78 + pad) * 0.9):
+                    data.extend((int(value * 8388607) & 0xFFFFFF).to_bytes(3, 'little'))
+            with wave.open(str(wav), 'wb') as w:
+                w.setnchannels(2)
+                w.setsampwidth(3)
+                w.setframerate(rate)
+                w.writeframes(data)
+            subprocess.run(
+                ['ffmpeg', '-v', 'error', '-i', str(wav), '-c:a', 'flac', str(flac)],
+                check=True,
+                timeout=15,
+            )
+            code = (
+                STUB[: STUB.index('static bool abort_read;')]
+                + r"""
+int main(int argc,char **argv){
+ assert(argc==3);aster_audio_decoder_t *wav=NULL,*flac=NULL;int32_t a[1024],b[1024];
+ assert(!aster_audio_decoder_open(argv[1],NULL,NULL,&wav));
+ assert(!aster_audio_decoder_open(argv[2],NULL,NULL,&flac));
+ assert(aster_audio_decoder_read(flac,b,512)==512);
+ const uint64_t positions[]={240000,528000,96000,0,575500,48000,240000};
+ for(unsigned i=0;i<sizeof(positions)/sizeof(positions[0]);i++){
+  assert(!aster_audio_decoder_seek(wav,positions[i]));
+  assert(!aster_audio_decoder_seek(flac,positions[i]));
+  int n=aster_audio_decoder_read(wav,a,512),m=aster_audio_decoder_read(flac,b,512);
+  assert(n>0 && n==m && !memcmp(a,b,(size_t)n*2*sizeof(int32_t)));
+ }
+ assert(!aster_audio_decoder_close(wav));assert(!aster_audio_decoder_close(flac));assert(!allocations);return 0;
+}
+"""
+            )
+            (root / 'test.c').write_text(code)
+            binary = root / 'test'
+            subprocess.run(
+                [
+                    'cc',
+                    '-std=c11',
+                    '-O1',
+                    '-fsanitize=address,undefined',
+                    '-I' + str(ROOT / 'common/audio'),
+                    '-I' + str(ROOT / 'common/port'),
+                    '-I' + str(ROOT / 'contract/include'),
+                    '-I' + str(ROOT / 'third_party/dr_libs'),
+                    str(root / 'test.c'),
+                    str(ROOT / 'common/audio/aster_audio_decoder.c'),
+                    str(ROOT / 'common/audio/aster_audio_output.c'),
+                    str(ROOT / 'common/port/aster_power.c'),
+                    '-lm',
+                    '-o',
+                    str(binary),
+                ],
+                check=True,
+            )
+            subprocess.run([str(binary), str(wav), str(flac)], check=True, timeout=15)
+
+    def test_lossless_and_cleanup(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / 'test.c').write_text(STUB)
+            binary = root / 'decoder'
+            result = subprocess.run(
+                [
+                    'cc',
+                    '-std=c11',
+                    '-O1',
+                    '-g',
+                    '-Wall',
+                    '-Wextra',
+                    '-Werror',
+                    '-Wno-unused-function',
+                    '-Wno-misleading-indentation',
+                    '-fsanitize=address,undefined',
+                    '-fno-omit-frame-pointer',
+                    '-I' + str(ROOT / 'common/audio'),
+                    '-I' + str(ROOT / 'common/port'),
+                    '-I' + str(ROOT / 'contract/include'),
+                    '-I' + str(ROOT / 'third_party/dr_libs'),
+                    str(root / 'test.c'),
+                    str(ROOT / 'common/audio/aster_audio_decoder.c'),
+                    str(ROOT / 'common/audio/aster_audio_output.c'),
+                    str(ROOT / 'common/port/aster_power.c'),
+                    '-lm',
+                    '-o',
+                    str(binary),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for bits in (16, 24, 32):
+                wav = root / f'pcm{bits}.wav'
+                data = b''.join(
+                    ((i * 37 + 1) & ((1 << bits) - 1)).to_bytes(bits // 8, 'little')
+                    for i in range(2048)
+                )
+                with wave.open(str(wav), 'wb') as w:
+                    w.setnchannels(2)
+                    w.setsampwidth(bits // 8)
+                    w.setframerate(48000)
+                    w.writeframes(data)
+                bad = root / 'truncated.wav'
+                bad.write_bytes(wav.read_bytes()[:-7])
+                subprocess.run([str(binary), str(wav), str(bits), str(bad)], check=True, timeout=10)
+                if bits != 32 and shutil.which('ffmpeg'):
+                    flac = root / f'pcm{bits}.flac'
+                    subprocess.run(
+                        ['ffmpeg', '-v', 'error', '-i', str(wav), '-c:a', 'flac', str(flac)],
+                        check=True,
+                        timeout=15,
+                    )
+                    subprocess.run(
+                        [str(binary), str(flac), str(bits), str(bad)], check=True, timeout=10
+                    )
+
+
+if __name__ == '__main__':
+    unittest.main()

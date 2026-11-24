@@ -1,0 +1,5 @@
+set(ASTER_BOARD_AUDIO_ADAPTER "${ASTER_IDF_ADAPTERS}/es8311_i2s/adapter.cmake")
+set(ASTER_BOARD_AUDIO_SOURCES "${CMAKE_CURRENT_LIST_DIR}/port/audio_wiring.c")
+
+set(ASTER_BOARD_WIFI_ADAPTER "${ASTER_IDF_ADAPTERS}/hosted_sdmmc/adapter.cmake")
+set(ASTER_BOARD_STORAGE_SLOT 0)

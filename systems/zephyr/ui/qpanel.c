@@ -1,0 +1,1306 @@
+#include "launcher.h"
+#include "aster_services.h"
+#include "aster_port_util.h"
+#include "aster_os.h"
+#include "aster_device.h"
+#include "aster_player_service.h"
+/* SPDX-License-Identifier: MIT
+ * Quick-settings sheet. See qpanel.h for the contract: what it may ask of
+ * the screen under it, why it is torn down by the same call that rebuilds
+ * that screen, and which parts are the caller's problem.
+ *
+ * The sheet lives on the ACTIVE SCREEN, as its last two children (scrim,
+ * then sheet) rather than on lv_layer_top(). Both work for hit-testing and
+ * draw order, and BOTH show up in `aster ui screenshot` (that reads the
+ * glass record first, and LVGL's flush writes the same one). The reason is
+ * teardown ownership: lv_obj_clean() deletes only a node's own children and
+ * does NOT touch lv_layer_top(), so a top-layer sheet would outlive the
+ * host rebuilding its tree and linger as a ghost over a screen that no
+ * longer exists. On the screen it dies with the screen. The cost is that
+ * lv_obj_clean() on the screen deletes the sheet too, down a path no
+ * qpanel entry point sees; the LV_EVENT_DELETE hook below is what makes
+ * that safe rather than a dangling-pointer bug.
+ *
+ * Rows are laid out in a flex column, each an explicit height in whole
+ * line boxes (ASTER_FONT_CAPTION_LINE_H) plus air, so a re-bake that changes the
+ * face's line box moves the sheet instead of clipping it.
+ */
+#include "qpanel.h"
+
+#include "font_sd.h"
+#include "ui_font.h"
+#include "ui_geom.h"
+#include "ui_lvgl.h"
+#include "ui_wifi.h"
+#include "wifi_settings.h"
+
+#include "aster_platform.h"
+
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+#include <lvgl.h>
+
+/* Compact 16px labels fit both panel orientations. */
+#define QP_PAD_X 12
+#define QP_TITLE_H 34
+#define QP_ROW_H 42  /* one line box + 9 px of air above and below */
+#define QP_WIFI_H 64 /* two line boxes + the same air             */
+#define QP_RULE 2    /* accent terminator under the last row      */
+#define QP_BTN_W 64
+#define QP_BTN_H 28
+#define QP_BTN_GAP 8
+/* the first line box of any row, and the second when there is one */
+#define QP_ROW_Y ((QP_ROW_H - ASTER_FONT_CAPTION_LINE_H) / 2)
+#define QP_WIFI_Y1 ((QP_WIFI_H - 2 * ASTER_FONT_CAPTION_LINE_H) / 2)
+#define QP_WIFI_Y2 (QP_WIFI_Y1 + ASTER_FONT_CAPTION_LINE_H)
+/* dot column: the dot is centred on the line box it belongs to */
+#define QP_DOT_X QP_PAD_X
+#define QP_TXT_X (QP_PAD_X + 16)
+#define QP_DOT_DY ((ASTER_FONT_CAPTION_LINE_H - 6) / 2)
+/* the theme row: a fixed "主题" and the current name beside it, both on
+ * the row's single line box */
+#define QP_THEME_X (QP_TXT_X + 48)
+
+#define QP_VOL_LBL_W 40
+#define QP_VOL_VAL_W 40
+#define QP_VOL_GAP 8
+#define QP_VOL_SL_X (QP_PAD_X + QP_VOL_LBL_W + QP_VOL_GAP)
+
+/* The rows are whole line boxes plus air, and the sheet is the sum of its
+ * rows plus the accent rule. Both are load-bearing: a face re-bake that
+ * changes ASTER_FONT_CAPTION_LINE_H has to break the build here, the same way the
+ * drawer tiles do, rather than clip the bottom row's descenders. */
+BUILD_ASSERT(QP_TITLE_H >= ASTER_FONT_CAPTION_LINE_H && QP_ROW_H >= ASTER_FONT_CAPTION_LINE_H + 8 &&
+                     QP_WIFI_H >= 2 * ASTER_FONT_CAPTION_LINE_H + 8,
+             "quick-settings rows no longer fit the face's line box");
+
+/* The sheet is the sum of its rows and the scrim is the screen, so a sheet
+ * taller than the screen is a row the user cannot reach: lv_obj_set_size()
+ * takes the height happily, the sheet is simply clipped, and nothing says
+ * so. `h` is summed at runtime from these same terms -- this is that sum,
+ * assembled for the worst case (every optional row this build can show) and
+ * checked at compile time instead.
+ *
+ * 238 of 240 is the landscape figure: two pixels of margin. That is the
+ * point of the assert, not a reason to relax it -- a face re-bake that grows
+ * ASTER_FONT_CAPTION_LINE_H takes it negative here rather than silently eating the
+ * SD row off the bottom of the glass. */
+#define QP_SHEET_MAX_H \
+	(QP_TITLE_H + QP_ROW_H /* SD */ + QP_RULE + \
+	 (IS_ENABLED(CONFIG_ASTER_AUDIO) ? QP_ROW_H : 0) + \
+	 (IS_ENABLED(CONFIG_ASTER_WIFI) ? QP_WIFI_H : 0) + QP_ROW_H /* theme */)
+
+BUILD_ASSERT(QP_SHEET_MAX_H + 12 <= ASTER_UI_MIN_HEIGHT,
+             "quick-settings sheet is taller than the logical screen: its last "
+             "row would be clipped with no error (shrink QP_ROW_H/QP_TITLE_H)");
+
+#if IS_ENABLED(CONFIG_ASTER_AUDIO)
+#define QPANEL_KV_ID "aster.qpanel"
+#define QPANEL_KV_VOL "volume"
+#endif
+
+/* ---------- state (UI thread) ---------- */
+static const aster_qpanel_theme_ops_t *s_ops;
+static aster_qpanel_palette_t s_pal;
+
+static lv_obj_t *s_scrim, *s_sheet;
+#if IS_ENABLED(CONFIG_ASTER_AUDIO)
+static lv_obj_t *s_vol_slider, *s_vol_val;
+#endif
+#if IS_ENABLED(CONFIG_ASTER_WIFI)
+static lv_obj_t *s_dot_wifi, *s_wifi_lbl, *s_wifi_sub;
+static lv_obj_t *s_wifi_btn, *s_wifi_btn_lbl;
+#endif
+static lv_obj_t *s_theme_name, *s_theme_btn;
+static lv_obj_t *s_dot_sd, *s_sd_lbl;
+/* What the sheet is covering, when what it is covering is an APP. NULL until
+ * the first in-app open; the 150 KB is only ever asked for by a context that
+ * can actually use it. */
+static uint8_t *s_snap;
+/* The guest is not allowed on the glass while this is set. It is exactly
+ * "a sheet is up over an app and s_snap is the truth", so it is armed with
+ * the sheet and cleared with it -- never left behind for the next app. */
+static bool s_frozen;
+static bool s_exit_mode, s_exit_confirmed;
+
+/* ---------- small helpers ---------- */
+static lv_color_t hexc(uint32_t c)
+{
+	return lv_color_hex(c);
+}
+
+static void no_scroll(lv_obj_t *o)
+{
+	lv_obj_clear_flag(o, LV_OBJ_FLAG_SCROLLABLE);
+}
+
+static const char *theme_name(int i)
+{
+	if (s_ops && s_ops->name) {
+		const char *n = s_ops->name(i);
+
+		if (n && n[0]) {
+			return n;
+		}
+	}
+	return "主题";
+}
+
+/* Fill s_pal for the theme in use RIGHT NOW -- read on every build, not
+ * captured at bind time: the theme can change while the sheet is closed. */
+static void load_palette(void)
+{
+	/* The launcher's first theme (dark), as the fallback. The sheet has
+	 * to be legible with no host bound at all -- which is the state an
+	 * app context lands in, and the state a build with the native
+	 * launcher disabled is in permanently. */
+	aster_qpanel_palette_t p = {
+	        .bg = 0x243044,
+	        .fg = 0xE6EBF5,
+	        .dim = 0x8B95A8,
+	        .surface = 0x0A0E1A,
+	        .accent = 0x06B6D4,
+	};
+
+	if (s_ops && s_ops->palette) {
+		s_ops->palette(&p);
+	}
+	s_pal = p;
+}
+
+static lv_obj_t *mk_label(lv_obj_t *parent, const char *text, uint32_t color, int align)
+{
+	lv_obj_t *o = lv_label_create(parent);
+
+	lv_label_set_text(o, text);
+	lv_obj_set_style_text_color(o, hexc(color), 0);
+	lv_obj_set_style_text_font(o, aster_ui_font(ASTER_FONT_CAPTION_PX), 0);
+	aster_ui_font_warm(ASTER_FONT_CAPTION_PX, text);
+	lv_obj_set_style_text_align(o,
+	                            align == 1   ? LV_TEXT_ALIGN_CENTER
+	                            : align == 2 ? LV_TEXT_ALIGN_RIGHT
+	                                         : LV_TEXT_ALIGN_LEFT,
+	                            0);
+	return o;
+}
+
+static void set_label(lv_obj_t *o, const char *s)
+{
+	const char *cur;
+
+	if (!o) {
+		return;
+	}
+	cur = lv_label_get_text(o);
+	if (cur && strcmp(cur, s) == 0) {
+		return;
+	}
+	aster_ui_font_warm(ASTER_FONT_CAPTION_PX, s);
+	lv_label_set_text(o, s);
+}
+
+static void dot_color(lv_obj_t *d, uint32_t c)
+{
+	if (d) {
+		lv_obj_set_style_bg_color(d, hexc(c), 0);
+	}
+}
+
+static lv_obj_t *mk_dot(lv_obj_t *parent, int x, int y)
+{
+	lv_obj_t *o = lv_obj_create(parent);
+
+	lv_obj_set_size(o, 6, 6);
+	lv_obj_set_pos(o, x, y);
+	lv_obj_set_style_bg_color(o, hexc(s_pal.dim), 0);
+	lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
+	lv_obj_set_style_radius(o, 3, 0);
+	lv_obj_set_style_border_width(o, 0, 0);
+	/* A plain lv_obj is clickable by default (core/lv_obj.c sets
+	 * LV_OBJ_FLAG_CLICKABLE in the constructor), so an untouched 6x6 dot
+	 * would swallow presses meant for the row it sits in -- and, being
+	 * the topmost thing at those coordinates, would make the row feel
+	 * dead. */
+	lv_obj_clear_flag(o, LV_OBJ_FLAG_CLICKABLE);
+	no_scroll(o);
+	return o;
+}
+
+static lv_obj_t *mk_row(lv_obj_t *parent, int h)
+{
+	lv_obj_t *r = lv_obj_create(parent);
+
+	lv_obj_set_size(r, LV_PCT(100), h);
+	lv_obj_set_style_bg_opa(r, LV_OPA_COVER, 0);
+	lv_obj_set_style_bg_color(r, hexc(s_pal.surface), 0);
+	lv_obj_set_style_radius(r, 12, 0);
+	lv_obj_set_style_pad_all(r, 0, 0);
+	lv_obj_set_style_border_width(r, 0, 0);
+	lv_obj_set_style_border_side(r, LV_BORDER_SIDE_BOTTOM, 0);
+	lv_obj_set_style_border_color(r, hexc(s_pal.dim), 0);
+	lv_obj_set_style_border_opa(r, LV_OPA_30, 0);
+	no_scroll(r);
+	/* Left clickable on purpose: it absorbs presses that land on the row
+	 * but not on a control, so they never reach the scrim below (which
+	 * would close the sheet on a tap that clearly meant "inside"). */
+	return r;
+}
+
+static lv_obj_t *mk_button(lv_obj_t *parent, int x, int y, int w, int h, const char *text,
+                           lv_event_cb_t cb, lv_obj_t **out_lbl)
+{
+	lv_obj_t *b = lv_button_create(parent);
+	lv_obj_t *l;
+
+	lv_obj_set_size(b, w, h);
+	lv_obj_set_pos(b, x, y);
+	lv_obj_set_style_bg_color(b, hexc(s_pal.bg), 0);
+	lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
+	/* The theme's own pressed tint, so the feedback follows the palette
+	 * rather than a hardcoded "make it brighter". */
+	lv_obj_set_style_bg_color(b, hexc(s_pal.dim), LV_STATE_PRESSED);
+	lv_obj_set_style_radius(b, 8, 0);
+	lv_obj_set_style_border_width(b, 0, 0);
+	lv_obj_set_style_shadow_width(b, 0, 0);
+	lv_obj_set_style_pad_all(b, 0, 0);
+	if (cb) {
+		lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, NULL);
+	}
+	l = mk_label(b, text, s_pal.fg, 1);
+	lv_obj_center(l);
+	if (out_lbl) {
+		*out_lbl = l;
+	}
+	return b;
+}
+
+/* ---------- teardown ---------- */
+/* The one writer of the widget pointers, called both by the close path and
+ * by LV_EVENT_DELETE. That second caller is the point: lv_obj_clean() on
+ * the active screen (the launcher's rebuild) deletes this subtree without
+ * going through any qpanel entry point, and a stale s_sheet would then be
+ * dereferenced by the next tick. Registered on both roots, and idempotent,
+ * so the order they die in does not matter. */
+static bool forget(void)
+{
+	bool had = s_sheet != NULL;
+
+	s_scrim = s_sheet = NULL;
+	s_exit_mode = false;
+#if IS_ENABLED(CONFIG_ASTER_AUDIO)
+	s_vol_slider = s_vol_val = NULL;
+#endif
+#if IS_ENABLED(CONFIG_ASTER_WIFI)
+	s_dot_wifi = s_wifi_lbl = s_wifi_sub = NULL;
+	s_wifi_btn = s_wifi_btn_lbl = NULL;
+#endif
+	s_theme_name = s_theme_btn = NULL;
+	s_dot_sd = s_sd_lbl = NULL;
+	return had;
+}
+
+/* Fires for BOTH roots, and also when lv_obj_clean() on the screen takes
+ * this subtree down -- which is a path no qpanel entry point sees. It logs
+ * because that path is otherwise completely silent, and "the sheet vanished
+ * and nothing was logged" is the one reading that takes an hour to chase:
+ * the two causes (the host rebuilt its tree, or the sheet was never open to
+ * begin with) look identical from the console otherwise. `had` is what keeps
+ * it to one line per teardown -- the explicit path drops the pointers first,
+ * so the deletes it then triggers log nothing. */
+static void on_delete(lv_event_t *e)
+{
+	ARG_UNUSED(e);
+	if (forget()) {
+		aster_service_logf(3, "qpanel: close (screen rebuilt under it)");
+	}
+}
+
+static void ui_teardown(void)
+{
+	lv_obj_t *a = s_scrim;
+	lv_obj_t *b = s_sheet;
+
+	/* Pointers dropped BEFORE the deletes: each one fires on_delete. */
+	forget();
+	if (a) {
+		lv_obj_delete(a);
+	}
+	if (b) {
+		lv_obj_delete(b);
+	}
+	/* Deleting the pair invalidates the 240x238 they covered, so LVGL
+	 * repaints that band from the tree below on the next render -- which
+	 * is the whole "restore" story for the launcher. The app case is the
+	 * one where there is no tree below: see glass_put_back(). */
+}
+
+/* ---------- the glass, when an app owns it ---------- */
+
+/* Copy what is on the glass now, so it can be put back when the sheet
+ * leaves. False means DO NOT OPEN -- not "open and hope". */
+static bool snapshot_take(void)
+{
+	const uint8_t *gb = NULL;
+	uint32_t w = 0, h = 0, pitch = 0;
+	const uint32_t lw = aster_ui_lvgl_layout_width();
+	const uint32_t lh = aster_ui_lvgl_layout_height();
+
+	/* The record is allowed to ALIAS a front buffer the display worker is
+	 * still streaming (glass_note_full's alias_ok), so reading it before
+	 * the wire is idle is a read of memory the DMA is walking. */
+	aster_device_display_flush_drain();
+	if (!aster_device_display_glass_frame(&gb, &w, &h, &pitch)) {
+		/* Reachable, not theoretical: a build without
+		 * CONFIG_ASTER_SCREENSHOT keeps no shadow, so the record survives
+		 * only the *whole-panel* writes (a flip or a canvas present) and
+		 * an app whose last present was a partial rect leaves nothing to
+		 * save. Named here because "the panel does not open in this app"
+		 * would otherwise read as a gesture bug -- it is not, the pull
+		 * was recognised and this is the refusal. */
+		aster_service_logf(2, "qpanel: no whole-panel frame on the glass to save -- "
+		                      "not opening (last present was partial? builds without "
+		                      "CONFIG_ASTER_SCREENSHOT keep no shadow to fall back on)");
+		return false;
+	}
+	/* The glass holds a PANEL-order frame of PANEL size; the copy goes back
+	 * through write_at_ex, which takes LOGICAL coordinates. Those two are
+	 * the same frame only at rotation 0 -- and write_at_ex(be=true) only
+	 * reaches its direct path there either. Refuse rather than write a
+	 * rotated frame back as if it were logical. */
+	if (w != lw || h != lh || pitch != w) {
+		aster_service_logf(
+		        2, "qpanel: glass is %ux%u pitch %u, logical is %ux%u -- not opening",
+		        (unsigned)w, (unsigned)h, (unsigned)pitch, (unsigned)lw, (unsigned)lh);
+		return false;
+	}
+	if (!s_snap) {
+		s_snap = aster_os_alloc_external((size_t)lw * lh * 2u);
+		if (!s_snap) {
+			aster_service_logf(1, "qpanel: no PSRAM for the %u B glass snapshot",
+			                   (unsigned)(lw * lh * 2u));
+			return false;
+		}
+	}
+	memcpy(s_snap, gb, (size_t)lw * lh * 2u);
+	return true;
+}
+
+/* Put it back. The caller has already made sure nothing else will paint over
+ * it -- see aster_qpanel_close(). */
+static void glass_put_back(void)
+{
+	const uint32_t lw = aster_ui_lvgl_layout_width();
+	const uint32_t lh = aster_ui_lvgl_layout_height();
+
+	/* pitch is in PIXELS per row (write_at_ex multiplies by 2 itself);
+	 * passing bytes/row makes the staging gather step twice as far per row
+	 * as the buffer holds and read off its end. `true` is the byte order:
+	 * the glass record is panel order, which is what the record wants. */
+	aster_device_display_write_at_ex(s_snap, 0, 0, lw, lh, lw, true);
+	/* write_at_ex hands a whole-panel rect to the async worker and returns
+	 * before the wire is finished. The guest resumes the moment this
+	 * function returns, so without the drain its next present would race
+	 * the restore out of the same slot. */
+	aster_device_display_flush_drain();
+}
+
+/* ---------- rows ---------- */
+#if IS_ENABLED(CONFIG_ASTER_AUDIO)
+static void vol_show(int v)
+{
+	char b[8];
+
+	snprintf(b, sizeof(b), "%d", v);
+	set_label(s_vol_val, b);
+}
+
+static void on_vol(lv_event_t *e)
+{
+	lv_event_code_t code = lv_event_get_code(e);
+	lv_obj_t *sl = lv_event_get_target(e);
+	int v = (int)lv_slider_get_value(sl);
+
+	/* Applied live (a codec register write), persisted on release only:
+	 * dragging a 0..100 slider fires VALUE_CHANGED dozens of times, and
+	 * every one of those would be an SD file write on the UI thread. */
+	(void)aster_device_audio_set_volume(v);
+	vol_show(v);
+	if (code == LV_EVENT_RELEASED) {
+		uint8_t raw = (uint8_t)v;
+
+		int result = aster_service_kv_set(QPANEL_KV_ID, QPANEL_KV_VOL, &raw, 1);
+		if (result)
+			aster_service_logf(2, "qpanel: volume save failed %d", result);
+		else
+			aster_service_logf(3, "qpanel: volume %d saved", v);
+	}
+}
+
+static void vol_refresh(void)
+{
+	int v;
+
+	if (!s_vol_slider) {
+		return;
+	}
+	/* Never fight the finger: while the knob is held, this slider IS the
+	 * value, whatever the codec has been told. */
+	if (lv_obj_has_state(s_vol_slider, LV_STATE_PRESSED)) {
+		return;
+	}
+	v = aster_device_audio_get_volume();
+	if (v < 0) {
+		v = 0;
+	} else if (v > 100) {
+		v = 100;
+	}
+	if (lv_slider_get_value(s_vol_slider) != v) {
+		lv_slider_set_value(s_vol_slider, v, LV_ANIM_OFF);
+		vol_show(v);
+	}
+}
+
+void aster_qpanel_restore_volume(void)
+{
+	/* Restore persistent volume once after SD becomes available at boot.
+	 * The same codec volume is shared by APP, FLUX and the background media
+	 * worker. Reapplying an old KV value on every launcher_show() silently
+	 * changes the volume when an APP exits while music keeps playing. */
+	static bool restored_this_boot;
+	if (restored_this_boot || !aster_service_storage_mounted())
+		return;
+	uint8_t raw = 0;
+	size_t n = 0;
+	if (aster_service_kv_get(QPANEL_KV_ID, QPANEL_KV_VOL, &raw, 1, &n) == 0 && n == 1 &&
+	    raw <= 100) {
+		int result = aster_device_audio_set_volume((int)raw);
+		if (result)
+			aster_service_logf(2, "qpanel: volume restore failed %d", result);
+		else
+			aster_service_logf(3, "qpanel: boot volume %u restored", (unsigned)raw);
+	}
+	/* Even with no stored volume, do not restore while returning from an APP.
+	 * Retry only if storage was unavailable before this call. */
+	restored_this_boot = true;
+}
+#else
+void aster_qpanel_restore_volume(void)
+{
+}
+#endif /* CONFIG_ASTER_AUDIO */
+
+#if IS_ENABLED(CONFIG_ASTER_WIFI)
+static void wifi_refresh(void);
+
+static void on_wifi_btn(lv_event_t *e)
+{
+	ARG_UNUSED(e);
+	lv_obj_set_pos(s_sheet, 0, 0);
+	lv_obj_set_size(s_sheet, aster_ui_lvgl_layout_width(), aster_ui_lvgl_layout_height());
+	lv_obj_set_style_border_width(s_sheet, 0, 0);
+	lv_obj_set_style_radius(s_sheet, 0, 0);
+	aster_wifi_settings_open(s_sheet, aster_qpanel_dismiss);
+}
+
+static void wifi_refresh(void)
+{
+	aster_wifi_status_t ws;
+	char last[ASTER_WIFI_SSID_MAX + 1];
+	int err;
+	bool linked, remembered;
+
+	if (!s_wifi_lbl) {
+		return;
+	}
+	err = aster_device_wifi_status(&ws);
+	linked = !err && ws.state == ASTER_PLAT_WIFI_STATE_COMPLETED;
+	/* -EBUSY while a join is in flight, and -ENOENT when the device has
+	 * never been told to join anything. Same reading either way here. */
+	remembered = aster_device_wifi_last_ssid(last, sizeof(last)) == 0;
+
+	set_label(s_wifi_lbl, aster_ui_wifi_word(err ? -1 : ws.state));
+	dot_color(s_dot_wifi, linked ? s_pal.accent : s_pal.dim);
+
+	if (s_wifi_sub) {
+		if (linked && ws.ssid[0]) {
+			char line[64];
+
+			if (ws.ip[0]) {
+				snprintf(line, sizeof(line), "%s · %s", ws.ssid, ws.ip);
+			} else {
+				snprintf(line, sizeof(line), "%s", ws.ssid);
+			}
+			set_label(s_wifi_sub, line);
+		} else if (remembered) {
+			char line[sizeof(last) + 8];
+
+			snprintf(line, sizeof(line), "上次 %s", last);
+			set_label(s_wifi_sub, line);
+		} else {
+			set_label(s_wifi_sub, "无网络记录");
+		}
+	}
+
+	/* Settings is available even before the first network is configured. */
+	if (!s_wifi_btn) {
+		return;
+	}
+	lv_obj_clear_flag(s_wifi_btn, LV_OBJ_FLAG_HIDDEN);
+	set_label(s_wifi_btn_lbl, "设置");
+}
+#endif /* CONFIG_ASTER_WIFI */
+
+static void sd_refresh(void)
+{
+	bool mounted = aster_service_storage_mounted();
+
+	if (!s_sd_lbl) {
+		return;
+	}
+	set_label(s_sd_lbl, mounted ? "SD 已挂载" : "SD 未挂载");
+	dot_color(s_dot_sd, mounted ? s_pal.accent : s_pal.dim);
+}
+
+static void theme_refresh(void)
+{
+	if (s_theme_name && s_ops && s_ops->index) {
+		set_label(s_theme_name, theme_name(s_ops->index()));
+	}
+}
+
+static void on_theme_btn(lv_event_t *e)
+{
+	int n, i;
+
+	ARG_UNUSED(e);
+	if (!s_ops || !s_ops->count || !s_ops->index || !s_ops->apply) {
+		return;
+	}
+	n = s_ops->count();
+	i = s_ops->index();
+	if (n <= 1 || i < 0 || i >= n) {
+		return;
+	}
+	i = (i + 1) % n;
+	aster_service_logf(3, "qpanel: theme -> %d of %d", i, n);
+	s_ops->apply(i);
+	/* Nothing below may touch a widget: apply() asks the host to rebuild
+	 * its tree for the new palette, and that rebuild takes this sheet
+	 * down (aster_qpanel_force_close in the launcher). The sheet has no
+	 * business surviving its host's palette changing under it -- the
+	 * whole screen restyles, so it closes and shows you that. */
+}
+
+static void on_close(lv_event_t *e)
+{
+	ARG_UNUSED(e);
+	aster_qpanel_dismiss();
+}
+
+static void on_scrim(lv_event_t *e)
+{
+	ARG_UNUSED(e);
+	aster_qpanel_dismiss();
+}
+
+/* ---------- build ---------- */
+static lv_obj_t *bt_root, *bt_status, *bt_rows[ASTER_PLAYER_BT_DEVICES_MAX];
+static lv_obj_t *bt_names[ASTER_PLAYER_BT_DEVICES_MAX];
+static lv_obj_t *bt_toggle, *bt_search, *bt_phone;
+static aster_player_bt_list_t bt_devices;
+static uint32_t bt_pending, bt_deadline, bt_last_poll;
+static char bt_pending_address[sizeof(bt_devices.devices[0].address)];
+static int bt_error;
+static bool bt_restore_visibility, bt_enabled, bt_peer_connected, bt_turning_off;
+static void (*bt_close_owner)(void);
+
+static uint32_t bt_capabilities(void)
+{
+	aster_player_info_t info;
+	return aster_player_service_info(&info) == 0 ? info.capabilities : 0;
+}
+
+bool aster_bluetooth_settings_available(void)
+{
+	return (bt_capabilities() & (ASTER_PLAYER_CAP_BT_SINK | ASTER_PLAYER_CAP_BT_SOURCE)) != 0;
+}
+
+bool aster_bluetooth_settings_is_open(void)
+{
+	return bt_root != NULL;
+}
+
+static int bt_command(uint32_t command, const char *address)
+{
+	aster_player_request_t request = {
+	        .size = sizeof(request), .version = 1, .command = command};
+	if (address)
+		snprintf(request.path, sizeof(request.path), "%s", address);
+	return aster_player_service_control(&request);
+}
+
+static void bt_start_after_stop(uint32_t command)
+{
+	bt_pending = command;
+	bt_deadline = aster_os_uptime32() + 10000;
+}
+
+static void bt_switch_role(uint32_t command, const char *address)
+{
+	snprintf(bt_pending_address, sizeof(bt_pending_address), "%s", address ? address : "");
+	bt_error = bt_command(ASTER_PLAYER_BT_OFF, NULL);
+	if (!bt_error) {
+		bt_restore_visibility = (bt_capabilities() & ASTER_PLAYER_CAP_BT_SINK) != 0;
+		bt_start_after_stop(command);
+	}
+}
+
+static void bt_tick(void)
+{
+	if (!bt_root && !bt_pending && !bt_restore_visibility && !bt_turning_off)
+		return;
+	uint32_t now = aster_os_uptime32();
+	if (now - bt_last_poll < 250)
+		return;
+	bt_last_poll = now;
+	aster_player_info_t info = {0};
+	aster_player_service_info(&info);
+	aster_player_bt_list_t list = {0};
+	aster_player_service_bt_list(&list);
+	if (!bt_root && bt_restore_visibility && !bt_pending &&
+	    (list.state == ASTER_PLAYER_BT_IDLE || list.state == ASTER_PLAYER_BT_ERROR)) {
+		bt_restore_visibility = false;
+		bt_command(ASTER_PLAYER_BT_OFF, NULL);
+		bt_start_after_stop(ASTER_PLAYER_BT_ON);
+		return;
+	}
+	if (bt_pending) {
+		if ((int32_t)(now - bt_deadline) >= 0) {
+			bt_pending = 0;
+			bt_error = ASTER_ETIMEDOUT;
+		} else if (info.state != ASTER_PLAYER_STOPPING &&
+		           list.state != ASTER_PLAYER_BT_STOPPING) {
+			int error;
+			if (!(info.capabilities & ASTER_PLAYER_CAP_SYSTEM_OUTPUT) &&
+			    bt_pending != ASTER_PLAYER_BT_ON && info.mode == ASTER_PLAYER_LOCAL &&
+			    (info.state == ASTER_PLAYER_OPENING || info.state == ASTER_PLAYER_PLAYING ||
+			     info.state == ASTER_PLAYER_PAUSED)) {
+				error = bt_command(ASTER_PLAYER_STOP, NULL);
+				if (!error)
+					return;
+			} else {
+				error = bt_command(bt_pending, bt_pending == ASTER_PLAYER_BT_CONNECT
+				                               ? bt_pending_address : NULL);
+			}
+			if (error != ASTER_EBUSY) {
+				bt_pending = 0;
+				bt_error = error;
+				if (!error)
+					return; /* Take fresh status after handing off the radio. */
+			}
+		}
+	}
+	if (bt_restore_visibility && !bt_pending && !info.device[0] &&
+	    list.state != ASTER_PLAYER_BT_STOPPING) {
+		bt_restore_visibility = false;
+		bt_start_after_stop(ASTER_PLAYER_BT_ON);
+	}
+	bt_enabled = bt_pending || info.device[0] || list.state == ASTER_PLAYER_BT_STOPPING;
+	if (!bt_enabled)
+		bt_turning_off = false;
+	if (!bt_root)
+		return;
+	bt_peer_connected =
+	        info.mode == ASTER_PLAYER_BLUETOOTH && (info.flags & ASTER_PLAYER_F_CONNECTED);
+	char waiting[96];
+	snprintf(waiting, sizeof(waiting), "本机可被发现 · %s", info.device);
+	const char *state =
+	        bt_turning_off ? "正在关闭蓝牙"
+	        : bt_error ? "操作失败，请重试"
+	        : bt_pending || info.state == ASTER_PLAYER_STOPPING ||
+	                        list.state == ASTER_PLAYER_BT_STOPPING
+	                ? "正在更新蓝牙状态"
+	        : !bt_enabled                              ? "蓝牙已关闭"
+	        : list.state == ASTER_PLAYER_BT_SCANNING   ? "正在搜索附近设备"
+	        : list.state == ASTER_PLAYER_BT_CONNECTING ? "正在连接蓝牙设备"
+	        : list.state == ASTER_PLAYER_BT_CONNECTED  ? "设备已连接 · 点击设备断开"
+	        : list.state == ASTER_PLAYER_BT_ERROR && list.error != ASTER_ETIMEDOUT
+	                ? "蓝牙操作失败，可重新搜索"
+	        : list.state == ASTER_PLAYER_BT_ERROR || (info.mode == ASTER_PLAYER_BLUETOOTH &&
+	                                                  info.state == ASTER_PLAYER_ERROR)
+	                ? "蓝牙连接失败"
+	        : bt_peer_connected     ? "设备已连接 · 点击设备断开"
+	        : list.generation       ? (list.count ? "选择要连接的设备" : "未发现设备，可再次搜索")
+	        : bt_restore_visibility ? "选择要连接的设备"
+	                                : waiting;
+	const char *toggle = bt_turning_off ? "正在关闭" : bt_enabled ? "关闭蓝牙" : "开启蓝牙";
+	if (strcmp(lv_label_get_text(bt_toggle), toggle))
+		set_label(bt_toggle, toggle);
+	if (bt_search) {
+		if (bt_enabled && !bt_pending && list.state != ASTER_PLAYER_BT_CONNECTING &&
+		    list.state != ASTER_PLAYER_BT_CONNECTED && list.state != ASTER_PLAYER_BT_STOPPING)
+			lv_obj_remove_state(bt_search, LV_STATE_DISABLED);
+		else
+			lv_obj_add_state(bt_search, LV_STATE_DISABLED);
+	}
+	if (strcmp(lv_label_get_text(bt_status), state))
+		set_label(bt_status, state);
+	if (bt_peer_connected)
+		lv_obj_remove_flag(bt_phone, LV_OBJ_FLAG_HIDDEN);
+	else
+		lv_obj_add_flag(bt_phone, LV_OBJ_FLAG_HIDDEN);
+	for (unsigned i = 0; i < ASTER_PLAYER_BT_DEVICES_MAX; i++) {
+		if (i >= list.count) {
+			lv_obj_add_flag(bt_rows[i], LV_OBJ_FLAG_HIDDEN);
+			continue;
+		}
+		char name[112];
+		snprintf(name, sizeof(name), "%s%s",
+		         list.devices[i].flags & ASTER_PLAYER_F_CONNECTED ? "已连接 · " : "",
+		         list.devices[i].name[0] ? list.devices[i].name : list.devices[i].address);
+		if (strcmp(lv_label_get_text(bt_names[i]), name))
+			set_label(bt_names[i], name);
+		lv_obj_remove_flag(bt_rows[i], LV_OBJ_FLAG_HIDDEN);
+	}
+	bt_devices = list;
+}
+
+static void bt_select(lv_event_t *event)
+{
+	unsigned choice =
+	        (unsigned)(uintptr_t)lv_obj_get_user_data(lv_event_get_current_target_obj(event));
+	bt_error = 0;
+	if (bt_turning_off)
+		return;
+	if (choice == ASTER_PLAYER_BT_DISCONNECT) {
+		if (bt_peer_connected && !bt_pending)
+			bt_error = bt_command(choice, NULL);
+		return;
+	}
+	if (choice >= 100) {
+		unsigned index = choice - 100;
+		if (!bt_pending && index < bt_devices.count) {
+			bool connected = bt_devices.devices[index].flags & ASTER_PLAYER_F_CONNECTED;
+			bt_error = bt_command(connected ? ASTER_PLAYER_BT_DISCONNECT
+			                                : ASTER_PLAYER_BT_CONNECT,
+			                      connected ? NULL : bt_devices.devices[index].address);
+			if (!connected && bt_error == ASTER_ESTATE)
+				bt_switch_role(ASTER_PLAYER_BT_CONNECT, bt_devices.devices[index].address);
+		}
+		return;
+	}
+	if (choice == ASTER_PLAYER_BT_ON) {
+		if (bt_enabled) {
+			bt_pending = 0;
+			bt_restore_visibility = false;
+			bt_error = bt_command(ASTER_PLAYER_BT_OFF, NULL);
+			bt_turning_off = !bt_error;
+		} else {
+			uint32_t caps = bt_capabilities();
+			bt_error =
+			        bt_command(caps & ASTER_PLAYER_CAP_BT_SINK ? ASTER_PLAYER_BT_ON
+			                                                   : ASTER_PLAYER_SOURCE_ON,
+			                   NULL);
+			bt_enabled = !bt_error;
+		}
+		return;
+	}
+	if (bt_pending)
+		return;
+	if (choice == ASTER_PLAYER_SOURCE_ON) {
+		if (bt_devices.state == ASTER_PLAYER_BT_SCANNING ||
+		    bt_devices.state == ASTER_PLAYER_BT_CONNECTING ||
+		    bt_devices.state == ASTER_PLAYER_BT_CONNECTED)
+			return;
+		bt_error = bt_command(ASTER_PLAYER_BT_SCAN, NULL);
+		if (bt_error == ASTER_ESTATE)
+			bt_switch_role(choice, NULL);
+	}
+}
+
+static void bt_delete(lv_event_t *event)
+{
+	(void)event;
+	bt_root = NULL;
+}
+
+static void bt_close(lv_event_t *event)
+{
+	(void)event;
+	if (bt_close_owner)
+		bt_close_owner();
+	else
+		lv_obj_delete(bt_root);
+}
+
+void aster_bluetooth_settings_open(lv_obj_t *parent, void (*close_owner)(void))
+{
+	uint32_t caps = bt_capabilities();
+	if (!parent || bt_root || !(caps & (ASTER_PLAYER_CAP_BT_SINK | ASTER_PLAYER_CAP_BT_SOURCE)))
+		return;
+	load_palette();
+	memset(&bt_devices, 0, sizeof(bt_devices));
+	bt_error = 0;
+	bt_close_owner = close_owner;
+	int w = aster_ui_lvgl_layout_width(), h = aster_ui_lvgl_layout_height();
+	bt_root = lv_obj_create(parent);
+	lv_obj_remove_style_all(bt_root);
+	lv_obj_add_flag(bt_root, LV_OBJ_FLAG_FLOATING);
+	lv_obj_set_pos(bt_root, 0, 0);
+	lv_obj_set_size(bt_root, w, h);
+	lv_obj_set_style_bg_color(bt_root, hexc(s_pal.bg), 0);
+	lv_obj_set_style_bg_opa(bt_root, LV_OPA_COVER, 0);
+	lv_obj_add_event_cb(bt_root, bt_delete, LV_EVENT_DELETE, NULL);
+	no_scroll(bt_root);
+	lv_obj_t *title = mk_label(bt_root, "蓝牙", s_pal.fg, 0);
+	lv_obj_set_pos(title, 16, 20);
+	mk_button(bt_root, w - 78, 10, 66, 40, "返回", bt_close, NULL);
+	bt_status = mk_label(bt_root, "", s_pal.dim, 0);
+	lv_obj_set_pos(bt_status, 16, 65);
+	lv_obj_set_width(bt_status, w - 32);
+	lv_label_set_long_mode(bt_status, LV_LABEL_LONG_MODE_DOTS);
+	int cell = (w - 36) / 2;
+	lv_obj_t *toggle = mk_button(bt_root, 12, 100, cell, 46, "开启蓝牙", bt_select, &bt_toggle);
+	lv_obj_set_style_bg_color(toggle, hexc(s_pal.surface), 0);
+	lv_obj_set_user_data(toggle, (void *)(uintptr_t)ASTER_PLAYER_BT_ON);
+	bt_search = NULL;
+	if (caps & ASTER_PLAYER_CAP_BT_SOURCE) {
+		bt_search =
+		        mk_button(bt_root, 24 + cell, 100, cell, 46, "搜索设备", bt_select, NULL);
+		lv_obj_set_style_bg_color(bt_search, hexc(s_pal.surface), 0);
+		lv_obj_set_user_data(bt_search, (void *)(uintptr_t)ASTER_PLAYER_SOURCE_ON);
+	}
+	lv_obj_t *list = lv_obj_create(bt_root);
+	lv_obj_remove_style_all(list);
+	lv_obj_set_pos(list, 12, 162);
+	lv_obj_set_size(list, w - 24, h - 174);
+	lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
+	lv_obj_set_style_pad_row(list, 6, 0);
+	lv_obj_add_flag(list, LV_OBJ_FLAG_SCROLLABLE);
+	lv_obj_set_scroll_dir(list, LV_DIR_VER);
+	bt_phone = mk_button(list, 0, 0, w - 28, 46, "已连接的手机", bt_select, NULL);
+	lv_obj_set_style_bg_color(bt_phone, hexc(s_pal.surface), 0);
+	lv_obj_set_user_data(bt_phone, (void *)(uintptr_t)ASTER_PLAYER_BT_DISCONNECT);
+	for (unsigned i = 0; i < ASTER_PLAYER_BT_DEVICES_MAX; i++) {
+		bt_rows[i] = mk_button(list, 0, 0, w - 28, 46, "", bt_select, &bt_names[i]);
+		lv_obj_set_style_bg_color(bt_rows[i], hexc(s_pal.surface), 0);
+		lv_obj_set_user_data(bt_rows[i], (void *)(uintptr_t)(100 + i));
+		lv_obj_set_width(bt_names[i], w - 46);
+		lv_label_set_long_mode(bt_names[i], LV_LABEL_LONG_MODE_DOTS);
+	}
+	bt_last_poll = aster_os_uptime32() - 250;
+	bt_tick();
+}
+
+static void on_bluetooth(lv_event_t *event)
+{
+	(void)event;
+	lv_obj_set_pos(s_sheet, 0, 0);
+	lv_obj_set_size(s_sheet, aster_ui_lvgl_layout_width(), aster_ui_lvgl_layout_height());
+	aster_bluetooth_settings_open(s_sheet, aster_qpanel_dismiss);
+}
+
+static void build(void)
+{
+	lv_obj_t *scr = aster_ui_lvgl_screen();
+	lv_obj_t *row, *l;
+	int dw = (int)aster_ui_lvgl_layout_width();
+	int dh = (int)aster_ui_lvgl_layout_height();
+	bool has_vol = IS_ENABLED(CONFIG_ASTER_AUDIO);
+	bool has_wifi = IS_ENABLED(CONFIG_ASTER_WIFI);
+	bool has_bt = aster_bluetooth_settings_available();
+	bool has_theme = s_ops && s_ops->count && s_ops->index && s_ops->name && s_ops->apply &&
+	                 s_ops->count() > 1;
+	int h = QP_TITLE_H + QP_ROW_H /* SD */ + QP_RULE;
+
+	if (has_vol) {
+		h += QP_ROW_H;
+	}
+	if (has_wifi) {
+		h += QP_WIFI_H;
+	}
+	if (has_bt)
+		h += QP_ROW_H;
+	if (has_theme) {
+		h += QP_ROW_H;
+	}
+
+	load_palette();
+	/* Labels warm their own visible text in mk_label()/set_label().
+	 * Do not warm the Wi-Fi editor's keyboard or every theme here: those
+	 * glyphs are not on this sheet and can evict the visible ones from
+	 * the bounded SD font cache. The Wi-Fi editor prepares itself on open.
+	 */
+
+	/* Scrim, then sheet: children are drawn in creation order and
+	 * searched in reverse, so the second of the two is both on top and
+	 * the one the indev finds first. */
+	s_scrim = lv_obj_create(scr);
+	lv_obj_set_size(s_scrim, dw, dh);
+	lv_obj_set_pos(s_scrim, 0, 0);
+	lv_obj_set_style_bg_color(s_scrim, hexc(0x000000), 0);
+	lv_obj_set_style_bg_opa(s_scrim, LV_OPA_60, 0);
+	lv_obj_set_style_border_width(s_scrim, 0, 0);
+	lv_obj_set_style_radius(s_scrim, 0, 0);
+	lv_obj_set_style_pad_all(s_scrim, 0, 0);
+	no_scroll(s_scrim);
+	lv_obj_add_event_cb(s_scrim, on_scrim, LV_EVENT_CLICKED, NULL);
+	lv_obj_add_event_cb(s_scrim, on_delete, LV_EVENT_DELETE, NULL);
+
+	s_sheet = lv_obj_create(scr);
+	dw -= 16;
+	lv_obj_set_size(s_sheet, dw, h + 8);
+	lv_obj_set_pos(s_sheet, 8, 4);
+	lv_obj_set_style_bg_color(s_sheet, hexc(s_pal.bg), 0);
+	lv_obj_set_style_bg_opa(s_sheet, LV_OPA_COVER, 0);
+	lv_obj_set_style_radius(s_sheet, 14, 0);
+	lv_obj_set_style_pad_all(s_sheet, 0, 0);
+	lv_obj_set_style_pad_row(s_sheet, 2, 0);
+	/* The terminator: 2 px of accent along the bottom edge. It is a
+	 * border rather than an extra child so it cannot be scrolled or hit,
+	 * and it is why the sheet is 2 px taller than its rows. */
+	lv_obj_set_style_border_width(s_sheet, QP_RULE, 0);
+	lv_obj_set_style_border_side(s_sheet, LV_BORDER_SIDE_BOTTOM, 0);
+	lv_obj_set_style_border_color(s_sheet, hexc(s_pal.accent), 0);
+	lv_obj_set_flex_flow(s_sheet, LV_FLEX_FLOW_COLUMN);
+	lv_obj_set_flex_align(s_sheet, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START,
+	                      LV_FLEX_ALIGN_START);
+	no_scroll(s_sheet);
+	lv_obj_add_event_cb(s_sheet, on_delete, LV_EVENT_DELETE, NULL);
+
+	row = mk_row(s_sheet, QP_TITLE_H);
+	l = mk_label(row, "控制", s_pal.fg, 0);
+	lv_obj_set_pos(l, QP_PAD_X, (QP_TITLE_H - ASTER_FONT_CAPTION_LINE_H) / 2);
+	mk_button(row, dw - QP_PAD_X - 56, (QP_TITLE_H - QP_BTN_H) / 2, 56, QP_BTN_H, "关闭",
+	          on_close, NULL);
+
+#if IS_ENABLED(CONFIG_ASTER_WIFI)
+	if (has_wifi) {
+		row = mk_row(s_sheet, QP_WIFI_H);
+		/* The dot and the state word own the first line whole; the
+		 * second line is the detail, and the button sits on the right
+		 * of the first -- so a long SSID and address elides against
+		 * the button's column instead of running under it. */
+		s_dot_wifi = mk_dot(row, QP_DOT_X, QP_WIFI_Y1 + QP_DOT_DY);
+		s_wifi_lbl = mk_label(row, "WiFi", s_pal.fg, 0);
+		lv_obj_set_pos(s_wifi_lbl, QP_TXT_X, QP_WIFI_Y1);
+		lv_obj_set_width(s_wifi_lbl, dw - QP_TXT_X - QP_PAD_X - QP_BTN_W - 8);
+		lv_obj_set_height(s_wifi_lbl, ASTER_FONT_CAPTION_LINE_H);
+		lv_label_set_long_mode(s_wifi_lbl, LV_LABEL_LONG_MODE_DOTS);
+		s_wifi_sub = mk_label(row, "", s_pal.dim, 0);
+		lv_obj_set_pos(s_wifi_sub, QP_TXT_X, QP_WIFI_Y2);
+		lv_obj_set_width(s_wifi_sub, dw - QP_TXT_X - QP_PAD_X);
+		lv_obj_set_height(s_wifi_sub, ASTER_FONT_CAPTION_LINE_H);
+		lv_label_set_long_mode(s_wifi_sub, LV_LABEL_LONG_MODE_DOTS);
+
+		s_wifi_btn = mk_button(row, dw - QP_PAD_X - QP_BTN_W, 7, QP_BTN_W, QP_BTN_H, "重连",
+		                       on_wifi_btn, &s_wifi_btn_lbl);
+	}
+#endif /* CONFIG_ASTER_WIFI */
+
+	if (has_bt) {
+		row = mk_row(s_sheet, QP_ROW_H);
+		l = mk_label(row, "蓝牙", s_pal.fg, 0);
+		lv_obj_set_pos(l, QP_TXT_X, QP_ROW_Y);
+		mk_button(row, dw - QP_PAD_X - QP_BTN_W, 7, QP_BTN_W, QP_BTN_H, "设置",
+		          on_bluetooth, NULL);
+	}
+
+#if IS_ENABLED(CONFIG_ASTER_AUDIO)
+	if (has_vol) {
+		row = mk_row(s_sheet, QP_ROW_H);
+		l = mk_label(row, "音量", s_pal.fg, 0);
+		lv_obj_set_pos(l, QP_PAD_X, QP_ROW_Y);
+
+		s_vol_val = mk_label(row, "0", s_pal.dim, 2);
+		lv_obj_set_size(s_vol_val, QP_VOL_VAL_W, ASTER_FONT_CAPTION_LINE_H);
+		lv_obj_set_pos(s_vol_val, dw - QP_PAD_X - QP_VOL_VAL_W, QP_ROW_Y);
+
+		s_vol_slider = lv_slider_create(row);
+		lv_slider_set_range(s_vol_slider, 0, 100);
+		/* 16px visual track + 14px on both sides: 44px touch band. */
+		lv_obj_set_ext_click_area(s_vol_slider, 14);
+		lv_obj_add_flag(s_vol_slider, LV_OBJ_FLAG_PRESS_LOCK);
+		lv_obj_remove_flag(s_vol_slider, LV_OBJ_FLAG_ADV_HITTEST);
+		lv_obj_set_size(s_vol_slider,
+		                dw - QP_VOL_SL_X - QP_VOL_GAP - QP_VOL_VAL_W - QP_PAD_X, 16);
+		lv_obj_set_pos(s_vol_slider, QP_VOL_SL_X, (QP_ROW_H - 16) / 2);
+		lv_obj_set_style_bg_color(s_vol_slider, hexc(s_pal.surface), LV_PART_MAIN);
+		lv_obj_set_style_bg_color(s_vol_slider, hexc(s_pal.accent), LV_PART_INDICATOR);
+		lv_obj_set_style_bg_color(s_vol_slider, hexc(s_pal.fg), LV_PART_KNOB);
+		lv_obj_set_style_bg_opa(s_vol_slider, LV_OPA_COVER, LV_PART_KNOB);
+		lv_obj_add_event_cb(s_vol_slider, on_vol, LV_EVENT_VALUE_CHANGED, NULL);
+		lv_obj_add_event_cb(s_vol_slider, on_vol, LV_EVENT_RELEASED, NULL);
+	}
+#endif /* CONFIG_ASTER_AUDIO */
+
+	if (has_theme) {
+		row = mk_row(s_sheet, QP_ROW_H);
+		l = mk_label(row, "主题", s_pal.fg, 0);
+		lv_obj_set_pos(l, QP_TXT_X, QP_ROW_Y);
+		s_theme_name = mk_label(row, "", s_pal.dim, 0);
+		lv_obj_set_pos(s_theme_name, QP_THEME_X, QP_ROW_Y);
+		lv_obj_set_width(s_theme_name, dw - QP_PAD_X - QP_BTN_W - 8 - QP_THEME_X);
+		lv_obj_set_height(s_theme_name, ASTER_FONT_CAPTION_LINE_H);
+		lv_label_set_long_mode(s_theme_name, LV_LABEL_LONG_MODE_DOTS);
+		s_theme_btn = mk_button(row, dw - QP_PAD_X - QP_BTN_W, (QP_ROW_H - QP_BTN_H) / 2,
+		                        QP_BTN_W, QP_BTN_H, "切换", on_theme_btn, NULL);
+	} else {
+		s_theme_name = s_theme_btn = NULL;
+	}
+
+	row = mk_row(s_sheet, QP_ROW_H);
+	s_dot_sd = mk_dot(row, QP_DOT_X, QP_ROW_Y + QP_DOT_DY);
+	s_sd_lbl = mk_label(row, "SD", s_pal.fg, 0);
+	lv_obj_set_pos(s_sd_lbl, QP_TXT_X, QP_ROW_Y);
+
+#if IS_ENABLED(CONFIG_ASTER_AUDIO)
+	if (has_vol) {
+		lv_slider_set_value(s_vol_slider, aster_device_audio_get_volume(), LV_ANIM_OFF);
+		vol_show(aster_device_audio_get_volume());
+	}
+#endif
+#if IS_ENABLED(CONFIG_ASTER_WIFI)
+	if (has_wifi) {
+		wifi_refresh();
+	}
+#endif
+	if (has_theme) {
+		theme_refresh();
+	}
+	sd_refresh();
+}
+
+/* Return confirmation shares the APP snapshot/present hold with the panel. */
+static void on_exit_cancel(lv_event_t *e)
+{
+	ARG_UNUSED(e);
+	aster_service_logf(3, "return: cancelled");
+	aster_qpanel_dismiss();
+}
+
+static void on_exit_confirm(lv_event_t *e)
+{
+	ARG_UNUSED(e);
+	/* Runtime consumes this immediately after the LVGL tick. Keep the glass
+  * held until normal app teardown; no guest frame can overwrite the modal. */
+	s_exit_confirmed = true;
+	aster_service_logf(3, "return: confirmed");
+}
+
+bool aster_qpanel_request_exit(const char *name)
+{
+	if (s_sheet || !aster_ui_lvgl_screen() || !snapshot_take())
+		return false;
+	load_palette();
+	s_exit_mode = true;
+	s_exit_confirmed = false;
+	s_frozen = true;
+	int w = (int)aster_ui_lvgl_layout_width(), h = (int)aster_ui_lvgl_layout_height();
+	int cw = MIN(w - 32, 288), ch = 194;
+	s_scrim = lv_obj_create(aster_ui_lvgl_screen());
+	lv_obj_remove_style_all(s_scrim);
+	lv_obj_set_size(s_scrim, w, h);
+	lv_obj_set_style_bg_color(s_scrim, hexc(0), 0);
+	lv_obj_set_style_bg_opa(s_scrim, LV_OPA_70, 0);
+	no_scroll(s_scrim);
+	lv_obj_add_flag(s_scrim, LV_OBJ_FLAG_CLICKABLE);
+	lv_obj_add_event_cb(s_scrim, on_exit_cancel, LV_EVENT_CLICKED, NULL);
+	lv_obj_add_event_cb(s_scrim, on_delete, LV_EVENT_DELETE, NULL);
+	s_sheet = lv_obj_create(aster_ui_lvgl_screen());
+	lv_obj_remove_style_all(s_sheet);
+	lv_obj_set_size(s_sheet, cw, ch);
+	lv_obj_set_pos(s_sheet, (w - cw) / 2, (h - ch) / 2);
+	lv_obj_set_style_bg_color(s_sheet, hexc(s_pal.bg), 0);
+	lv_obj_set_style_bg_opa(s_sheet, LV_OPA_COVER, 0);
+	lv_obj_set_style_radius(s_sheet, 16, 0);
+	no_scroll(s_sheet);
+	lv_obj_add_flag(s_sheet, LV_OBJ_FLAG_CLICKABLE);
+	lv_obj_add_event_cb(s_sheet, on_delete, LV_EVENT_DELETE, NULL);
+	lv_obj_t *title = mk_label(s_sheet, "返回主页？", s_pal.accent, 0);
+	lv_obj_set_style_text_font(title, aster_ui_font(20), 0);
+	aster_ui_font_warm(20, "返回主页？");
+	lv_obj_set_pos(title, 18, 18);
+	lv_obj_t *app = mk_label(s_sheet, name ? name : "当前应用", s_pal.fg, 0);
+	lv_obj_set_pos(app, 18, 51);
+	lv_obj_set_width(app, cw - 36);
+	lv_label_set_long_mode(app, LV_LABEL_LONG_MODE_DOTS);
+	lv_obj_t *info =
+	        mk_label(s_sheet, "结束当前应用并返回主页。\n取消可继续使用。", s_pal.dim, 0);
+	lv_obj_set_pos(info, 18, 81);
+	lv_obj_set_width(info, cw - 36);
+	int bw = (cw - 44) / 2;
+	lv_obj_t *cancel = mk_button(s_sheet, 18, 138, bw, 42, "取消", on_exit_cancel, NULL);
+	lv_obj_set_style_bg_color(cancel, hexc(s_pal.surface), 0);
+	lv_obj_t *yes = mk_button(s_sheet, 26 + bw, 138, bw, 42, "返回主页", on_exit_confirm, NULL);
+	lv_obj_set_style_bg_color(yes, hexc(s_pal.accent), 0);
+	lv_obj_set_style_text_color(lv_obj_get_child(yes, 0), hexc(0x211d28), 0);
+	aster_service_logf(3, "return: confirmation opened");
+	return true;
+}
+
+bool aster_qpanel_exit_is_open(void)
+{
+	return s_exit_mode && s_sheet;
+}
+
+bool aster_qpanel_take_exit_confirmed(void)
+{
+	bool confirmed = s_exit_confirmed;
+	s_exit_confirmed = false;
+	return confirmed;
+}
+
+/* ---------- public API ---------- */
+void aster_qpanel_bind_theme(const aster_qpanel_theme_ops_t *ops)
+{
+	s_ops = ops;
+}
+
+uint32_t aster_qpanel_allow(bool launcher)
+{
+	/* Pull-down is live in every context and in every state: with the
+	 * sheet up it is the way out, so turning it off would strand the
+	 * user. Everything else belongs to the context under the finger --
+	 * page swipes at home, pull-up-exit inside an app -- and neither is
+	 * live while the sheet owns the glass. */
+	uint32_t m = ASTER_GEST_ALLOW_PANEL;
+	if (s_exit_mode)
+		return 0;
+
+	if (s_sheet) {
+		return m;
+	}
+	return m | (launcher ? ASTER_GEST_ALLOW_PAGE : ASTER_GEST_ALLOW_EXIT);
+}
+
+bool aster_qpanel_on_gesture(aster_gest_t g, aster_qpanel_host_t host)
+{
+	if (g != ASTER_GEST_PANEL_DOWN) {
+		return false;
+	}
+	if (s_sheet) {
+		aster_qpanel_dismiss();
+	} else {
+		aster_qpanel_open(host);
+	}
+	return true;
+}
+
+bool aster_qpanel_is_open(void)
+{
+	return s_sheet != NULL;
+}
+
+bool aster_qpanel_app_holds_glass(void)
+{
+	return s_frozen;
+}
+
+void aster_qpanel_open(aster_qpanel_host_t host)
+{
+	if (s_sheet || !aster_ui_lvgl_screen()) {
+		return;
+	}
+	uint32_t open_start = aster_os_uptime32();
+	if (host == ASTER_QPANEL_OVER_APP && !snapshot_take()) {
+		return; /* refused: see snapshot_take */
+	}
+	uint32_t snap_ms = aster_os_uptime32() - open_start;
+	build();
+	/* Armed only now that there is a sheet to shield, and only over an
+	 * app: the launcher's own tree is what repaints its band, and freezing
+	 * would stop nothing there anyway -- a guest present is not what puts
+	 * pixels back under the sheet. */
+	s_frozen = (host == ASTER_QPANEL_OVER_APP && s_sheet != NULL);
+	aster_service_logf(3, "qpanel: open%s (snapshot %u ms, build %u ms)",
+	                   s_frozen ? " (over app)" : "", snap_ms,
+	                   aster_os_uptime32() - open_start - snap_ms);
+}
+
+void aster_qpanel_close(bool restore)
+{
+	/* Two different repairs, and which one is right is decided by what is
+	 * under the sheet, not by who called.
+	 *
+	 * Over the launcher: deleting the pair invalidates the band they
+	 * covered and LVGL repaints it from a tree that is still there.
+	 * Nothing to do.
+	 *
+	 * Over an app: there is no tree. LVGL's next refresh would paint the
+	 * (emptied) screen over the guest's pixels, so the invalidated band has
+	 * to be rendered FIRST and the snapshot put back SECOND. Doing it the
+	 * other way round is the bug this ordering exists to avoid -- and it
+	 * would look like an intermittently flickering band, not like a
+	 * layering mistake. */
+	if (!s_sheet && !s_scrim) {
+		return;
+	}
+	ui_teardown();
+	if (s_frozen) {
+		if (restore) {
+			lv_refr_now(NULL); /* settle the invalidation above */
+			aster_device_display_flush_drain();
+			glass_put_back();
+		}
+		s_frozen = false;
+	}
+	aster_service_logf(3, "qpanel: close");
+}
+
+void aster_qpanel_on_app_stop(void)
+{
+	/* force_close is the whole point: putting the saved frame back would
+	 * paint the app's last picture over the launcher that is about to
+	 * replace it. */
+	aster_qpanel_force_close();
+	/* Belt as well as braces. A close that took the early return above
+	 * would leave the flag armed, and the next app would start with its
+	 * presents already swallowed -- a black screen with no obvious cause. */
+	s_frozen = false;
+}
+
+void aster_qpanel_dismiss(void)
+{
+	aster_qpanel_close(true);
+}
+
+void aster_qpanel_force_close(void)
+{
+	s_exit_confirmed = false;
+	aster_qpanel_close(false);
+}
+
+void aster_qpanel_tick(void)
+{
+	aster_launcher_power_tick();
+	bt_tick();
+	if (aster_bluetooth_settings_is_open())
+		return;
+	/* Self-throttled to 1 Hz rather than left to the caller's gate. There
+	 * are two callers now and they run at completely different rates: the
+	 * launcher's home refresh is already once a second, while the app loop
+	 * calls this every pass. Both of the rows below are net_mgmt round
+	 * trips, not variable reads, so "how often" is the sheet's business and
+	 * not something two call sites should each have to remember. */
+	static uint32_t last_ms;
+	uint32_t now = (uint32_t)aster_os_uptime_ms();
+
+	if (!s_sheet || s_exit_mode || (now - last_ms) < 1000u) {
+		return;
+	}
+	last_ms = now;
+#if IS_ENABLED(CONFIG_ASTER_AUDIO)
+	vol_refresh();
+#endif
+#if IS_ENABLED(CONFIG_ASTER_WIFI)
+	aster_wifi_settings_tick();
+	if (aster_wifi_settings_is_open()) {
+		return;
+	}
+	wifi_refresh();
+#endif
+	sd_refresh();
+}

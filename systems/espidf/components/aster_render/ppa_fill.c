@@ -1,0 +1,232 @@
+/* SPDX-License-Identifier: MIT */
+/* P4 acceleration for large opaque rectangular fills. Other tasks continue
+ * through LVGL SW, including FLUX's arbitrary-angle fused image transform.
+ * The IDF PPA driver owns writeback/invalidate of the affected cache lines. */
+#include "sdkconfig.h"
+#include <lvgl.h>
+#include "draw/lv_draw_private.h"
+#include "misc/lv_area_private.h"
+#include "driver/ppa.h"
+#include "esp_heap_caps.h"
+#include "esp_log.h"
+#include "ppa_fill.h"
+#include <stdio.h>
+#include <stdint.h>
+#include <stdlib.h>
+#define PPA_UNIT 81
+static ppa_client_handle_t client;
+static bool failed;
+/* Only altered on the UI owner while no draw task is in flight. */
+static bool bench_cpu_only;
+static uint32_t jobs, errors;
+static uint64_t pixels;
+static uint32_t app_jobs;
+
+bool aster_idf_ppa_fill_rgb565(uint16_t *data, uint32_t pitch, uint32_t height, uint32_t x,
+                               uint32_t y, uint32_t w, uint32_t h, uint16_t color)
+{
+    size_t bytes = (size_t)pitch * height * 2;
+    if (!client || failed || bench_cpu_only || !w || !h || (uint64_t)w * h < 4096 || ((uintptr_t)data & 63) ||
+        (bytes & 63) || x > pitch || w > pitch - x || y > height || h > height - y)
+        return false;
+    /* Expand endpoint bits so the hardware's RGB888 -> RGB565 truncation
+     * reproduces every ABI colour exactly. This call completes source use. */
+    uint32_t r = color >> 11, g = (color >> 5) & 63, b = color & 31;
+    ppa_fill_oper_config_t config = {
+        .out = {.buffer = data,
+                .buffer_size = bytes,
+                .pic_w = pitch,
+                .pic_h = height,
+                .block_offset_x = x,
+                .block_offset_y = y,
+                .fill_cm = PPA_FILL_COLOR_MODE_RGB565},
+        .fill_block_w = w,
+        .fill_block_h = h,
+        .fill_argb_color = {.val = 0xff000000u | ((r << 3 | r >> 2) << 16) |
+                                   ((g << 2 | g >> 4) << 8) | (b << 3 | b >> 2)},
+        .mode = PPA_TRANS_MODE_BLOCKING,
+    };
+    if (ppa_do_fill(client, &config) != ESP_OK) {
+        errors++;
+        failed = true;
+        return false;
+    }
+    app_jobs++;
+    pixels += (uint64_t)w * h;
+    return true;
+}
+
+static esp_err_t fill(lv_draw_buf_t *buf, const lv_area_t *area, lv_color_t color)
+{
+    ppa_fill_oper_config_t config = {
+        .out = {.buffer = buf->data,
+                .buffer_size = buf->data_size,
+                .pic_w = buf->header.stride / 2,
+                .pic_h = buf->header.h,
+                .block_offset_x = area->x1,
+                .block_offset_y = area->y1,
+                .fill_cm = PPA_FILL_COLOR_MODE_RGB565},
+        .fill_block_w = lv_area_get_width(area),
+        .fill_block_h = lv_area_get_height(area),
+        .fill_argb_color = {.val = lv_color_to_u32(color)},
+        .mode = PPA_TRANS_MODE_BLOCKING,
+    };
+    return ppa_do_fill(client, &config);
+}
+
+static int32_t evaluate(lv_draw_unit_t *unit, lv_draw_task_t *task)
+{
+    (void)unit;
+    if (failed || bench_cpu_only || task->type != LV_DRAW_TASK_TYPE_FILL)
+        return 0;
+    const lv_draw_fill_dsc_t *d = task->draw_dsc;
+    lv_draw_buf_t *buf = task->target_layer->draw_buf;
+    if (!buf || task->target_layer->color_format != LV_COLOR_FORMAT_RGB565 ||
+        d->opa != LV_OPA_COVER || d->radius || d->grad.dir != LV_GRAD_DIR_NONE ||
+        task->opa != LV_OPA_COVER || ((uintptr_t)buf->data & 63) || (buf->data_size & 63))
+        return 0;
+    lv_area_t area;
+    if (!lv_area_intersect(&area, &task->area, &task->clip_area) ||
+        !lv_area_intersect(&area, &area, &task->target_layer->buf_area) ||
+        (uint32_t)lv_area_get_width(&area) * lv_area_get_height(&area) < 4096)
+        return 0;
+    if (task->preference_score > 70) {
+        task->preference_score = 70;
+        task->preferred_draw_unit_id = PPA_UNIT;
+    }
+    return 1;
+}
+
+static int32_t dispatch(lv_draw_unit_t *unit, lv_layer_t *layer)
+{
+    lv_draw_task_t *task = lv_draw_get_available_task(layer, NULL, PPA_UNIT);
+    if (!task || task->preferred_draw_unit_id != PPA_UNIT)
+        return LV_DRAW_UNIT_IDLE;
+    task->state = LV_DRAW_TASK_STATE_IN_PROGRESS;
+    task->draw_unit = unit;
+    const lv_draw_fill_dsc_t *d = task->draw_dsc;
+    lv_area_t area;
+    if (lv_area_intersect(&area, &task->area, &task->clip_area) &&
+        lv_area_intersect(&area, &area, &layer->buf_area)) {
+        lv_area_move(&area, -layer->buf_area.x1, -layer->buf_area.y1);
+        if (fill(layer->draw_buf, &area, d->color) == ESP_OK) {
+            jobs++;
+            pixels += (uint64_t)lv_area_get_width(&area) * lv_area_get_height(&area);
+        } else {
+            /* Preserve the frame if the peripheral cannot accept a task. */
+            errors++;
+            failed = true;
+            uint16_t color = lv_color_to_u16(d->color);
+            for (int y = area.y1; y <= area.y2; y++) {
+                uint16_t *row =
+                    (uint16_t *)(layer->draw_buf->data + y * layer->draw_buf->header.stride);
+                for (int x = area.x1; x <= area.x2; x++)
+                    row[x] = color;
+            }
+        }
+    }
+    task->state = LV_DRAW_TASK_STATE_FINISHED;
+    lv_draw_dispatch_request();
+    return 1;
+}
+
+static bool self_test(void)
+{
+    uint16_t *data = heap_caps_aligned_alloc(64, 32 * 16 * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!data)
+        return false;
+    for (unsigned i = 0; i < 32 * 16; i++)
+        data[i] = 0x07e0;
+    lv_draw_buf_t buf;
+    bool good = lv_draw_buf_init(&buf, 32, 16, LV_COLOR_FORMAT_RGB565, 64, data, 32 * 16 * 2) ==
+                LV_RESULT_OK;
+    lv_area_t area = {3, 2, 19, 8};
+    if (good)
+        good = fill(&buf, &area, lv_color_hex(0xff0000)) == ESP_OK;
+    for (unsigned y = 0; good && y < 16; y++)
+        for (unsigned x = 0; x < 32; x++)
+            if (data[y * 32 + x] != ((x >= 3 && x <= 19 && y >= 2 && y <= 8) ? 0xf800 : 0x07e0)) {
+                good = false;
+                break;
+            }
+    free(data);
+    if (!good) return false;
+
+#if defined(CONFIG_IDF_TARGET_ESP32S31)
+    /* Keep this new diagnostic confined to S31; other IDF targets retain
+     * their original LVGL-only PPA startup test and no extra allocations. */
+    /* The small 32x16 check above exercises the LVGL fill path. This
+     * second test covers the actual >=4096px APP acceleration threshold,
+     * including an untouched blue border surrounding a magenta fill. */
+    enum { TEST_W=128, TEST_H=64 };
+    uint16_t *large=heap_caps_aligned_alloc(64,TEST_W*TEST_H*2u,
+                                            MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    if (!large) return false;
+    for (unsigned i=0;i<TEST_W*TEST_H;i++) large[i]=0x001fu;
+    good=aster_idf_ppa_fill_rgb565(large,TEST_W,TEST_H,16,8,96,48,0xf81fu);
+    for (unsigned y=0;y<TEST_H && good;y++) {
+        for (unsigned x=0;x<TEST_W;x++) {
+            uint16_t want=(x>=16 && x<112 && y>=8 && y<56)?0xf81fu:0x001fu;
+            if (large[y*TEST_W+x]!=want) {good=false;break;}
+        }
+    }
+    free(large);
+#endif
+    return good;
+}
+
+void aster_idf_ppa_fill_set_bench_cpu_only(bool cpu_only)
+{
+#if defined(CONFIG_IDF_TARGET_ESP32S31)
+    bench_cpu_only = cpu_only;
+#else
+    (void)cpu_only;
+#endif
+}
+
+bool aster_idf_ppa_fill_ready(void)
+{
+    return client!=NULL && !failed;
+}
+
+int aster_idf_ppa_fill_init(void)
+{
+    if (client)
+        return 0;
+    ppa_client_config_t config = {.oper_type = PPA_OPERATION_FILL, .max_pending_trans_num = 1};
+    esp_err_t result = ppa_register_client(&config, &client);
+    if (result != ESP_OK) {
+        ESP_LOGW("aster_ppa", "PPA Fill unavailable: %s", esp_err_to_name(result));
+        return result;
+    }
+    if (!self_test()) {
+        ppa_unregister_client(client);
+        client = NULL;
+        ESP_LOGW("aster_ppa", "RGB565/cache self-test failed; software rendering retained");
+        return ESP_FAIL;
+    }
+    /* Self-tests are not user workloads; keep perf counters honest. */
+    aster_idf_ppa_fill_reset();
+    lv_draw_unit_t *unit = lv_draw_create_unit(sizeof(lv_draw_unit_t));
+    unit->name = "ASTER_PPA_FILL";
+    unit->evaluate_cb = evaluate;
+    unit->dispatch_cb = dispatch;
+#if defined(CONFIG_IDF_TARGET_ESP32S31)
+    ESP_LOGI("aster_ppa", "RGB565/cache self-tests passed (LVGL + 4608px APP); fill ready");
+#else
+    ESP_LOGI("aster_ppa", "RGB565/cache self-test passed; large fill acceleration ready");
+#endif
+    return 0;
+}
+
+void aster_idf_ppa_fill_reset(void)
+{
+    jobs = app_jobs = errors = 0;
+    pixels = 0;
+}
+
+void aster_idf_ppa_fill_report(void)
+{
+    printf("UI PPA fills=%lu app_fills=%lu pixels=%llu errors=%lu\n", (unsigned long)jobs,
+           (unsigned long)app_jobs, (unsigned long long)pixels, (unsigned long)errors);
+}

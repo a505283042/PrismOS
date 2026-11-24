@@ -1,0 +1,85 @@
+# Board identity is independent of the chip target.
+config ASTER_BOARD_OSPTEK_P4
+    bool
+    default y
+config ASTER_BOARD_ID
+    string
+    default "osptek-p4-st7102"
+config ASTER_BOARD_NAME
+    string
+    default "鱼鹰光电 P4C5 开发板 · ST7102 480×480"
+config ASTER_DISPLAY_WIDTH
+    int
+    default 480
+config ASTER_DISPLAY_HEIGHT
+    int
+    default 480
+config ASTER_BOARD_CODEC_ES8311
+    bool
+    default y
+
+menu "Aster OSPTEK P4 baseboard V1.5 wiring"
+config ASTER_P4_BACKLIGHT_GPIO
+    int "BACKLIGHT_GPIO"
+    range 0 54
+    default 20
+config ASTER_P4_LCD_RESET_GPIO
+    int "LCD_RESET_GPIO"
+    range 0 54
+    default 5
+config ASTER_P4_TOUCH_SCL_GPIO
+    int "TOUCH_SCL_GPIO"
+    range 0 54
+    default 8
+config ASTER_P4_TOUCH_SDA_GPIO
+    int "TOUCH_SDA_GPIO"
+    range 0 54
+    default 7
+config ASTER_P4_TOUCH_RESET_GPIO
+    int "TOUCH_RESET_GPIO"
+    range 0 54
+    default 6
+config ASTER_P4_TOUCH_INT_GPIO
+    int "TOUCH_INT_GPIO"
+    range 0 54
+    default 21
+endmenu
+config ASTER_APP_WATCHDOG_MS
+    int "Maximum duration of a guest lifecycle/event callback (ms)"
+    range 100 30000
+    default 2000
+config ASTER_P4_AUTORUN_DIAGNOSTIC
+    bool "Run SD root app.aot/app.wasm diagnostic automatically at boot"
+    default n
+    help
+        Normally boot directly to the desktop. Run the SD root diagnostic
+        explicitly with 'aster app diagnostic' when checking the hardware.
+config ASTER_SIGNATURE_VERIFY
+    bool "Verify package signatures"
+    default n
+config ASTER_SIGNATURE_REQUIRE
+    bool "Reject unsigned packages"
+    depends on ASTER_SIGNATURE_VERIFY
+    default y
+config ASTER_VENDOR_PUBKEY
+    string "Trusted P-256 public key (130 hexadecimal characters)"
+    depends on ASTER_SIGNATURE_VERIFY
+    default ""
+
+config ASTER_P4_DUAL_CORE_RENDER
+    bool "Split launcher pixel rows across both HP cores"
+    default y
+    help
+        CPU1 owns LVGL and VM. CPU0 processes disjoint, cache-aligned rows
+        of each ribbon. All jobs join before the next draw or cache release.
+config ASTER_P4_TOUCH_I2C_HZ
+    int "ST7123 I2C clock (Hz)"
+    range 100000 400000
+    default 400000
+config ASTER_P4_LCD_VFP
+    int "LCD vertical front porch (lines)"
+    range 160 240
+    default 182
+    help
+        30 MHz / ((480+140+2+120)*(480+8+4+182)) is about 60 Hz.
+        The reference example uses 200 lines (about 58.4 Hz).
